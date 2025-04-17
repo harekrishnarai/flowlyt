@@ -1,0 +1,56 @@
+name: Secure Workflow Example
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Specific permissions following principle of least privilege
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846 # pinned to a specific SHA
+      
+      - name: Set up Node.js
+        uses: actions/setup-node@v3.6.0 # pinned to a specific version
+        with:
+          node-version: '16'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run tests
+        run: npm test
+        
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846 # pinned to a specific SHA
+      
+      - name: Build project
+        run: |
+          echo "Building project safely..."
+          npm run build
+          
+      - name: Download script and validate before execution
+        run: |
+          # Download script to file first
+          curl -s https://example.com/script.sh -o script.sh
+          
+          # Verify contents
+          cat script.sh
+          
+          # Then execute if safe
+          chmod +x script.sh
+          ./script.sh

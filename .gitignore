@@ -1,0 +1,50 @@
+# Binary files
+/flowlyt
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+/vendor/
+
+# Go workspace file
+go.work
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Build output directories
+/bin/
+/dist/
+
+# Log files
+*.log
+
+# Local configuration
+.env
+.env.local
+
+# Test output files
+flowlyt-results.md
+flowlyt-results.json
+
+# Temporary directories used for testing
+/tmp/
+flowlyt-test-*
+flowlyt-*

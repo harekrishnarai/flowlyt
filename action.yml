@@ -1,0 +1,70 @@
+name: 'Flowlyt Security Analyzer'
+description: 'Security scanner for GitHub Actions workflows'
+author: 'Flowlyt Team'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+inputs:
+  repository:
+    description: 'Repository to scan. Defaults to the current repository.'
+    required: false
+    default: ''
+  token:
+    description: 'GitHub token used to access repositories.'
+    required: false
+    default: ''
+  output-format:
+    description: 'Output format (cli, json, markdown)'
+    required: false
+    default: 'markdown'
+  output-file:
+    description: 'Output file path for findings'
+    required: false
+    default: 'flowlyt-results.md'
+  policy-path:
+    description: 'Path to custom policy files'
+    required: false
+    default: ''
+  no-default-rules:
+    description: 'Disable default security rules'
+    required: false
+    default: 'false'
+  entropy-threshold:
+    description: 'Entropy threshold for secret detection'
+    required: false
+    default: '4.5'
+  comment-on-pr:
+    description: 'Whether to comment results on pull requests'
+    required: false
+    default: 'true'
+  fail-on-severity:
+    description: 'Fail the action if findings with this severity or higher are found (CRITICAL, HIGH, MEDIUM, LOW, INFO)'
+    required: false
+    default: ''
+
+outputs:
+  findings-count:
+    description: 'Total number of findings'
+  critical-count:
+    description: 'Number of critical findings'
+  high-count:
+    description: 'Number of high severity findings'
+  results-file:
+    description: 'Path to the results file'
+
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - '--repo'
+    - '.'
+    - '--output'
+    - ${{ inputs.output-format }}
+    - '--output-file'
+    - ${{ inputs.output-file }}
+    - ${{ inputs.policy-path != '' && format('--policy {0}', inputs.policy-path) || '' }}
+    - ${{ inputs.no-default-rules == 'true' && '--no-default-rules' || '' }}
+    - ${{ inputs.entropy-threshold != '' && format('--entropy-threshold {0}', inputs.entropy-threshold) || '' }}
+    - ${{ inputs.token != '' && format('--token {0}', inputs.token) || '' }}

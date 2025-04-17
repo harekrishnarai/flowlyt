@@ -1,0 +1,54 @@
+name: Insecure Workflow Example
+
+on:
+  pull_request_target:
+    branches: [ main ]
+
+# Missing specific permissions - using write-all is insecure
+permissions: write-all
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Insecure checkout
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+      
+      - name: Curl pipe to bash example
+        run: |
+          curl -s https://example.com/script.sh | bash
+      
+      - name: Unpinned action
+        uses: actions/setup-node@main
+      
+      - name: Obfuscated command
+        run: |
+          enc="ZWNobyAiaGVsbG8gd29ybGQi"
+          echo $enc | base64 -d | bash
+      
+      - name: Potential hardcoded secret
+        env:
+          API_KEY: "abcdef1234567890abcdef1234567890"
+        run: echo "Using API key to access service"
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # Continue-on-error in critical job
+    continue-on-error: true
+    steps:
+      - name: Deploy to production
+        run: echo "Deploying to production..."
+        
+      - name: Dangerous command
+        run: |
+          # This is just a commented example, but would be flagged
+          # chmod 777 /some/important/directory
+          echo "Would do something dangerous here"
+          
+      - name: Eval usage
+        run: |
+          CMD="echo Hello world"
+          eval $CMD

