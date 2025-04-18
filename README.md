@@ -2,6 +2,9 @@
 
 Flowlyt is a security analyzer that scans GitHub Actions workflows to detect malicious patterns, misconfigurations, and secrets exposure, helping enforce secure CI/CD practices.
 
+![flowlyt](https://github.com/user-attachments/assets/38b4eaac-3a6e-44eb-a1f4-78b9183d5eaf)
+
+
 ## Features
 
 - **Static Analysis of Workflows**
