@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'
+
+      - name: Run tests
+        run: go test -v ./...
+
+      - name: Build binaries
+        run: |
+          # Build for multiple platforms
+          GOOS=linux GOARCH=amd64 go build -o flowlyt-linux-amd64 ./cmd/flowlyt
+          GOOS=linux GOARCH=arm64 go build -o flowlyt-linux-arm64 ./cmd/flowlyt
+          GOOS=darwin GOARCH=amd64 go build -o flowlyt-darwin-amd64 ./cmd/flowlyt
+          GOOS=darwin GOARCH=arm64 go build -o flowlyt-darwin-arm64 ./cmd/flowlyt
+          GOOS=windows GOARCH=amd64 go build -o flowlyt-windows-amd64.exe ./cmd/flowlyt
+          
+          # Create checksums
+          sha256sum flowlyt-* > checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            flowlyt-linux-amd64
+            flowlyt-linux-arm64
+            flowlyt-darwin-amd64
+            flowlyt-darwin-arm64
+            flowlyt-windows-amd64.exe
+            checksums.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
