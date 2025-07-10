@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/v1/rego"
 )
 
 func TestPolicyEngine(t *testing.T) {

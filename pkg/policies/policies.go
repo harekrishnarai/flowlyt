@@ -8,7 +8,7 @@ import (
 
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/v1/rego"
 )
 
 // PolicyEngine represents a policy engine for enforcing custom rules

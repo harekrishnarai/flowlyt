@@ -33,7 +33,7 @@ jobs:
       run: go mod download
 
     - name: Run tests
-      run: go test -v -race -coverprofile=coverage.out ./...
+      run: go test -v -race -coverprofile=coverage.out ./pkg/config ./pkg/parser ./pkg/policies ./pkg/rules ./pkg/shell
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v3

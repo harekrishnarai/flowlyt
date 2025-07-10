@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/harekrishnarai/flowlyt/pkg/config"
 	"github.com/harekrishnarai/flowlyt/pkg/github"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/pkg/policies"
 	"github.com/harekrishnarai/flowlyt/pkg/report"
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/harekrishnarai/flowlyt/pkg/secrets"
 	"github.com/harekrishnarai/flowlyt/pkg/shell"
 	"github.com/urfave/cli/v2"
 )
@@ -66,6 +66,11 @@ func main() {
 				Usage:   "Output file path (if not specified, prints to stdout)",
 			},
 			&cli.StringFlag{
+				Name:    "config",
+				Aliases: []string{"c"},
+				Usage:   "Configuration file path (.flowlyt.yml)",
+			},
+			&cli.StringFlag{
 				Name:    "policy",
 				Aliases: []string{"p"},
 				Usage:   "Custom policy file or directory",
@@ -74,6 +79,21 @@ func main() {
 				Name:  "no-default-rules",
 				Usage: "Disable default security rules",
 				Value: false,
+			},
+			&cli.StringSliceFlag{
+				Name:    "enable-rules",
+				Aliases: []string{"enable"},
+				Usage:   "Enable specific rules (comma-separated)",
+			},
+			&cli.StringSliceFlag{
+				Name:    "disable-rules",
+				Aliases: []string{"disable"},
+				Usage:   "Disable specific rules (comma-separated)",
+			},
+			&cli.StringFlag{
+				Name:  "min-severity",
+				Usage: "Minimum severity level to report (CRITICAL, HIGH, MEDIUM, LOW, INFO)",
+				Value: "LOW",
 			},
 			&cli.Float64Flag{
 				Name:  "entropy-threshold",
@@ -118,6 +138,32 @@ func main() {
 func scan(c *cli.Context, outputFormat, outputFile string) error {
 	startTime := time.Now()
 
+	// Load configuration
+	configPath := c.String("config")
+	cfg, err := config.LoadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to load configuration: %w", err)
+	}
+
+	// Override config with CLI flags
+	if c.String("min-severity") != "LOW" {
+		cfg.Output.MinSeverity = c.String("min-severity")
+	}
+	if c.String("output") != "cli" {
+		cfg.Output.Format = c.String("output")
+	}
+	if c.String("output-file") != "" {
+		cfg.Output.File = c.String("output-file")
+	}
+
+	// Handle rule enable/disable flags
+	if enabledRules := c.StringSlice("enable-rules"); len(enabledRules) > 0 {
+		cfg.Rules.Enabled = append(cfg.Rules.Enabled, enabledRules...)
+	}
+	if disabledRules := c.StringSlice("disable-rules"); len(disabledRules) > 0 {
+		cfg.Rules.Disabled = append(cfg.Rules.Disabled, disabledRules...)
+	}
+
 	// Get the repository path, URL, or workflow file
 	repoPath := c.String("repo")
 	repoURL := c.String("url")
@@ -157,7 +203,6 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 
 	// Find workflow files
 	var workflowFiles []parser.WorkflowFile
-	var err error
 
 	if workflowFile != "" {
 		fmt.Printf("Scanning single workflow file %s...\n", workflowFile)
@@ -184,6 +229,15 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 		standardRules = []rules.Rule{}
 	}
 
+	// Filter rules based on configuration
+	filteredRules := []rules.Rule{}
+	for _, rule := range standardRules {
+		if cfg.IsRuleEnabled(rule.ID) {
+			filteredRules = append(filteredRules, rule)
+		}
+	}
+	standardRules = filteredRules
+
 	// Load custom policies if specified
 	var policyEngine *policies.PolicyEngine
 	if policyPath := c.String("policy"); policyPath != "" {
@@ -199,12 +253,6 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	// Initialize shell analyzer
 	shellAnalyzer := shell.NewAnalyzer()
 
-	// Initialize secrets detector
-	secretsDetector := secrets.NewDetector()
-	if threshold := c.Float64("entropy-threshold"); threshold > 0 {
-		secretsDetector.SetEntropyThreshold(threshold)
-	}
-
 	// Analyze each workflow
 	for _, workflow := range workflowFiles {
 		fmt.Printf("Analyzing %s...\n", workflow.Name)
@@ -215,13 +263,13 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 			allFindings = append(allFindings, findings...)
 		}
 
-		// Apply shell analysis
+		// Apply shell analysis (only if rules are enabled)
 		shellFindings := shellAnalyzer.Analyze(workflow)
-		allFindings = append(allFindings, shellFindings...)
-
-		// Apply secrets detection
-		secretFindings := secretsDetector.Detect(workflow)
-		allFindings = append(allFindings, secretFindings...)
+		for _, finding := range shellFindings {
+			if cfg.IsRuleEnabled(finding.RuleID) {
+				allFindings = append(allFindings, finding)
+			}
+		}
 
 		// Apply policy engine if configured
 		if policyEngine != nil {
@@ -229,13 +277,34 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 			if err != nil {
 				fmt.Printf("Warning: policy evaluation error for %s: %v\n", workflow.Name, err)
 			} else {
-				allFindings = append(allFindings, policyFindings...)
+				// Filter policy findings by enabled rules
+				for _, finding := range policyFindings {
+					if cfg.IsRuleEnabled(finding.RuleID) {
+						allFindings = append(allFindings, finding)
+					}
+				}
 			}
 		}
 	}
 
+	// Filter findings based on configuration
+	filteredFindings := []rules.Finding{}
+	for _, finding := range allFindings {
+		// Check if finding should be ignored based on configuration
+		if cfg.ShouldIgnoreForRule(finding.RuleID, finding.Evidence, finding.FilePath) {
+			continue
+		}
+
+		// Check minimum severity
+		if !shouldIncludeSeverity(string(finding.Severity), cfg.Output.MinSeverity) {
+			continue
+		}
+
+		filteredFindings = append(filteredFindings, finding)
+	}
+
 	// Sort findings by severity
-	sortedFindings := report.SortFindingsBySeverity(allFindings)
+	sortedFindings := report.SortFindingsBySeverity(filteredFindings)
 
 	// Calculate summary
 	summary := report.CalculateSummary(sortedFindings)
@@ -251,17 +320,29 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 		Summary:        summary,
 	}
 
+	// Use configuration for output format and file
+	actualOutputFormat := cfg.Output.Format
+	actualOutputFile := cfg.Output.File
+
+	// CLI overrides config
+	if outputFormat != "cli" {
+		actualOutputFormat = outputFormat
+	}
+	if outputFile != "" {
+		actualOutputFile = outputFile
+	}
+
 	// Generate report
 	timestamp := time.Now().Format("20060102-150405")
 
-	if outputFormat == "json" || outputFormat == "markdown" {
-		fileExt := "." + outputFormat
-		if outputFile == "" {
-			outputFile = "flowlyt-report-" + timestamp + fileExt
+	if actualOutputFormat == "json" || actualOutputFormat == "markdown" {
+		fileExt := "." + actualOutputFormat
+		if actualOutputFile == "" {
+			actualOutputFile = "flowlyt-report-" + timestamp + fileExt
 		}
 	}
 
-	reportGenerator := report.NewGenerator(result, outputFormat, false, outputFile)
+	reportGenerator := report.NewGenerator(result, actualOutputFormat, false, actualOutputFile)
 	if err := reportGenerator.Generate(); err != nil {
 		return fmt.Errorf("failed to generate report: %w", err)
 	}
@@ -272,4 +353,27 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 		summary.Total, summary.Critical, summary.High, summary.Medium, summary.Low, summary.Info)
 
 	return nil
+}
+
+// shouldIncludeSeverity checks if a finding should be included based on minimum severity
+func shouldIncludeSeverity(findingSeverity, minSeverity string) bool {
+	severityLevels := map[string]int{
+		"INFO":     0,
+		"LOW":      1,
+		"MEDIUM":   2,
+		"HIGH":     3,
+		"CRITICAL": 4,
+	}
+
+	findingLevel, ok := severityLevels[findingSeverity]
+	if !ok {
+		return true // Include if severity is unknown
+	}
+
+	minLevel, ok := severityLevels[minSeverity]
+	if !ok {
+		return true // Include if min severity is unknown
+	}
+
+	return findingLevel >= minLevel
 }
