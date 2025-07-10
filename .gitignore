@@ -43,6 +43,15 @@ Thumbs.db
 # Test output files
 flowlyt-results.md
 flowlyt-results.json
+flowlyt-report-*.json
+flowlyt-report-*.md
+
+# Temporary test configuration files
+*-test.yml
+test-*.yml
+comprehensive-test.yml
+enhanced-secret-test.yml
+simple-secret-test.yml
 
 # Temporary directories used for testing
 /tmp/

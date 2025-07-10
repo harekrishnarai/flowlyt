@@ -1,0 +1,132 @@
+# Flowlyt Configuration File
+# This file configures security scanning rules and behavior
+
+version: "1"
+
+# Rule configuration
+rules:
+  # Enable specific rules (if empty, all rules are enabled)
+  enabled: []
+  
+  # Disable specific rules
+  disabled: []
+  
+  # Custom user-defined rules
+  custom_rules:
+    # Example: Detect suspicious Docker commands
+    - id: "CUSTOM_DOCKER_RISK"
+      name: "Suspicious Docker Command"
+      description: "Detects potentially risky Docker commands in workflows"
+      severity: "HIGH"
+      category: "MALICIOUS_PATTERN"
+      type: "regex"
+      patterns:
+        - "docker run.*--privileged"
+        - "docker.*--cap-add.*SYS_ADMIN"
+        - "docker.*--security-opt.*seccomp=unconfined"
+      target:
+        commands: true
+        actions: false
+        environment: false
+        permissions: false
+        events: false
+      remediation: "Avoid running Docker containers with elevated privileges. Use specific capabilities instead of --privileged."
+    
+    # Example: Detect hardcoded credentials in environment
+    - id: "CUSTOM_ENV_SECRETS"
+      name: "Environment Variable Secrets"
+      description: "Detects potential secrets in environment variable names"
+      severity: "CRITICAL"
+      category: "SECRET_EXPOSURE"
+      type: "regex"
+      pattern: "(?i)(password|secret|token|key|credential).*=.*[A-Za-z0-9]{8,}"
+      target:
+        commands: true
+        actions: false
+        environment: true
+        permissions: false
+        events: false
+      remediation: "Use GitHub secrets instead of hardcoded values in environment variables."
+  
+  # False positive configuration
+  false_positives:
+    # Global ignore patterns (applied to all rules)
+    global:
+      patterns:
+        - ".*example.*"
+        - ".*test.*"
+      strings:
+        - "placeholder"
+        - "dummy"
+        - "sample"
+    
+    # Secret-specific ignores
+    secrets:
+      patterns:
+        - ".*_test$"
+        - ".*_example$"
+      strings:
+        - "YOUR_SECRET_HERE"
+        - "your-secret-here"
+        - "changeme"
+        - "change-me"
+        - "XXXXXX"
+        - "xxxxxx"
+        - "000000"
+        - "111111"
+        - "password"
+        - "secret"
+        - "token"
+        - "key"
+        - "admin"
+        - "user"
+        - "default"
+        - "localhost"
+        - "127.0.0.1"
+        - "0.0.0.0"
+        - "::1"
+      contexts:
+        - "uses:.*@[a-f0-9]{40}"  # Action SHAs
+        - "uses:.*@v\\d+"         # Version tags
+        - "\\$\\{\\{ secrets\\."  # Secret references
+        - "\\$\\{\\{ env\\."      # Env references
+    
+    # Action-specific ignores
+    actions:
+      actions: []  # Specific actions to ignore
+      orgs:        # Trusted organizations
+        - "actions"
+        - "github"
+    
+    # File patterns to ignore globally
+    files:
+      - "test/**"
+      - "tests/**"
+      - "examples/**"
+      - "docs/**"
+      - "*.md"
+    
+    # Rule-specific ignore patterns
+    rules:
+      HARDCODED_SECRET:
+        patterns:
+          - ".*_test\\.yml$"
+        strings:
+          - "fake-token"
+        files:
+          - "test/**"
+      UNPINNED_ACTION:
+        actions:
+          - "actions/checkout@v4"  # Allow specific version tags for trusted actions
+
+# Output configuration
+output:
+  format: "cli"  # cli, json, sarif, junit
+  file: ""       # Output file (empty for stdout)
+  min_severity: "LOW"  # Minimum severity to report
+  show_remediation: true
+  fields:
+    line_number: true
+    evidence: true
+    remediation: true
+    category: true

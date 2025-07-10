@@ -16,9 +16,9 @@ func TestFindWorkflows(t *testing.T) {
 		t.Fatalf("Failed to find workflows: %v", err)
 	}
 
-	// We should have found 2 workflow files
-	if len(workflows) != 2 {
-		t.Errorf("Expected to find 2 workflow files, got %d", len(workflows))
+	// We should have found 3 workflow files
+	if len(workflows) != 3 {
+		t.Errorf("Expected to find 3 workflow files, got %d", len(workflows))
 	}
 
 	// Check if the workflows were parsed correctly
