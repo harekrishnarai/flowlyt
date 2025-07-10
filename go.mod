@@ -2,7 +2,7 @@ module github.com/harekrishnarai/flowlyt
 
 go 1.23.6
 
-toolchain go1.23.8
+toolchain go1.24.3
 
 require (
 	github.com/fatih/color v1.18.0
