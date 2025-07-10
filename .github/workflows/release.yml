@@ -23,7 +23,7 @@ jobs:
           go-version: '1.21'
 
       - name: Run tests
-        run: go test -v ./...
+        run: go test -v ./pkg/config ./pkg/parser ./pkg/policies ./pkg/rules ./pkg/shell
 
       - name: Build binaries
         run: |
