@@ -9,6 +9,7 @@ import (
 
 	"github.com/harekrishnarai/flowlyt/pkg/config"
 	"github.com/harekrishnarai/flowlyt/pkg/github"
+	"github.com/harekrishnarai/flowlyt/pkg/gitlab"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/pkg/policies"
 	"github.com/harekrishnarai/flowlyt/pkg/report"
@@ -17,7 +18,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-var version = "2.1.1"
+var version = "2.2.0"
 
 func main() {
 	outputFormat := "cli"
@@ -32,13 +33,19 @@ func main() {
 	app := &cli.App{
 		Name:    "flowlyt",
 		Version: version,
-		Usage:   "GitHub Actions Workflow Security Analyzer",
+		Usage:   "Multi-Platform CI/CD Security Analyzer",
 		Authors: []*cli.Author{
 			{
 				Name: "Flowlyt Team",
 			},
 		},
 		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "platform",
+				Aliases: []string{"pl"},
+				Usage:   "CI/CD platform (github, gitlab, jenkins, azure)",
+				Value:   "github",
+			},
 			&cli.StringFlag{
 				Name:    "repo",
 				Aliases: []string{"r"},
@@ -47,7 +54,11 @@ func main() {
 			&cli.StringFlag{
 				Name:    "url",
 				Aliases: []string{"u"},
-				Usage:   "GitHub repository URL to scan",
+				Usage:   "Repository URL to scan (GitHub or GitLab)",
+			},
+			&cli.StringFlag{
+				Name:  "gitlab-instance",
+				Usage: "GitLab instance URL for on-premise GitLab (e.g., https://gitlab.company.com)",
 			},
 			&cli.StringFlag{
 				Name:    "workflow",
@@ -173,25 +184,57 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 		return fmt.Errorf("either --repo, --url, or --workflow must be specified")
 	}
 
-	fmt.Println("🔍 Flowlyt - GitHub Actions Security Analyzer")
-	fmt.Println("=======================================")
+	// Get platform from CLI
+	platform := c.String("platform")
 
+	fmt.Printf("🔍 Flowlyt - Multi-Platform CI/CD Security Analyzer\n")
+	fmt.Printf("Platform: %s\n", strings.ToUpper(platform))
+	fmt.Println("=======================================")
 	// Handle repository acquisition if URL is provided
 	var repoLocalPath string
 
 	if repoURL != "" {
 		fmt.Printf("Cloning repository from %s...\n", repoURL)
-		client := github.NewClient()
-		tempDir := c.String("temp-dir")
 
-		var err error
-		repoLocalPath, err = client.CloneRepository(repoURL, tempDir)
-		if err != nil {
-			return fmt.Errorf("failed to clone repository: %w", err)
+		// Auto-detect platform from URL if not explicitly specified
+		if platform == "github" && c.String("platform") == "github" {
+			// Check if URL is actually GitLab
+			if gitlab.IsGitLabURL(repoURL) {
+				platform = "gitlab"
+				fmt.Printf("Auto-detected GitLab repository, switching to GitLab platform\n")
+			}
 		}
 
-		// Clean up temporary directory if we created one
-		if tempDir == "" {
+		switch platform {
+		case "github":
+			client := github.NewClient()
+			tempDir := c.String("temp-dir")
+			var err error
+			repoLocalPath, err = client.CloneRepository(repoURL, tempDir)
+			if err != nil {
+				return fmt.Errorf("failed to clone GitHub repository: %w", err)
+			}
+
+		case "gitlab":
+			gitlabInstance := c.String("gitlab-instance")
+			client, err := gitlab.NewClient(gitlabInstance)
+			if err != nil {
+				return fmt.Errorf("failed to create GitLab client: %w", err)
+			}
+
+			tempDir := c.String("temp-dir")
+			repoLocalPath, err = client.CloneRepository(repoURL, tempDir)
+			if err != nil {
+				return fmt.Errorf("failed to clone GitLab repository: %w", err)
+			}
+
+		default:
+			return fmt.Errorf("repository cloning from URL is not supported for platform: %s", platform)
+		}
+
+		// Clean up temporary directory if we created one (when no temp-dir was specified)
+		tempDirFlag := c.String("temp-dir")
+		if tempDirFlag == "" {
 			defer func() {
 				fmt.Printf("Cleaning up temporary directory %s...\n", repoLocalPath)
 				os.RemoveAll(repoLocalPath)
@@ -201,7 +244,7 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 		repoLocalPath = repoPath
 	}
 
-	// Find workflow files
+	// Find workflow files based on platform
 	var workflowFiles []parser.WorkflowFile
 
 	if workflowFile != "" {
@@ -211,8 +254,17 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 			return fmt.Errorf("failed to load workflow file: %w", err)
 		}
 	} else {
-		fmt.Printf("Scanning GitHub Actions workflows in %s...\n", repoLocalPath)
-		workflowFiles, err = parser.FindWorkflows(repoLocalPath)
+		switch platform {
+		case "github":
+			fmt.Printf("Scanning GitHub Actions workflows in %s...\n", repoLocalPath)
+			workflowFiles, err = parser.FindWorkflows(repoLocalPath)
+		case "gitlab":
+			fmt.Printf("Scanning GitLab CI/CD pipelines in %s...\n", repoLocalPath)
+			workflowFiles, err = gitlab.FindGitLabWorkflows(repoLocalPath)
+		default:
+			return fmt.Errorf("unsupported platform: %s. Supported platforms: github, gitlab", platform)
+		}
+
 		if err != nil {
 			return fmt.Errorf("failed to find workflow files: %w", err)
 		}
@@ -223,10 +275,20 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	// Analyze workflows
 	var allFindings []rules.Finding
 
-	// Get standard security rules
-	standardRules := rules.StandardRules()
+	// Get standard security rules based on platform
+	var standardRules []rules.Rule
 	if c.Bool("no-default-rules") {
 		standardRules = []rules.Rule{}
+	} else {
+		switch platform {
+		case "github":
+			standardRules = rules.StandardRules()
+		case "gitlab":
+			// Combine standard rules with GitLab-specific rules
+			standardRules = append(rules.StandardRules(), gitlab.GitLabRules()...)
+		default:
+			standardRules = rules.StandardRules()
+		}
 	}
 
 	// Filter rules based on configuration

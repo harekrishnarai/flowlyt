@@ -1,13 +1,14 @@
-# Flowlyt - GitHub Actions Workflow Security Analyzer
+# Flowlyt - Multi-Platform CI/CD Security Analyzer
 
-Flowlyt is a comprehensive security analyzer that scans GitHub Actions workflows to detect malicious patterns, misconfigurations, and secrets exposure. It provides a scalable and flexible approach to enforcing secure CI/CD practices with user-configurable rules, custom policies, and intelligent false positive management.
+Flowlyt is a comprehensive security analyzer that scans CI/CD workflows to detect malicious patterns, misconfigurations, and secrets exposure. It provides a scalable and flexible approach to enforcing secure CI/CD practices across multiple platforms including GitHub Actions and GitLab CI/CD, with user-configurable rules, custom policies, and intelligent false positive management.
 
 ![flowlyt](https://github.com/user-attachments/assets/38b4eaac-3a6e-44eb-a1f4-78b9183d5eaf)
 
 ## ✨ Key Features
 
 ### 🔍 **Advanced Static Analysis**
-- **Workflow Parsing**: Deep analysis of GitHub Actions YAML files
+- **Multi-Platform Support**: Analyze GitHub Actions and GitLab CI/CD workflows with platform-specific rules
+- **Workflow Parsing**: Deep analysis of CI/CD YAML files across different platforms
 - **Malicious Pattern Detection**: Identify unsafe patterns like `curl | bash`, base64-encoded payloads, and shell obfuscation
 - **Supply Chain Security**: Detect unpinned actions and risky trigger contexts
 - **Data Exfiltration Detection**: Identify suspicious data transmission patterns
@@ -67,6 +68,20 @@ docker run --rm -v $(pwd):/repo harekrishnarai/flowlyt scan --repo /repo
 ## Usage
 
 ## 🚀 Quick Start
+
+### Multi-Platform Support
+
+**GitHub Actions (default):**
+```bash
+flowlyt --repo ./myrepo
+flowlyt --platform=github --repo ./myrepo
+```
+
+**GitLab CI/CD:**
+```bash
+flowlyt --platform=gitlab --repo ./myrepo
+flowlyt --platform=gitlab --workflow .gitlab-ci.yml
+```
 
 ### CLI Examples
 

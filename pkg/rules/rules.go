@@ -76,11 +76,17 @@ const (
 type Category string
 
 const (
-	MaliciousPattern Category = "MALICIOUS_PATTERN"
-	Misconfiguration Category = "MISCONFIGURATION"
-	SecretExposure   Category = "SECRET_EXPOSURE"
-	ShellObfuscation Category = "SHELL_OBFUSCATION"
-	PolicyViolation  Category = "POLICY_VIOLATION"
+	MaliciousPattern    Category = "MALICIOUS_PATTERN"
+	Misconfiguration    Category = "MISCONFIGURATION"
+	SecretExposure      Category = "SECRET_EXPOSURE"
+	ShellObfuscation    Category = "SHELL_OBFUSCATION"
+	PolicyViolation     Category = "POLICY_VIOLATION"
+	SupplyChain         Category = "SUPPLY_CHAIN"
+	InjectionAttack     Category = "INJECTION_ATTACK"
+	SecretsExposure     Category = "SECRETS_EXPOSURE"
+	AccessControl       Category = "ACCESS_CONTROL"
+	PrivilegeEscalation Category = "PRIVILEGE_ESCALATION"
+	DataExposure        Category = "DATA_EXPOSURE"
 )
 
 // Finding represents a detected security issue
