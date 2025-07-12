@@ -1,3 +1,5 @@
+<img width="945" height="299" alt="flowlytgh" src="https://github.com/user-attachments/assets/a994d9b6-be4c-41d0-a3e8-adda9d72caaa" />
+
 # Flowlyt - Multi-Platform CI/CD Security Analyzer
 
 Flowlyt is a comprehensive security analyzer that scans CI/CD workflows to detect malicious patterns, misconfigurations, and secrets exposure. It provides a scalable and flexible approach to enforcing secure CI/CD practices across multiple platforms including GitHub Actions and GitLab CI/CD, with user-configurable rules, custom policies, and intelligent false positive management.
@@ -575,3 +577,13 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
   <br>
   <a href="https://github.com/harekrishnarai/flowlyt">⭐ Star us on GitHub</a>
 </div>
+
+## Contributors
+Thanks to all the people who already contributed!   
+[Hare Krishna Rai](https://www.linkedin.com/in/harekrishnarai/)  
+[Gaurav Joshi](https://www.linkedin.com/in/gauravjoshii/)  
+[Chanchal Kalnarayan](https://www.linkedin.com/in/ckalnarayan) 
+
+<a href="https://github.com/harekrishnarai/flowlyt/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=harekrishnarai/flowlyt" />
+</a>
