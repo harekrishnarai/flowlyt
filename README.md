@@ -582,7 +582,7 @@ This project is licensed under the MIT License - see the [LICENSE](./LICENSE) fi
 Thanks to all the people who already contributed!   
 [Prashant Venkatesh](https://www.linkedin.com/in/prashant-venkatesh-99018999/)    
 [Nandan Gupta](https://www.linkedin.com/in/nandan-gupta-698aa11b)  
-[Mohd. Arif](https://www.linkedin.com/in/mohd--arif/)
+[Mohd. Arif](https://www.linkedin.com/in/mohd--arif/) 
 [Hare Krishna Rai](https://www.linkedin.com/in/harekrishnarai/)  
 [Gaurav Joshi](https://www.linkedin.com/in/gauravjoshii/)  
 [Chanchal Kalnarayan](https://www.linkedin.com/in/ckalnarayan) 
