@@ -13,12 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4 on 2025-08-06
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@19bb51245e9c80abacb2e91cc42b33fa478b8639 # v4 on 2025-08-06
         with:
           go-version: '1.23'
 
@@ -38,7 +38,7 @@ jobs:
           sha256sum flowlyt-* > checksums.txt
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@26994186c0ac3ef5cae75ac16aa32e8153525f77 # v1 on 2025-08-06
         with:
           files: |
             flowlyt-linux-amd64
