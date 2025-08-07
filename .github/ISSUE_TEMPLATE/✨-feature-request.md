@@ -38,7 +38,7 @@ Have you tried any workarounds or existing features? Why are they not sufficient
 ## 💻 Environment (If Relevant)
 | Item              | Value                       |
 |-------------------|-----------------------------|
-| Flowlyt Version   | e.g., `v0.3.1`              |
+| Flowlyt Version   | e.g., `v0.0.1`              |
 | CI/CD Environment | e.g., `GitHub Actions`, `GitLab`, `Jenkins` |
 | OS / Shell        | e.g., `macOS`, `Ubuntu`, `bash`, `zsh`   |
 

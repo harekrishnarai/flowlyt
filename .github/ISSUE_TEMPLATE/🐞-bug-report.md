@@ -29,7 +29,7 @@ List the steps to reproduce the issue:
 
 | Item              | Value                       |
 |-------------------|-----------------------------|
-| Flowlyt Version   | e.g., `v0.3.1`              |
+| Flowlyt Version   | e.g., `v0.0.1`              |
 | OS / Distro       | e.g., `Ubuntu 22.04` / `macOS 14` |
 | Go Version        | e.g., `go1.21.0`            |
 | CI/CD Platform    | e.g., `GitHub Actions`, `GitLab CI`, `Jenkins`, `Local` |

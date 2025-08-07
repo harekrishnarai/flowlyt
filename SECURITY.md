@@ -15,7 +15,7 @@ I'll do my best to respond promptly and work with you to address the issue.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.0   | :white_check_mark: |
+| 0.0.1   | :white_check_mark: |
 
 ## Security Best Practices
 
