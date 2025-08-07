@@ -18,7 +18,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-var version = "0.0.2"
+var version = "0.0.3"
 
 func main() {
 	outputFormat := "cli"
