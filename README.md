@@ -70,7 +70,7 @@ go build -o flowlyt ./cmd/flowlyt
 
 ```bash
 docker pull harekrishnarai/flowlyt:latest
-docker run --rm -v $(pwd):/repo harekrishnarai/flowlyt scan --repo /repo
+docker run --rm -v $(pwd):/repo harekrishnarai/flowlyt --repo /repo
 ```
 
 ## ⚠️ Known Issues
