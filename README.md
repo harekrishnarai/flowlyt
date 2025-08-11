@@ -542,6 +542,7 @@ go build -o flowlyt ./cmd/flowlyt
 
 ## 🆘 Support
 
+- 💭 Want to lookup deeply the code? [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/harekrishnarai/flowlyt)
 - 🐛 **Bug Reports**: [GitHub Issues](https://github.com/harekrishnarai/flowlyt/issues)
 - 💡 **Feature Requests**: [GitHub Discussions](https://github.com/harekrishnarai/flowlyt/discussions)
 - 📚 **Documentation**: [Wiki](https://github.com/harekrishnarai/flowlyt/wiki)
