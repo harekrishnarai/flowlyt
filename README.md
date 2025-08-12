@@ -110,7 +110,7 @@ This issue has been reported to GitHub support and should be resolved server-sid
 
 ### Multi-Platform Support
 
-**GitHub Actions (default):**
+**GitHub (default):**
 ```bash
 flowlyt --repo ./myrepo
 flowlyt --platform=github --repo ./myrepo
