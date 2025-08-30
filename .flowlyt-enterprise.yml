@@ -1,0 +1,369 @@
+# Enterprise Flowlyt Configuration Example
+# This demonstrates advanced enterprise features for organization-wide security
+
+version: "1"
+
+# Organization-wide configuration
+organization:
+  name: "Enterprise Corp"
+  policy_repo: "enterprise-corp/security-policies"
+  default_policies:
+    - "enterprise-baseline"
+    - "pci-dss-compliance"
+    - "sox-compliance"
+  inheritance:
+    enabled: true
+    parent_configs:
+      - "https://raw.githubusercontent.com/enterprise-corp/security-policies/main/base.yml"
+    merge_strategy: "merge"
+  contacts:
+    security_team: "security@enterprise.com"
+    owners:
+      - "security-team"
+      - "platform-team"
+    escalation: "security-incidents@enterprise.com"
+
+# Compliance framework integration
+compliance:
+  enabled: true
+  frameworks:
+    - "pci-dss"
+    - "sox"
+    - "nist-800-53"
+  report_path: "./compliance-reports/"
+  custom_frameworks:
+    enterprise-baseline:
+      id: "enterprise-baseline"
+      name: "Enterprise Security Baseline"
+      version: "1.0"
+      description: "Minimum security requirements for all repositories"
+      controls:
+        - id: "ES-001"
+          title: "Action Pinning Required"
+          description: "All GitHub Actions must be pinned to specific SHA commits"
+          required_rules: ["UNPINNED_ACTION"]
+          severity: "HIGH"
+        - id: "ES-002"
+          title: "No Hardcoded Secrets"
+          description: "Secrets must not be hardcoded in workflows"
+          required_rules: ["HARDCODED_SECRET"]
+          severity: "CRITICAL"
+
+# Organization-wide security policies
+policies:
+  - id: "enterprise-baseline"
+    name: "Enterprise Security Baseline"
+    description: "Minimum security requirements for all repositories"
+    version: "1.0"
+    enabled: true
+    enforcement: "block"
+    scope:
+      organizations: ["enterprise-corp"]
+      file_patterns: [".github/workflows/**"]
+    rules:
+      - rule_id: "UNPINNED_ACTION"
+        enforcement: "block"
+        severity: "HIGH"
+      - rule_id: "HARDCODED_SECRET"
+        enforcement: "block"
+        severity: "CRITICAL"
+      - rule_id: "BROAD_PERMISSIONS"
+        enforcement: "error"
+        severity: "HIGH"
+    exceptions:
+      - id: "demo-repos-exception"
+        description: "Demo repositories can use unpinned actions"
+        rule_id: "UNPINNED_ACTION"
+        scope:
+          repositories: ["*/demo-*", "*/example-*"]
+        justification: "Demo repositories are not production critical"
+        approver: "security-team"
+        expiry_date: "2026-01-01T00:00:00Z"
+        ticket_url: "https://jira.enterprise.com/SEC-123"
+    metadata:
+      owner: "Security Team"
+      contact: "security@enterprise.com"
+      created: "2025-01-01T00:00:00Z"
+      updated: "2025-08-30T00:00:00Z"
+      tags: ["baseline", "required"]
+    compliance: ["pci-dss", "sox"]
+
+  - id: "production-strict"
+    name: "Production Environment Strict Policy"
+    description: "Stricter requirements for production deployments"
+    version: "1.0"
+    enabled: true
+    enforcement: "block"
+    scope:
+      environments: ["production", "prod"]
+      branches: ["main", "master", "release/*"]
+    rules:
+      - rule_id: "UNPINNED_ACTION"
+        enforcement: "block"
+      - rule_id: "CONTINUE_ON_ERROR_CRITICAL_JOB"
+        enforcement: "block"
+      - rule_id: "INSECURE_PULL_REQUEST_TARGET"
+        enforcement: "block"
+    metadata:
+      owner: "Platform Team"
+      contact: "platform@enterprise.com"
+      created: "2025-01-01T00:00:00Z"
+      updated: "2025-08-30T00:00:00Z"
+      tags: ["production", "strict"]
+
+# Rule templates for reusable configurations
+templates:
+  - id: "custom-secret-detection"
+    name: "Custom Secret Detection Template"
+    description: "Template for detecting organization-specific secrets"
+    category: "SECRET_EXPOSURE"
+    severity: "CRITICAL"
+    parameters:
+      secret_pattern:
+        type: "string"
+        description: "Regex pattern for detecting secrets"
+        required: true
+        validation: "^[\\w\\-\\[\\]\\(\\)\\|\\\\\\^\\$\\.\\*\\+\\?\\{\\}]+$"
+      secret_name:
+        type: "string"
+        description: "Human-readable name for the secret type"
+        required: true
+      remediation_url:
+        type: "string" 
+        description: "URL to remediation documentation"
+        default: "https://security.enterprise.com/secrets"
+    base_rule:
+      id: "CUSTOM_SECRET_{{secret_name}}"
+      name: "{{secret_name}} Detection"
+      description: "Detects {{secret_name}} in workflow files"
+      severity: "CRITICAL"
+      category: "SECRET_EXPOSURE"
+      type: "regex"
+      pattern: "{{secret_pattern}}"
+      target:
+        commands: true
+        actions: false
+        environment: true
+        permissions: false
+        events: false
+      remediation: "Remove {{secret_name}} and use GitHub secrets instead. See: {{remediation_url}}"
+    examples:
+      - name: "AWS Access Key Detection"
+        description: "Detect AWS access keys in workflows"
+        parameters:
+          secret_pattern: "AKIA[0-9A-Z]{16}"
+          secret_name: "AWS Access Key"
+          remediation_url: "https://docs.aws.amazon.com/security/"
+        expected: "Detects AWS access keys in environment variables and commands"
+
+  - id: "custom-action-allowlist"
+    name: "Organization Action Allowlist Template"
+    description: "Template for enforcing allowed GitHub Actions"
+    category: "SUPPLY_CHAIN"
+    severity: "HIGH"
+    parameters:
+      allowed_orgs:
+        type: "array"
+        description: "List of allowed organization names"
+        default: ["actions", "github"]
+        required: true
+      additional_actions:
+        type: "array"
+        description: "Additional allowed action names"
+        default: []
+        required: false
+    base_rule:
+      id: "CUSTOM_ACTION_ALLOWLIST"
+      name: "Organization Action Allowlist"
+      description: "Ensures only approved GitHub Actions are used"
+      severity: "HIGH"
+      category: "SUPPLY_CHAIN"
+      type: "regex"
+      pattern: "uses:\\s*(?!(?:{{allowed_orgs}})/).*"
+      target:
+        commands: false
+        actions: true
+        environment: false
+        permissions: false
+        events: false
+      remediation: "Use only approved GitHub Actions from: {{allowed_orgs}}"
+
+# Enhanced rule configuration
+rules:
+  # Enable specific rules (if empty, all rules are enabled)
+  enabled: []
+  
+  # Disable specific rules
+  disabled: []
+  
+  # Custom user-defined rules with templates
+  custom_rules:
+    # Instantiate templates with specific parameters
+    - id: "ENTERPRISE_AWS_KEY"
+      name: "Enterprise AWS Access Key Detection"
+      description: "Detects AWS access keys specific to Enterprise Corp"
+      severity: "CRITICAL"
+      category: "SECRET_EXPOSURE"
+      type: "regex"
+      pattern: "(?i)(aws[_-]?access[_-]?key|aws[_-]?secret)[\\s]*[=:][\\s]*['\"]?AKIA[0-9A-Z]{16}['\"]?"
+      target:
+        commands: true
+        actions: false
+        environment: true
+        permissions: false
+        events: false
+      remediation: "Remove AWS access key and use GitHub secrets. See: https://security.enterprise.com/aws-secrets"
+    
+    # Custom Docker security rule
+    - id: "ENTERPRISE_DOCKER_SECURITY"
+      name: "Enterprise Docker Security"
+      description: "Ensures Docker containers follow enterprise security standards"
+      severity: "HIGH"
+      category: "MALICIOUS_PATTERN"
+      type: "regex"
+      patterns:
+        - "docker run.*--privileged"
+        - "docker.*--cap-add.*SYS_ADMIN"
+        - "docker.*--security-opt.*seccomp=unconfined"
+        - "docker.*--user.*root"
+        - "FROM.*:latest"
+      target:
+        commands: true
+        actions: false
+        environment: false
+        permissions: false
+        events: false
+      remediation: "Follow enterprise Docker security guidelines: https://security.enterprise.com/docker"
+
+  # Enhanced false positive configuration with context awareness
+  false_positives:
+    # Global ignore patterns (applied to all rules)
+    global:
+      patterns:
+        - ".*example.*"
+        - ".*test.*"
+        - ".*demo.*"
+        - ".*/templates/.*"
+      strings:
+        - "placeholder"
+        - "dummy"
+        - "sample"
+        - "example"
+        - "template"
+        - "TODO"
+        - "FIXME"
+    
+    # Secret-specific ignores with enhanced context
+    secrets:
+      patterns:
+        - ".*_test$"
+        - ".*_example$"
+        - ".*_template$"
+        - ".*/test/.*"
+        - ".*/tests/.*"
+        - ".*/examples/.*"
+      strings:
+        - "YOUR_SECRET_HERE"
+        - "your-secret-here"
+        - "changeme"
+        - "change-me"
+        - "XXXXXX"
+        - "xxxxxx"
+        - "000000"
+        - "111111"
+        - "password"
+        - "secret"
+        - "token"
+        - "key"
+        - "admin"
+        - "user"
+        - "default"
+        - "localhost"
+        - "127.0.0.1"
+        - "0.0.0.0"
+        - "::1"
+        - "example.com"
+        - "test.com"
+      contexts:
+        - "uses:.*@[a-f0-9]{40}"   # Action SHAs
+        - "uses:.*@v\\d+"          # Version tags
+        - "\\$\\{\\{ secrets\\."   # Secret references
+        - "\\$\\{\\{ env\\."       # Env references
+        - "\\$\\{\\{ inputs\\."    # Input references
+        - "\\$\\{\\{ vars\\."      # Variable references
+        - "echo ['\"]\\$\\{"       # Echo statements with variables
+        - "#.*"                    # Comments
+    
+    # Action-specific ignores with enhanced org trust
+    actions:
+      actions: 
+        - "actions/checkout@v4"    # Specific trusted versions
+        - "actions/setup-node@v4"
+        - "actions/setup-python@v4"
+      orgs:        # Trusted organizations
+        - "actions"
+        - "github"
+        - "enterprise-corp"        # Internal organization
+        - "hashicorp"              # Trusted third-party
+        - "docker"                 # Trusted third-party
+    
+    # Enhanced file patterns with environment awareness
+    files:
+      - "test/**"
+      - "tests/**"
+      - "examples/**"
+      - "docs/**"
+      - "*.md"
+      - ".github/workflows/test-*"
+      - ".github/workflows/demo-*"
+      - ".github/workflows/example-*"
+      - "templates/**"
+      - "samples/**"
+    
+    # Rule-specific ignore patterns with context
+    rules:
+      HARDCODED_SECRET:
+        patterns:
+          - ".*_test\\.yml$"
+          - ".*_example\\.yml$"
+          - ".*/test/.*"
+        strings:
+          - "fake-token"
+          - "test-secret"
+          - "example-key"
+        files:
+          - "test/**"
+          - "examples/**"
+          - "docs/**"
+      UNPINNED_ACTION:
+        actions:
+          # Allow specific version tags for highly trusted actions
+          - "actions/checkout@v4"
+          - "actions/setup-node@v4"
+          - "actions/setup-python@v4"
+        patterns:
+          - ".*/demo/.*"         # Demo workflows can be less strict
+          - ".*/examples/.*"     # Example workflows
+      BROAD_PERMISSIONS:
+        files:
+          - ".github/workflows/release.yml"    # Release workflows may need broad permissions
+          - ".github/workflows/deploy-*.yml"   # Deploy workflows
+        patterns:
+          - ".*release.*"
+          - ".*deploy.*"
+
+# Enhanced output configuration
+output:
+  format: "cli"  # cli, json, sarif, junit
+  file: ""       # Output file (empty for stdout)
+  min_severity: "LOW"  # Minimum severity to report
+  show_remediation: true
+  template: ""   # Custom output template path
+  fields:
+    line_number: true
+    evidence: true
+    remediation: true
+    category: true
+    policy_info: true      # Show policy violation information
+    compliance_info: true  # Show compliance framework information
+    exception_info: true   # Show if finding has an exception

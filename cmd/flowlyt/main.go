@@ -131,6 +131,22 @@ func main() {
 						Name:  "enable-vuln-intel",
 						Usage: "Enable vulnerability intelligence from OSV.dev (experimental)",
 					},
+					&cli.BoolFlag{
+						Name:  "enable-policy-enforcement",
+						Usage: "Enable advanced policy enforcement and compliance checking",
+					},
+					&cli.StringFlag{
+						Name:  "policy-config",
+						Usage: "Path to enterprise policy configuration file",
+					},
+					&cli.StringFlag{
+						Name:  "compliance-frameworks",
+						Usage: "Comma-separated list of compliance frameworks to evaluate (pci-dss,sox,nist)",
+					},
+					&cli.BoolFlag{
+						Name:  "policy-report",
+						Usage: "Generate detailed policy compliance report",
+					},
 				},
 				Action: scanAction,
 			},

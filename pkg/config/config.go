@@ -14,9 +14,13 @@ import (
 
 // Config represents the complete Flowlyt configuration
 type Config struct {
-	Version string `yaml:"version" json:"version"`
-	Rules   Rules  `yaml:"rules" json:"rules"`
-	Output  Output `yaml:"output" json:"output"`
+	Version     string      `yaml:"version" json:"version"`
+	Rules       Rules       `yaml:"rules" json:"rules"`
+	Output      Output      `yaml:"output" json:"output"`
+	Policies    []Policy    `yaml:"policies,omitempty" json:"policies,omitempty"`
+	Templates   []RuleTemplate `yaml:"templates,omitempty" json:"templates,omitempty"`
+	Compliance  ComplianceConfig `yaml:"compliance,omitempty" json:"compliance,omitempty"`
+	Organization OrgConfig  `yaml:"organization,omitempty" json:"organization,omitempty"`
 }
 
 // Rules configuration for rule management
@@ -95,6 +99,37 @@ type Output struct {
 	ShowRemediation bool            `yaml:"show_remediation" json:"show_remediation"`
 	Template        string          `yaml:"template,omitempty" json:"template,omitempty"`
 	Fields          map[string]bool `yaml:"fields,omitempty" json:"fields,omitempty"`
+}
+
+// ComplianceConfig configures compliance framework integration
+type ComplianceConfig struct {
+	Enabled     bool                           `yaml:"enabled" json:"enabled"`
+	Frameworks  []string                       `yaml:"frameworks" json:"frameworks"`
+	ReportPath  string                         `yaml:"report_path,omitempty" json:"report_path,omitempty"`
+	CustomFrameworks map[string]ComplianceFramework `yaml:"custom_frameworks,omitempty" json:"custom_frameworks,omitempty"`
+}
+
+// OrgConfig configures organization-wide settings
+type OrgConfig struct {
+	Name            string            `yaml:"name" json:"name"`
+	PolicyRepo      string            `yaml:"policy_repo,omitempty" json:"policy_repo,omitempty"`
+	DefaultPolicies []string          `yaml:"default_policies" json:"default_policies"`
+	Inheritance     InheritanceConfig `yaml:"inheritance" json:"inheritance"`
+	Contacts        ContactConfig     `yaml:"contacts" json:"contacts"`
+}
+
+// InheritanceConfig configures policy inheritance
+type InheritanceConfig struct {
+	Enabled        bool     `yaml:"enabled" json:"enabled"`
+	ParentConfigs  []string `yaml:"parent_configs" json:"parent_configs"`
+	MergeStrategy  string   `yaml:"merge_strategy" json:"merge_strategy"` // "override", "merge", "append"
+}
+
+// ContactConfig configures organizational contacts
+type ContactConfig struct {
+	SecurityTeam string   `yaml:"security_team,omitempty" json:"security_team,omitempty"`
+	Owners       []string `yaml:"owners" json:"owners"`
+	Escalation   string   `yaml:"escalation,omitempty" json:"escalation,omitempty"`
 }
 
 // DefaultConfig returns a default configuration
