@@ -27,6 +27,7 @@ const (
 	OutputFormatCLI      = "cli"
 	OutputFormatJSON     = "json"
 	OutputFormatMarkdown = "markdown"
+	OutputFormatSARIF    = "sarif"
 
 	// Configuration file names
 	ConfigFileFlowlytYML  = ".flowlyt.yml"
@@ -115,6 +116,7 @@ var SupportedOutputFormats = []string{
 	OutputFormatCLI,
 	OutputFormatJSON,
 	OutputFormatMarkdown,
+	OutputFormatSARIF,
 }
 
 // IsRunningInCI detects if the application is running in a CI environment

@@ -689,31 +689,31 @@ func shouldIncludeSeverity(findingSeverity, minSeverity string) bool {
 func analyzeOrganization(c *cli.Context, outputFormat, outputFile string) error {
 	// Initialize validator and validate inputs
 	validator := validation.NewValidator()
-	
+
 	// Validate organization name
 	orgName := c.String("organization")
 	if orgName == "" {
 		return fmt.Errorf("organization name is required")
 	}
-	
+
 	// Validate other inputs
 	if err := validator.ValidateOutputFormat(outputFormat); err != nil {
 		return err
 	}
-	
+
 	if err := validator.ValidateOutputFile(outputFile); err != nil {
 		return err
 	}
-	
+
 	// Load configuration
 	cfg, err := loadAndOverrideConfig(c, outputFormat, outputFile)
 	if err != nil {
 		return err
 	}
-	
+
 	// Initialize GitHub client
 	client := github.NewClient()
-	
+
 	// Create organization analyzer
 	analyzer := organization.NewAnalyzer(
 		client,
@@ -721,7 +721,7 @@ func analyzeOrganization(c *cli.Context, outputFormat, outputFile string) error 
 		c.Int("max-workers"),
 		!c.Bool("no-progress"),
 	)
-	
+
 	// Create repository filter
 	repoFilter := organization.RepositoryFilter{
 		IncludeForks:    c.Bool("include-forks"),
@@ -731,14 +731,14 @@ func analyzeOrganization(c *cli.Context, outputFormat, outputFile string) error 
 		MaxRepos:        c.Int("max-repos"),
 		NameFilter:      c.String("repo-filter"),
 	}
-	
+
 	// Analyze the organization
 	ctx := context.Background()
 	orgResult, err := analyzer.AnalyzeOrganization(ctx, orgName, repoFilter)
 	if err != nil {
 		return fmt.Errorf("failed to analyze organization: %w", err)
 	}
-	
+
 	// Generate report
 	return generateOrganizationReport(orgResult, outputFormat, outputFile, c.Bool("summary-only"))
 }
@@ -747,33 +747,33 @@ func analyzeOrganization(c *cli.Context, outputFormat, outputFile string) error 
 func generateOrganizationReport(result *organization.OrganizationResult, outputFormat, outputFile string, summaryOnly bool) error {
 	// TODO: Implement proper organization reporting
 	// For now, just print basic information
-	
+
 	fmt.Printf("\n🏢 Organization Analysis Report: %s\n", result.Organization)
 	fmt.Printf("📊 Scan completed in: %v\n", result.Duration)
 	fmt.Printf("📦 Repositories analyzed: %d/%d\n", result.AnalyzedRepositories, result.TotalRepositories)
-	
+
 	if result.SkippedRepositories > 0 {
 		fmt.Printf("⚠️  Repositories skipped: %d\n", result.SkippedRepositories)
 	}
-	
+
 	// Print summary statistics
 	fmt.Printf("\n📈 Summary:\n")
 	fmt.Printf("  Total findings: %d\n", result.Summary.TotalFindings)
-	
+
 	if len(result.Summary.FindingsBySeverity) > 0 {
 		fmt.Printf("  Findings by severity:\n")
 		for severity, count := range result.Summary.FindingsBySeverity {
 			fmt.Printf("    %s: %d\n", severity, count)
 		}
 	}
-	
+
 	if len(result.Summary.RepositoriesByRisk) > 0 {
 		fmt.Printf("  Repositories by risk:\n")
 		for risk, count := range result.Summary.RepositoriesByRisk {
 			fmt.Printf("    %s: %d\n", risk, count)
 		}
 	}
-	
+
 	// Show individual repository results if not summary-only
 	if !summaryOnly && len(result.RepositoryResults) > 0 {
 		fmt.Printf("\n📋 Repository Details:\n")
@@ -781,14 +781,14 @@ func generateOrganizationReport(result *organization.OrganizationResult, outputF
 			if repoResult.Error != nil {
 				fmt.Printf("  ❌ %s: %v\n", repoResult.Repository.FullName, repoResult.Error)
 			} else {
-				fmt.Printf("  ✅ %s: %d findings (%v)\n", 
-					repoResult.Repository.FullName, 
-					len(repoResult.Findings), 
+				fmt.Printf("  ✅ %s: %d findings (%v)\n",
+					repoResult.Repository.FullName,
+					len(repoResult.Findings),
 					repoResult.Duration)
 			}
 		}
 	}
-	
+
 	fmt.Printf("\n✨ Organization analysis complete!\n")
 	return nil
 }

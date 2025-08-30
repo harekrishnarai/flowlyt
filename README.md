@@ -35,7 +35,8 @@ Flowlyt is a comprehensive security analyzer that scans CI/CD workflows to detec
 - **Policy Enforcement**: Define custom policies in Rego (Open Policy Agent)
 
 ### 📊 **Flexible Output & Reporting**
-- **Multiple Output Formats**: CLI, JSON, and Markdown reporting
+- **Multiple Output Formats**: CLI, JSON, Markdown, and SARIF reporting
+- **SARIF Integration**: Industry-standard format for GitHub Security Tab, IDEs, and enterprise tools
 - **Severity-Based Filtering**: Filter results by minimum severity level
 - **Detailed Findings**: Comprehensive information including file paths, line numbers, and remediation advice
 - **Integration-Ready**: Perfect for CI/CD pipelines and security workflows
@@ -597,7 +598,7 @@ Found 6 issues (2 Critical, 3 High, 1 Medium, 0 Low, 0 Info)
 ## 🚀 Roadmap
 
 
-- [ ] **SARIF Output**: Support for SARIF format for better tool integration
+- [x] **SARIF Output**: Support for SARIF format for better tool integration
 - [ ] **Workflow Visualization**: Visual workflow security analysis
 - [ ] **Plugin System**: Extensible plugin architecture
 - [ ] **IDE Integration**: VS Code extension for real-time analysis

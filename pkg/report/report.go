@@ -62,6 +62,8 @@ func (g *Generator) Generate() error {
 		return g.generateJSONReport()
 	case "markdown":
 		return g.generateMarkdownReport()
+	case "sarif":
+		return g.generateSARIFReport()
 	default:
 		return fmt.Errorf("unsupported report format: %s", g.Format)
 	}

@@ -375,15 +375,15 @@ func (c *Client) DiscoverOrganizationRepositories(orgName string, filter interfa
 			PerPage: 100, // Maximum per page
 		},
 	}
-	
+
 	var allRepos []RepositoryInfo
-	
+
 	for {
 		repos, resp, err := c.client.Repositories.ListByOrg(c.ctx, orgName, opt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list organization repositories: %w", err)
 		}
-		
+
 		// Convert GitHub repositories to our format
 		for _, repo := range repos {
 			repoInfo := RepositoryInfo{
@@ -398,16 +398,16 @@ func (c *Client) DiscoverOrganizationRepositories(orgName string, filter interfa
 				Description: repo.GetDescription(),
 				UpdatedAt:   repo.GetUpdatedAt().Format(time.RFC3339),
 			}
-			
+
 			allRepos = append(allRepos, repoInfo)
 		}
-		
+
 		if resp.NextPage == 0 {
 			break
 		}
 		opt.Page = resp.NextPage
 	}
-	
+
 	return allRepos, nil
 }
 
