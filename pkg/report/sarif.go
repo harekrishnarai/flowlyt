@@ -318,6 +318,9 @@ func (g *Generator) createSARIFResult(finding rules.Finding, ruleIndex int) SARI
 	if finding.GitHubURL != "" {
 		properties["githubUrl"] = finding.GitHubURL
 	}
+	if finding.GitLabURL != "" {
+		properties["gitlabUrl"] = finding.GitLabURL
+	}
 
 	return SARIFResult{
 		RuleID:              finding.RuleID,

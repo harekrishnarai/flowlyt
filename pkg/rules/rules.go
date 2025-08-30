@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/harekrishnarai/flowlyt/pkg/constants"
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 )
@@ -52,6 +53,15 @@ func (re *RuleEngine) ExecuteRules(workflow parser.WorkflowFile, rules []Rule) [
 	return allFindings
 }
 
+// Platform represents the CI/CD platform a rule applies to
+type Platform string
+
+const (
+	PlatformAll    Platform = "ALL"    // Rule applies to all platforms
+	PlatformGitHub Platform = "GITHUB" // Rule applies only to GitHub Actions
+	PlatformGitLab Platform = "GITLAB" // Rule applies only to GitLab CI
+)
+
 // Rule represents a security rule to check in a workflow
 type Rule struct {
 	ID          string
@@ -59,6 +69,7 @@ type Rule struct {
 	Description string
 	Severity    Severity
 	Category    Category
+	Platform    Platform // Platform compatibility for this rule
 	Check       func(workflow parser.WorkflowFile) []Finding
 }
 
@@ -104,6 +115,7 @@ type Finding struct {
 	Remediation string
 	LineNumber  int    // Line number where the issue was found
 	GitHubURL   string // Direct GitHub URL to the line (for remote repositories)
+	GitLabURL   string // Direct GitLab URL to the line (for remote repositories)
 }
 
 // StandardRules returns the list of built-in security rules
@@ -115,6 +127,7 @@ func StandardRules() []Rule {
 			Description: "Detects curl or wget piped to bash/sh/zsh, which can execute malicious code",
 			Severity:    High,
 			Category:    MaliciousPattern,
+			Platform:    PlatformAll, // Shell commands apply to all platforms
 			Check:       checkCurlPipeToShell,
 		},
 		{
@@ -123,6 +136,7 @@ func StandardRules() []Rule {
 			Description: "Detects execution of base64-decoded data, which can hide malicious code",
 			Severity:    Critical,
 			Category:    ShellObfuscation,
+			Platform:    PlatformAll, // Shell commands apply to all platforms
 			Check:       checkBase64DecodeExecution,
 		},
 		{
@@ -131,6 +145,7 @@ func StandardRules() []Rule {
 			Description: "Detects potential exfiltration of secrets or sensitive data to external servers",
 			Severity:    Critical,
 			Category:    MaliciousPattern,
+			Platform:    PlatformAll, // Data exfiltration applies to all platforms
 			Check:       checkDataExfiltration,
 		},
 		{
@@ -139,6 +154,7 @@ func StandardRules() []Rule {
 			Description: "Detects insecure usage of pull_request_target event with code checkout",
 			Severity:    Critical,
 			Category:    Misconfiguration,
+			Platform:    PlatformGitHub, // GitHub Actions specific event
 			Check:       checkInsecurePullRequestTarget,
 		},
 		{
@@ -147,6 +163,7 @@ func StandardRules() []Rule {
 			Description: "Detects usage of GitHub Actions without pinned versions (uses latest or branch)",
 			Severity:    Medium,
 			Category:    Misconfiguration,
+			Platform:    PlatformGitHub, // GitHub Actions specific (uses: syntax)
 			Check:       checkUnpinnedAction,
 		},
 		{
@@ -155,6 +172,7 @@ func StandardRules() []Rule {
 			Description: "Detects potential secrets hardcoded in workflow files",
 			Severity:    Critical,
 			Category:    SecretExposure,
+			Platform:    PlatformAll, // Secrets apply to all platforms
 			Check:       checkHardcodedSecrets,
 		},
 		{
@@ -163,6 +181,7 @@ func StandardRules() []Rule {
 			Description: "Detects critical jobs with continue-on-error set to true",
 			Severity:    Medium,
 			Category:    Misconfiguration,
+			Platform:    PlatformGitHub, // GitHub Actions specific syntax
 			Check:       checkContinueOnErrorCriticalJob,
 		},
 		{
@@ -171,8 +190,269 @@ func StandardRules() []Rule {
 			Description: "Workflow uses overly broad permissions that grant unnecessary access",
 			Severity:    Critical,
 			Category:    Misconfiguration,
+			Platform:    PlatformGitHub, // GitHub Actions specific permissions model
 			Check:       checkBroadPermissions,
 		},
+		{
+			ID:          "INJECTION_VULNERABILITY",
+			Name:        "Code Injection from User Input",
+			Description: "Detects injection vulnerabilities where user-controlled input is directly interpolated into commands",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll, // Injection applies to all platforms
+			Check:       checkInjectionVulnerabilities,
+		},
+		{
+			ID:          "UNTRUSTED_CHECKOUT_EXECUTION",
+			Name:        "Code Execution After Untrusted Checkout",
+			Description: "Detects execution of commands after checking out untrusted code that could contain malicious scripts",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub, // GitHub Actions specific checkout patterns
+			Check:       checkUntrustedCheckoutExecution,
+		},
+		{
+			ID:          "SHELL_INJECTION",
+			Name:        "Shell Injection Vulnerability",
+			Description: "Detects shell injection vulnerabilities where user input is executed directly in shell context",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll, // Shell injection applies to all platforms
+			Check:       checkShellInjectionVulnerabilities,
+		},
+		{
+			ID:          "SCRIPT_INJECTION",
+			Name:        "Script Injection Vulnerability",
+			Description: "Detects script injection vulnerabilities in github-script actions and PowerShell scripts",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub, // GitHub Actions specific (github-script)
+			Check:       checkScriptInjectionVulnerabilities,
+		},
+		{
+			ID:          "SELF_HOSTED_RUNNER_SECURITY",
+			Name:        "Self-Hosted Runner Security Risk",
+			Description: "Detects security risks with self-hosted runners, especially in pull request workflows",
+			Severity:    Critical,
+			Category:    AccessControl,
+			Platform:    PlatformGitHub, // GitHub Actions specific runners
+			Check:       checkSelfHostedRunnerSecurity,
+		},
+		{
+			ID:          "KNOWN_VULNERABLE_ACTION",
+			Name:        "Known Vulnerable Action",
+			Description: "Detects usage of GitHub Actions with known security vulnerabilities",
+			Severity:    Critical,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub, // GitHub Actions specific
+			Check:       checkKnownVulnerableActions,
+		},
+		{
+			ID:          "UNPINNABLE_ACTION",
+			Name:        "Unpinnable Action",
+			Description: "Detects actions that cannot be pinned to specific versions",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub, // GitHub Actions specific
+			Check:       checkUnpinnableActions,
+		},
+		{
+			ID:          "TYPOSQUATTING_ACTION",
+			Name:        "Potential Typosquatting Action",
+			Description: "Detects action names that might be typosquatting attempts",
+			Severity:    High,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub, // GitHub Actions specific
+			Check:       checkTyposquattingActions,
+		},
+		{
+			ID:          "UNTRUSTED_ACTION_SOURCE",
+			Name:        "Untrusted Action Source",
+			Description: "Detects actions from untrusted or unknown publishers",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub, // GitHub Actions specific
+			Check:       checkUntrustedActionSources,
+		},
+		{
+			ID:          "DEPRECATED_ACTION",
+			Name:        "Deprecated Action",
+			Description: "Detects usage of deprecated action versions",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub, // GitHub Actions specific
+			Check:       checkDeprecatedActions,
+		},
+		{
+			ID:          "DANGEROUS_WRITE_OPERATION",
+			Name:        "Dangerous Write Operation",
+			Description: "Detects dangerous write operations on $GITHUB_OUTPUT or $GITHUB_ENV that could lead to command injection",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub, // GitHub Actions specific environment variables
+			Check:       checkDangerousWriteOperations,
+		},
+		{
+			ID:          "LOCAL_ACTION_USAGE",
+			Name:        "Local Action Usage",
+			Description: "Detects usage of local actions which may pose security risks",
+			Severity:    Medium,
+			Category:    Misconfiguration,
+			Platform:    PlatformGitHub, // GitHub Actions specific
+			Check:       checkLocalActionUsage,
+		},
+		{
+			ID:          "UNSECURE_COMMANDS_ENABLED",
+			Name:        "Unsecure Commands Enabled",
+			Description: "Detects workflows with ACTIONS_ALLOW_UNSECURE_COMMANDS enabled, which is deprecated and dangerous",
+			Severity:    High,
+			Category:    Misconfiguration,
+			Platform:    PlatformGitHub, // GitHub Actions specific
+			Check:       checkUnsecureCommandsEnabled,
+		},
+		{
+			ID:          "SHELL_SCRIPT_ISSUES",
+			Name:        "Shell Script Security Issues",
+			Description: "Detects common shell script security issues in run commands using basic shellcheck-like analysis",
+			Severity:    Medium,
+			Category:    MaliciousPattern,
+			Platform:    PlatformAll, // Shell scripts apply to all platforms
+			Check:       checkShellScriptIssues,
+		},
+		{
+			ID:          "PR_TARGET_ABUSE",
+			Name:        "Pull Request Target Abuse",
+			Description: "Detects dangerous usage of pull_request_target trigger with write permissions",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub,
+			Check:       checkPRTargetAbuse,
+		},
+		{
+			ID:          "CREDENTIAL_EXFILTRATION",
+			Name:        "Credential Exfiltration",
+			Description: "Detects patterns that could lead to secret or credential theft",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub,
+			Check:       checkCredentialExfiltration,
+		},
+		{
+			ID:          "ARTIFACT_POISONING",
+			Name:        "Artifact Poisoning",
+			Description: "Detects potentially malicious artifact upload/download patterns",
+			Severity:    High,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkArtifactPoisoning,
+		},
+		{
+			ID:          "MATRIX_INJECTION",
+			Name:        "Matrix Strategy Injection",
+			Description: "Detects injection vulnerabilities through matrix strategy inputs",
+			Severity:    High,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub,
+			Check:       checkMatrixInjection,
+		},
+		{
+			ID:          "SERVICES_CREDENTIALS",
+			Name:        "Services Configuration Credentials",
+			Description: "Detects hardcoded credentials in services configuration",
+			Severity:    Critical,
+			Category:    SecretExposure,
+			Platform:    PlatformAll,
+			Check:       checkServicesCredentials,
+		},
+		{
+			ID:          "RUNNER_LABEL_VALIDATION",
+			Name:        "Runner Label Validation",
+			Description: "Validates GitHub-hosted and self-hosted runner labels in runs-on configuration",
+			Severity:    Medium,
+			Category:    Misconfiguration,
+			Platform:    PlatformGitHub,
+			Check:       checkRunnerLabels,
+		},
+		{
+			ID:          "BOT_IDENTITY_CHECK",
+			Name:        "Bot Identity Check",
+			Description: "Detects if statements based on bot identity that could be exploited",
+			Severity:    Medium,
+			Category:    AccessControl,
+			Platform:    PlatformGitHub,
+			Check:       checkBotIdentity,
+		},
+		{
+			ID:          "EXTERNAL_TRIGGER_DEBUG",
+			Name:        "External Trigger Debug",
+			Description: "Detects workflows that can be externally triggered with potential security risks",
+			Severity:    High,
+			Category:    AccessControl,
+			Platform:    PlatformAll,
+			Check:       checkExternalTrigger,
+		},
+		{
+			ID:          "REPO_JACKING_VULNERABILITY",
+			Name:        "Repository Jacking Vulnerability",
+			Description: "Verifies external actions point to valid GitHub users/organizations",
+			Severity:    High,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkRepoJacking,
+		},
+		{
+			ID:          "DEBUG_ARTIFACTS_UPLOAD",
+			Name:        "Debug Artifacts Upload",
+			Description: "Detects workflows that upload artifacts for debugging purposes",
+			Severity:    Info,
+			Category:    DataExposure,
+			Platform:    PlatformGitHub, // GitHub Actions artifacts
+			Check:       checkDebugArtifacts,
+		},
+		{
+			ID:          "DEBUG_JS_EXECUTION",
+			Name:        "Debug JavaScript Execution",
+			Description: "Detects workflows that execute system commands in JavaScript scripts",
+			Severity:    Medium,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll, // JavaScript execution applies to all platforms
+			Check:       checkDebugJsExecution,
+		},
+		{
+			ID:          "DEBUG_OIDC_ACTIONS",
+			Name:        "Debug OIDC Actions",
+			Description: "Detects workflows that use OIDC token authentication",
+			Severity:    Info,
+			Category:    AccessControl,
+			Platform:    PlatformGitHub, // GitHub OIDC tokens
+			Check:       checkDebugOidcActions,
+		},
+	}
+}
+
+// FilterRulesByPlatform filters rules based on target platform compatibility
+func FilterRulesByPlatform(rules []Rule, targetPlatform Platform) []Rule {
+	var filteredRules []Rule
+
+	for _, rule := range rules {
+		// Include rules that apply to all platforms or match the target platform
+		if rule.Platform == PlatformAll || rule.Platform == targetPlatform {
+			filteredRules = append(filteredRules, rule)
+		}
+	}
+
+	return filteredRules
+}
+
+// StringToPlatform converts platform string constants to Platform enum
+func StringToPlatform(platformStr string) Platform {
+	switch platformStr {
+	case constants.PlatformGitHub:
+		return PlatformGitHub
+	case constants.PlatformGitLab:
+		return PlatformGitLab
+	default:
+		return PlatformAll // Default to all if unknown
 	}
 }
 
@@ -1054,4 +1334,1462 @@ func findLineNumberWithMapper(workflow parser.WorkflowFile, key, value string) i
 	}
 
 	return 0
+}
+
+// CheckAllRules runs all security rule checks
+func CheckAllRules(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	// Injection vulnerabilities
+	findings = append(findings, CheckInjectionVulnerabilities(workflow)...)
+
+	// Shell injection vulnerabilities
+	findings = append(findings, CheckShellInjectionVulnerabilities(workflow)...)
+
+	// Supply chain vulnerabilities (includes advanced intelligence)
+	findings = append(findings, CheckSupplyChainVulnerabilities(workflow)...)
+
+	// Phase 3: Self-hosted runner security and advanced privilege analysis
+	findings = append(findings, CheckSelfHostedRunnerSecurity(workflow)...)
+	findings = append(findings, CheckAdvancedPrivilegeAnalysis(workflow)...)
+
+	return findings
+}
+
+// checkDangerousWriteOperations checks for dangerous write operations on GitHub environment variables
+func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Patterns that indicate dangerous writes to GitHub environment variables
+	dangerousPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`echo\s+.*>>\s*\$GITHUB_OUTPUT`),   // Direct echo to GITHUB_OUTPUT
+		regexp.MustCompile(`echo\s+.*>>\s*\$GITHUB_ENV`),      // Direct echo to GITHUB_ENV
+		regexp.MustCompile(`printf\s+.*>>\s*\$GITHUB_OUTPUT`), // Printf to GITHUB_OUTPUT
+		regexp.MustCompile(`printf\s+.*>>\s*\$GITHUB_ENV`),    // Printf to GITHUB_ENV
+		regexp.MustCompile(`>>\s*\$GITHUB_OUTPUT`),            // Any redirect to GITHUB_OUTPUT
+		regexp.MustCompile(`>>\s*\$GITHUB_ENV`),               // Any redirect to GITHUB_ENV
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for _, step := range job.Steps {
+			if step.Run == "" {
+				continue
+			}
+
+			for _, pattern := range dangerousPatterns {
+				if pattern.MatchString(step.Run) {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   "run",
+						Value: step.Run,
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "DANGEROUS_WRITE_OPERATION",
+						RuleName:    "Dangerous Write Operation",
+						Description: "Direct writes to $GITHUB_OUTPUT or $GITHUB_ENV can lead to command injection vulnerabilities",
+						Severity:    Critical,
+						Category:    InjectionAttack,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    step.Name,
+						Evidence:    strings.TrimSpace(step.Run),
+						LineNumber:  lineNumber,
+						Remediation: "Use GitHub's recommended secure methods: echo \"name=value\" >> $GITHUB_OUTPUT or use multiline values with EOF delimiters",
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkLocalActionUsage checks for usage of local actions which may pose security risks
+func checkLocalActionUsage(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for _, step := range job.Steps {
+			if step.Uses == "" {
+				continue
+			}
+
+			// Check for local action patterns (relative paths)
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") ||
+				(!strings.Contains(step.Uses, "/") && !strings.Contains(step.Uses, "@")) {
+
+				lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+					Key:   "uses",
+					Value: step.Uses,
+				})
+
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+
+				findings = append(findings, Finding{
+					RuleID:      "LOCAL_ACTION_USAGE",
+					RuleName:    "Local Action Usage",
+					Description: "Usage of local actions may pose security risks as they are not version-controlled externally",
+					Severity:    Medium,
+					Category:    Misconfiguration,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    step.Name,
+					Evidence:    fmt.Sprintf("uses: %s", step.Uses),
+					LineNumber:  lineNumber,
+					Remediation: "Consider using versioned actions from GitHub Marketplace or pin local actions to specific commits",
+				})
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkUnsecureCommandsEnabled checks for ACTIONS_ALLOW_UNSECURE_COMMANDS environment variable
+func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Check global env
+	for key, value := range workflow.Workflow.Env {
+		if strings.ToUpper(key) == "ACTIONS_ALLOW_UNSECURE_COMMANDS" {
+			if value == "true" || value == "1" {
+				lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+					Key:   key,
+					Value: value,
+				})
+
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+
+				findings = append(findings, Finding{
+					RuleID:      "UNSECURE_COMMANDS_ENABLED",
+					RuleName:    "Unsecure Commands Enabled",
+					Description: "ACTIONS_ALLOW_UNSECURE_COMMANDS is deprecated and enables dangerous workflow commands",
+					Severity:    High,
+					Category:    Misconfiguration,
+					FilePath:    workflow.Path,
+					JobName:     "",
+					StepName:    "",
+					Evidence:    fmt.Sprintf("%s: %s", key, value),
+					LineNumber:  lineNumber,
+					Remediation: "Remove ACTIONS_ALLOW_UNSECURE_COMMANDS and use secure alternatives for workflow commands",
+				})
+			}
+		}
+	}
+
+	// Check job-level env
+	for jobName, job := range workflow.Workflow.Jobs {
+		for key, value := range job.Env {
+			if strings.ToUpper(key) == "ACTIONS_ALLOW_UNSECURE_COMMANDS" {
+				if value == "true" || value == "1" {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   key,
+						Value: value,
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "UNSECURE_COMMANDS_ENABLED",
+						RuleName:    "Unsecure Commands Enabled",
+						Description: "ACTIONS_ALLOW_UNSECURE_COMMANDS is deprecated and enables dangerous workflow commands",
+						Severity:    High,
+						Category:    Misconfiguration,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    "",
+						Evidence:    fmt.Sprintf("%s: %s", key, value),
+						LineNumber:  lineNumber,
+						Remediation: "Remove ACTIONS_ALLOW_UNSECURE_COMMANDS and use secure alternatives for workflow commands",
+					})
+				}
+			}
+		}
+
+		// Check step-level env
+		for _, step := range job.Steps {
+			for key, value := range step.Env {
+				if strings.ToUpper(key) == "ACTIONS_ALLOW_UNSECURE_COMMANDS" {
+					if value == "true" || value == "1" {
+						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+							Key:   key,
+							Value: value,
+						})
+
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "UNSECURE_COMMANDS_ENABLED",
+							RuleName:    "Unsecure Commands Enabled",
+							Description: "ACTIONS_ALLOW_UNSECURE_COMMANDS is deprecated and enables dangerous workflow commands",
+							Severity:    High,
+							Category:    Misconfiguration,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    step.Name,
+							Evidence:    fmt.Sprintf("%s: %s", key, value),
+							LineNumber:  lineNumber,
+							Remediation: "Remove ACTIONS_ALLOW_UNSECURE_COMMANDS and use secure alternatives for workflow commands",
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkShellScriptIssues performs basic shellcheck-like analysis on run commands
+func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Common shell script security issues (shellcheck-like patterns)
+	shellIssues := []struct {
+		pattern     *regexp.Regexp
+		description string
+		remediation string
+		severity    Severity
+	}{
+		{
+			pattern:     regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*[^}]`), // Unquoted variables (simplified)
+			description: "Unquoted variable usage may lead to word splitting and pathname expansion",
+			remediation: "Quote variables: \"$VAR\" instead of $VAR",
+			severity:    Medium,
+		},
+		{
+			pattern:     regexp.MustCompile(`rm\s+-rf\s+/`), // Dangerous rm commands
+			description: "Dangerous rm -rf command targeting root directory",
+			remediation: "Avoid using rm -rf on absolute paths, especially root directory",
+			severity:    Critical,
+		},
+		{
+			pattern:     regexp.MustCompile(`eval\s+`), // Eval usage
+			description: "Use of eval can lead to code injection vulnerabilities",
+			remediation: "Avoid using eval; use safer alternatives for dynamic command execution",
+			severity:    High,
+		},
+		{
+			pattern:     regexp.MustCompile(`\|\s*(sh|bash|zsh)\s*$`), // Pipe to shell
+			description: "Piping to shell can execute arbitrary commands",
+			remediation: "Avoid piping untrusted input to shell interpreters",
+			severity:    High,
+		},
+		{
+			pattern:     regexp.MustCompile(`wget\s+[^|]*\s*\|\s*sudo`), // wget pipe to sudo
+			description: "Downloading and executing content with sudo privileges is dangerous",
+			remediation: "Download files first, verify their integrity, then execute with minimal privileges",
+			severity:    Critical,
+		},
+		{
+			pattern:     regexp.MustCompile(`curl\s+[^|]*\s*\|\s*sudo`), // curl pipe to sudo
+			description: "Downloading and executing content with sudo privileges is dangerous",
+			remediation: "Download files first, verify their integrity, then execute with minimal privileges",
+			severity:    Critical,
+		},
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for _, step := range job.Steps {
+			if step.Run == "" {
+				continue
+			}
+
+			for _, issue := range shellIssues {
+				if issue.pattern.MatchString(step.Run) {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   "run",
+						Value: step.Run,
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "SHELL_SCRIPT_ISSUES",
+						RuleName:    "Shell Script Security Issues",
+						Description: issue.description,
+						Severity:    issue.severity,
+						Category:    MaliciousPattern,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    step.Name,
+						Evidence:    strings.TrimSpace(step.Run),
+						LineNumber:  lineNumber,
+						Remediation: issue.remediation,
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkPRTargetAbuse checks for dangerous usage of pull_request_target trigger
+func checkPRTargetAbuse(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Check if pull_request_target is used (handle different On types)
+	hasPRTarget := false
+	switch on := workflow.Workflow.On.(type) {
+	case string:
+		hasPRTarget = on == "pull_request_target"
+	case map[string]interface{}:
+		_, hasPRTarget = on["pull_request_target"]
+	case []interface{}:
+		for _, event := range on {
+			if eventStr, ok := event.(string); ok && eventStr == "pull_request_target" {
+				hasPRTarget = true
+				break
+			}
+		}
+	}
+
+	if !hasPRTarget {
+		return findings // No pull_request_target trigger found
+	}
+
+	// Check for dangerous patterns with pull_request_target
+	for jobName, job := range workflow.Workflow.Jobs {
+		// Check for write permissions
+		if job.Permissions != nil {
+			if perms, ok := job.Permissions.(map[string]interface{}); ok {
+				for permission, levelInterface := range perms {
+					if level, ok := levelInterface.(string); ok {
+						if (permission == "contents" || permission == "actions" || permission == "packages") && level == "write" {
+							lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+								Key:   permission,
+								Value: level,
+							})
+
+							lineNumber := 0
+							if lineResult != nil {
+								lineNumber = lineResult.LineNumber
+							}
+
+							findings = append(findings, Finding{
+								RuleID:      "PR_TARGET_ABUSE",
+								RuleName:    "Pull Request Target Abuse",
+								Description: "pull_request_target with write permissions allows untrusted code to access secrets and write to repository",
+								Severity:    Critical,
+								Category:    AccessControl,
+								FilePath:    workflow.Path,
+								JobName:     jobName,
+								StepName:    "",
+								Evidence:    fmt.Sprintf("pull_request_target trigger with %s: %s permission", permission, level),
+								LineNumber:  lineNumber,
+								Remediation: "Use pull_request trigger instead, or implement proper security controls before accessing secrets",
+							})
+						}
+					}
+				}
+			}
+		}
+
+		// Check for secret usage in steps
+		for _, step := range job.Steps {
+			if step.With != nil {
+				for key, valueInterface := range step.With {
+					if value, ok := valueInterface.(string); ok {
+						if strings.Contains(value, "${{ secrets.") {
+							lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+								Key:   key,
+								Value: value,
+							})
+
+							lineNumber := 0
+							if lineResult != nil {
+								lineNumber = lineResult.LineNumber
+							}
+
+							findings = append(findings, Finding{
+								RuleID:      "PR_TARGET_ABUSE",
+								RuleName:    "Pull Request Target Abuse",
+								Description: "pull_request_target trigger with secret access allows untrusted pull requests to access sensitive data",
+								Severity:    Critical,
+								Category:    AccessControl,
+								FilePath:    workflow.Path,
+								JobName:     jobName,
+								StepName:    step.Name,
+								Evidence:    fmt.Sprintf("Secret access in pull_request_target: %s", value),
+								LineNumber:  lineNumber,
+								Remediation: "Use pull_request trigger or implement proper authorization checks before accessing secrets",
+							})
+						}
+					}
+				}
+			}
+
+			// Check for secret usage in environment variables
+			for envKey, envValue := range step.Env {
+				if strings.Contains(envValue, "${{ secrets.") {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   envKey,
+						Value: envValue,
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "PR_TARGET_ABUSE",
+						RuleName:    "Pull Request Target Abuse",
+						Description: "pull_request_target trigger with secret access in environment variables",
+						Severity:    Critical,
+						Category:    AccessControl,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    step.Name,
+						Evidence:    fmt.Sprintf("Secret in env var: %s = %s", envKey, envValue),
+						LineNumber:  lineNumber,
+						Remediation: "Use pull_request trigger or implement proper authorization checks before accessing secrets",
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkCredentialExfiltration checks for patterns that could lead to credential theft
+func checkCredentialExfiltration(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Patterns that could exfiltrate credentials
+	exfiltrationPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`curl.*-d.*\$\{\{\s*secrets\.`),            // POST secrets via curl
+		regexp.MustCompile(`wget.*--post-data.*\$\{\{\s*secrets\.`),   // POST secrets via wget
+		regexp.MustCompile(`echo.*\$\{\{\s*secrets\..*\|\s*base64`),   // Echo and encode secrets
+		regexp.MustCompile(`\$\{\{\s*secrets\..*\}\}.*>\s*[^$]`),      // Redirect secrets to files
+		regexp.MustCompile(`nc\s+.*\$\{\{\s*secrets\.`),               // Netcat with secrets
+		regexp.MustCompile(`telnet\s+.*\$\{\{\s*secrets\.`),           // Telnet with secrets
+		regexp.MustCompile(`ssh\s+.*\$\{\{\s*secrets\.`),              // SSH with secrets in command
+		regexp.MustCompile(`\$\{\{\s*secrets\..*\}\}.*\|\s*mail`),     // Email secrets
+		regexp.MustCompile(`\$\{\{\s*secrets\..*\}\}.*\|\s*sendmail`), // Sendmail secrets
+	}
+
+	// Also check for secrets being written to logs or outputs
+	logPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`echo.*\$\{\{\s*secrets\.`),                             // Echo secrets (appears in logs)
+		regexp.MustCompile(`printf.*\$\{\{\s*secrets\.`),                           // Printf secrets
+		regexp.MustCompile(`cat.*\$\{\{\s*secrets\.`),                              // Cat secrets
+		regexp.MustCompile(`\$\{\{\s*secrets\..*\}\}.*>>\s*\$GITHUB_STEP_SUMMARY`), // Write to step summary
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for _, step := range job.Steps {
+			if step.Run == "" {
+				continue
+			}
+
+			// Check for direct exfiltration patterns
+			for _, pattern := range exfiltrationPatterns {
+				if pattern.MatchString(step.Run) {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   "run",
+						Value: step.Run,
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "CREDENTIAL_EXFILTRATION",
+						RuleName:    "Credential Exfiltration",
+						Description: "Command pattern detected that could exfiltrate secrets or credentials to external systems",
+						Severity:    Critical,
+						Category:    SecretsExposure,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    step.Name,
+						Evidence:    strings.TrimSpace(step.Run),
+						LineNumber:  lineNumber,
+						Remediation: "Avoid sending secrets to external systems. Use secure secret management practices.",
+					})
+				}
+			}
+
+			// Check for logging/output patterns
+			for _, pattern := range logPatterns {
+				if pattern.MatchString(step.Run) {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   "run",
+						Value: step.Run,
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "CREDENTIAL_EXFILTRATION",
+						RuleName:    "Credential Exfiltration",
+						Description: "Secrets are being written to logs or outputs where they may be exposed",
+						Severity:    High,
+						Category:    SecretsExposure,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    step.Name,
+						Evidence:    strings.TrimSpace(step.Run),
+						LineNumber:  lineNumber,
+						Remediation: "Never log or output secrets. Use secure methods to handle sensitive data.",
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkArtifactPoisoning checks for potentially malicious artifact patterns
+func checkArtifactPoisoning(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for _, step := range job.Steps {
+			// Check for artifact upload actions
+			if step.Uses != "" && strings.Contains(step.Uses, "actions/upload-artifact") {
+				// Check for suspicious artifact patterns
+				if step.With != nil {
+					if pathInterface, exists := step.With["path"]; exists {
+						if path, ok := pathInterface.(string); ok {
+							// Check for dangerous paths
+							dangerousPaths := []string{
+								"/", "/*", "~", "~/", "$HOME",
+								"/etc", "/usr", "/bin", "/sbin",
+								"C:\\", "C:\\Windows", "C:\\Program Files",
+							}
+
+							for _, dangerousPath := range dangerousPaths {
+								if strings.Contains(path, dangerousPath) {
+									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+										Key:   "path",
+										Value: path,
+									})
+
+									lineNumber := 0
+									if lineResult != nil {
+										lineNumber = lineResult.LineNumber
+									}
+
+									findings = append(findings, Finding{
+										RuleID:      "ARTIFACT_POISONING",
+										RuleName:    "Artifact Poisoning",
+										Description: "Artifact upload includes dangerous system paths that could expose sensitive files",
+										Severity:    High,
+										Category:    SupplyChain,
+										FilePath:    workflow.Path,
+										JobName:     jobName,
+										StepName:    step.Name,
+										Evidence:    fmt.Sprintf("Dangerous artifact path: %s", path),
+										LineNumber:  lineNumber,
+										Remediation: "Restrict artifact uploads to specific, safe directories only",
+									})
+								}
+							}
+
+							// Check for overly broad patterns
+							broadPatterns := []string{"*", "**", "**/*", "."}
+							for _, pattern := range broadPatterns {
+								if path == pattern {
+									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+										Key:   "path",
+										Value: path,
+									})
+
+									lineNumber := 0
+									if lineResult != nil {
+										lineNumber = lineResult.LineNumber
+									}
+
+									findings = append(findings, Finding{
+										RuleID:      "ARTIFACT_POISONING",
+										RuleName:    "Artifact Poisoning",
+										Description: "Artifact upload uses overly broad patterns that may include sensitive files",
+										Severity:    Medium,
+										Category:    SupplyChain,
+										FilePath:    workflow.Path,
+										JobName:     jobName,
+										StepName:    step.Name,
+										Evidence:    fmt.Sprintf("Broad artifact pattern: %s", path),
+										LineNumber:  lineNumber,
+										Remediation: "Use specific file patterns instead of broad wildcards for artifact uploads",
+									})
+								}
+							}
+						}
+					}
+				}
+			}
+
+			// Check for artifact download actions
+			if step.Uses != "" && strings.Contains(step.Uses, "actions/download-artifact") {
+				// Check for unsafe download patterns
+				if step.With != nil {
+					if nameInterface, exists := step.With["name"]; exists {
+						if name, ok := nameInterface.(string); ok {
+							// Check for user-controlled artifact names
+							if strings.Contains(name, "${{ github.event.") || strings.Contains(name, "${{ inputs.") {
+								lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+									Key:   "name",
+									Value: name,
+								})
+
+								lineNumber := 0
+								if lineResult != nil {
+									lineNumber = lineResult.LineNumber
+								}
+
+								findings = append(findings, Finding{
+									RuleID:      "ARTIFACT_POISONING",
+									RuleName:    "Artifact Poisoning",
+									Description: "Artifact download uses user-controlled input for artifact name, which could lead to path traversal",
+									Severity:    High,
+									Category:    SupplyChain,
+									FilePath:    workflow.Path,
+									JobName:     jobName,
+									StepName:    step.Name,
+									Evidence:    fmt.Sprintf("User-controlled artifact name: %s", name),
+									LineNumber:  lineNumber,
+									Remediation: "Validate and sanitize artifact names, or use predefined artifact names only",
+								})
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkMatrixInjection checks for injection vulnerabilities through matrix strategy
+func checkMatrixInjection(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		if job.Strategy != nil {
+			// Check if matrix strategy is defined
+			if matrix, exists := job.Strategy["matrix"]; exists && matrix != nil {
+				// Check for matrix values used in shell commands
+				for _, step := range job.Steps {
+					if step.Run == "" {
+						continue
+					}
+
+					// Look for matrix variable usage in shell commands
+					matrixVarPattern := regexp.MustCompile(`\$\{\{\s*matrix\.([^}]+)\}\}`)
+					matches := matrixVarPattern.FindAllStringSubmatch(step.Run, -1)
+
+					for _, match := range matches {
+						if len(match) > 1 {
+							matrixVar := match[1]
+
+							// Check if the matrix variable is used in dangerous contexts
+							dangerousPatterns := []*regexp.Regexp{
+								regexp.MustCompile(`\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}.*\|\s*(sh|bash|zsh)`), // Pipe to shell
+								regexp.MustCompile(`eval.*\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}`),               // Eval with matrix
+								regexp.MustCompile(`\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}.*>>`),                 // Redirect to file
+								regexp.MustCompile(`curl.*\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}`),               // Curl with matrix
+								regexp.MustCompile(`wget.*\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}`),               // Wget with matrix
+							}
+
+							for _, pattern := range dangerousPatterns {
+								if pattern.MatchString(step.Run) {
+									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+										Key:   "run",
+										Value: step.Run,
+									})
+
+									lineNumber := 0
+									if lineResult != nil {
+										lineNumber = lineResult.LineNumber
+									}
+
+									findings = append(findings, Finding{
+										RuleID:      "MATRIX_INJECTION",
+										RuleName:    "Matrix Strategy Injection",
+										Description: "Matrix variable used in dangerous shell context without proper validation",
+										Severity:    High,
+										Category:    InjectionAttack,
+										FilePath:    workflow.Path,
+										JobName:     jobName,
+										StepName:    step.Name,
+										Evidence:    fmt.Sprintf("Matrix variable '%s' used in: %s", matrixVar, strings.TrimSpace(step.Run)),
+										LineNumber:  lineNumber,
+										Remediation: "Validate and sanitize matrix variables before using in shell commands, or use safer alternatives",
+									})
+								}
+							}
+
+							// Check for unquoted matrix variables (simpler check)
+							unquotedPattern := regexp.MustCompile(`[^"']\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}[^"']`)
+							if unquotedPattern.MatchString(step.Run) {
+								lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+									Key:   "run",
+									Value: step.Run,
+								})
+
+								lineNumber := 0
+								if lineResult != nil {
+									lineNumber = lineResult.LineNumber
+								}
+
+								findings = append(findings, Finding{
+									RuleID:      "MATRIX_INJECTION",
+									RuleName:    "Matrix Strategy Injection",
+									Description: "Unquoted matrix variable usage may lead to command injection",
+									Severity:    Medium,
+									Category:    InjectionAttack,
+									FilePath:    workflow.Path,
+									JobName:     jobName,
+									StepName:    step.Name,
+									Evidence:    fmt.Sprintf("Unquoted matrix variable '%s' in: %s", matrixVar, strings.TrimSpace(step.Run)),
+									LineNumber:  lineNumber,
+									Remediation: "Always quote matrix variables in shell commands: \"${{ matrix.var }}\"",
+								})
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkServicesCredentials checks for hardcoded credentials in services configuration
+func checkServicesCredentials(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Patterns for detecting credentials in services config
+	credentialPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)password\s*:\s*['"]\S+['"]`),
+		regexp.MustCompile(`(?i)secret\s*:\s*['"]\S+['"]`),
+		regexp.MustCompile(`(?i)token\s*:\s*['"]\S+['"]`),
+		regexp.MustCompile(`(?i)key\s*:\s*['"]\S+['"]`),
+		regexp.MustCompile(`(?i)credential\s*:\s*['"]\S+['"]`),
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		if job.Services != nil {
+			for serviceName, serviceConfig := range job.Services {
+				// Convert service config to string for pattern matching
+				serviceStr := fmt.Sprintf("%v", serviceConfig)
+
+				for _, pattern := range credentialPatterns {
+					if pattern.MatchString(serviceStr) {
+						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+							Key:   "services",
+							Value: serviceName,
+						})
+
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "SERVICES_CREDENTIALS",
+							RuleName:    "Services Configuration Credentials",
+							Description: "Hardcoded credentials detected in services configuration",
+							Severity:    Critical,
+							Category:    SecretExposure,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    serviceName,
+							Evidence:    strings.TrimSpace(serviceStr),
+							LineNumber:  lineNumber,
+							Remediation: "Use secrets or environment variables instead of hardcoded credentials in services configuration",
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkRunnerLabels validates GitHub-hosted and self-hosted runner labels
+func checkRunnerLabels(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Known GitHub-hosted runner labels
+	githubHostedRunners := map[string]bool{
+		"ubuntu-latest":  true,
+		"ubuntu-22.04":   true,
+		"ubuntu-20.04":   true,
+		"windows-latest": true,
+		"windows-2022":   true,
+		"windows-2019":   true,
+		"macos-latest":   true,
+		"macos-13":       true,
+		"macos-12":       true,
+		"macos-11":       true,
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		runsOnStr := ""
+
+		// Handle both string and array formats for runs-on
+		switch runsOn := job.RunsOn.(type) {
+		case string:
+			runsOnStr = runsOn
+		case []interface{}:
+			if len(runsOn) > 0 {
+				if str, ok := runsOn[0].(string); ok {
+					runsOnStr = str
+				}
+			}
+		}
+
+		if runsOnStr != "" {
+			// Check for suspicious self-hosted runner patterns
+			suspiciousPatterns := []*regexp.Regexp{
+				regexp.MustCompile(`(?i)self-hosted.*production`),
+				regexp.MustCompile(`(?i)self-hosted.*internal`),
+				regexp.MustCompile(`(?i)self-hosted.*private`),
+				regexp.MustCompile(`(?i)runner-\d+`), // Generic numbered runners
+			}
+
+			for _, pattern := range suspiciousPatterns {
+				if pattern.MatchString(runsOnStr) {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   "runs-on",
+						Value: runsOnStr,
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "RUNNER_LABEL_VALIDATION",
+						RuleName:    "Runner Label Validation",
+						Description: "Potentially insecure self-hosted runner configuration detected",
+						Severity:    Medium,
+						Category:    Misconfiguration,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						Evidence:    runsOnStr,
+						LineNumber:  lineNumber,
+						Remediation: "Use specific, well-managed self-hosted runner labels or GitHub-hosted runners",
+					})
+				}
+			}
+
+			// Check for unknown runner labels (not GitHub-hosted and not self-hosted format)
+			if !githubHostedRunners[runsOnStr] && !strings.Contains(runsOnStr, "self-hosted") {
+				lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+					Key:   "runs-on",
+					Value: runsOnStr,
+				})
+
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+
+				findings = append(findings, Finding{
+					RuleID:      "RUNNER_LABEL_VALIDATION",
+					RuleName:    "Runner Label Validation",
+					Description: "Unknown runner label that may not exist or be misconfigured",
+					Severity:    Low,
+					Category:    Misconfiguration,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					Evidence:    runsOnStr,
+					LineNumber:  lineNumber,
+					Remediation: "Verify runner label exists and is properly configured",
+				})
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkBotIdentity checks for if statements based on bot identity
+func checkBotIdentity(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Patterns for bot identity checks that could be exploited
+	botPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)github\.actor\s*==\s*['"]dependabot\[bot\]['"]`),
+		regexp.MustCompile(`(?i)github\.actor\s*==\s*['"]renovate\[bot\]['"]`),
+		regexp.MustCompile(`(?i)github\.actor\s*!=\s*['"]dependabot\[bot\]['"]`),
+		regexp.MustCompile(`(?i)github\.actor\s*!=\s*['"]renovate\[bot\]['"]`),
+		regexp.MustCompile(`(?i)contains\(github\.actor,\s*['"]bot['"]`),
+		regexp.MustCompile(`(?i)endswith\(github\.actor,\s*['"]\[bot\]['"]`),
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		// Check job-level if conditions
+		if job.If != "" {
+			for _, pattern := range botPatterns {
+				if pattern.MatchString(job.If) {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   "if",
+						Value: job.If,
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "BOT_IDENTITY_CHECK",
+						RuleName:    "Bot Identity Check",
+						Description: "Bot identity check in if statement may be exploitable by attackers",
+						Severity:    Medium,
+						Category:    AccessControl,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						Evidence:    strings.TrimSpace(job.If),
+						LineNumber:  lineNumber,
+						Remediation: "Use more specific conditions or validate bot identity through other means",
+					})
+				}
+			}
+		}
+
+		// Check step-level if conditions
+		for _, step := range job.Steps {
+			if step.If != "" {
+				for _, pattern := range botPatterns {
+					if pattern.MatchString(step.If) {
+						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+							Key:   "if",
+							Value: step.If,
+						})
+
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "BOT_IDENTITY_CHECK",
+							RuleName:    "Bot Identity Check",
+							Description: "Bot identity check in step if condition may be exploitable",
+							Severity:    Medium,
+							Category:    AccessControl,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    step.Name,
+							Evidence:    strings.TrimSpace(step.If),
+							LineNumber:  lineNumber,
+							Remediation: "Use more specific conditions or validate bot identity through other means",
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkExternalTrigger checks for workflows that can be externally triggered
+func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Get the trigger events
+	var triggerEvents []string
+
+	switch on := workflow.Workflow.On.(type) {
+	case string:
+		triggerEvents = []string{on}
+	case []interface{}:
+		for _, event := range on {
+			if str, ok := event.(string); ok {
+				triggerEvents = append(triggerEvents, str)
+			}
+		}
+	case map[string]interface{}:
+		for event := range on {
+			triggerEvents = append(triggerEvents, event)
+		}
+	}
+
+	// Check for dangerous external triggers
+	dangerousTriggers := map[string]string{
+		"issue_comment":       "Can be triggered by anyone who can comment on issues",
+		"pull_request_target": "Can be triggered by external pull requests with elevated permissions",
+		"workflow_run":        "Can be triggered by completion of other workflows",
+		"repository_dispatch": "Can be triggered via API by repository collaborators",
+		"workflow_dispatch":   "Can be manually triggered with potential for abuse",
+	}
+
+	for _, trigger := range triggerEvents {
+		if risk, isDangerous := dangerousTriggers[trigger]; isDangerous {
+			lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+				Key:   "on",
+				Value: trigger,
+			})
+
+			lineNumber := 0
+			if lineResult != nil {
+				lineNumber = lineResult.LineNumber
+			}
+
+			findings = append(findings, Finding{
+				RuleID:      "EXTERNAL_TRIGGER_DEBUG",
+				RuleName:    "External Trigger Debug",
+				Description: fmt.Sprintf("Workflow uses external trigger '%s': %s", trigger, risk),
+				Severity:    High,
+				Category:    AccessControl,
+				FilePath:    workflow.Path,
+				Evidence:    trigger,
+				LineNumber:  lineNumber,
+				Remediation: "Review trigger necessity and add appropriate security controls",
+			})
+		}
+	}
+
+	return findings
+}
+
+// checkRepoJacking verifies external actions point to valid repositories
+func checkRepoJacking(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Pattern to match action references
+	actionPattern := regexp.MustCompile(`^([^/]+)/([^@]+)@(.+)$`)
+
+	// Known trusted organizations
+	trustedOrgs := map[string]bool{
+		"actions":     true,
+		"github":      true,
+		"microsoft":   true,
+		"azure":       true,
+		"docker":      true,
+		"aws-actions": true,
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for _, step := range job.Steps {
+			if step.Uses != "" {
+				matches := actionPattern.FindStringSubmatch(step.Uses)
+				if len(matches) == 4 {
+					org := matches[1]
+					repo := matches[2]
+					ref := matches[3]
+
+					// Check for potential repo-jacking indicators
+					suspiciousPatterns := []*regexp.Regexp{
+						regexp.MustCompile(`^\d+$`),                   // Numeric usernames
+						regexp.MustCompile(`^[a-zA-Z]+\d+$`),          // Username with trailing numbers
+						regexp.MustCompile(`(?i)(test|demo|example)`), // Test/demo repos
+						regexp.MustCompile(`^.{1,2}$`),                // Very short usernames
+					}
+
+					var isSuspicious bool
+					var suspiciousReason string
+
+					// Check if organization is trusted
+					if !trustedOrgs[org] {
+						// Check for suspicious patterns
+						for _, pattern := range suspiciousPatterns {
+							if pattern.MatchString(org) {
+								isSuspicious = true
+								suspiciousReason = fmt.Sprintf("Suspicious organization name pattern: %s", org)
+								break
+							}
+							if pattern.MatchString(repo) {
+								isSuspicious = true
+								suspiciousReason = fmt.Sprintf("Suspicious repository name pattern: %s", repo)
+								break
+							}
+						}
+
+						// Check for unpinned references to untrusted sources
+						if ref == "main" || ref == "master" || regexp.MustCompile(`^v\d+$`).MatchString(ref) {
+							isSuspicious = true
+							suspiciousReason = fmt.Sprintf("Unpinned reference to untrusted source: %s@%s", org, ref)
+						}
+					}
+
+					if isSuspicious {
+						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+							Key:   "uses",
+							Value: step.Uses,
+						})
+
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "REPO_JACKING_VULNERABILITY",
+							RuleName:    "Repository Jacking Vulnerability",
+							Description: suspiciousReason,
+							Severity:    High,
+							Category:    SupplyChain,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    step.Name,
+							Evidence:    step.Uses,
+							LineNumber:  lineNumber,
+							Remediation: "Verify the action source is legitimate and pin to specific SHA for security",
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkDebugArtifacts detects workflows that upload artifacts
+func checkDebugArtifacts(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Look for artifact upload actions
+	artifactActions := []string{
+		"actions/upload-artifact",
+		"actions/download-artifact",
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for _, step := range job.Steps {
+			if step.Uses != "" {
+				for _, action := range artifactActions {
+					if strings.Contains(step.Uses, action) {
+						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+							Key:   "uses",
+							Value: step.Uses,
+						})
+
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "DEBUG_ARTIFACTS_UPLOAD",
+							RuleName:    "Debug Artifacts Upload",
+							Description: "Workflow uploads or downloads artifacts which may contain sensitive data",
+							Severity:    Info,
+							Category:    DataExposure,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    step.Name,
+							Evidence:    step.Uses,
+							LineNumber:  lineNumber,
+							Remediation: "Review artifact contents to ensure no sensitive data is exposed",
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkDebugJsExecution detects JavaScript execution of system commands
+func checkDebugJsExecution(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Patterns for JavaScript system command execution
+	jsExecPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`require\(['"]child_process['"]\)`),
+		regexp.MustCompile(`\.exec\(`),
+		regexp.MustCompile(`\.spawn\(`),
+		regexp.MustCompile(`\.execSync\(`),
+		regexp.MustCompile(`\.spawnSync\(`),
+		regexp.MustCompile(`process\.exec`),
+		regexp.MustCompile(`import.*child_process`),
+		regexp.MustCompile(`from.*child_process`),
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for _, step := range job.Steps {
+			// Check JavaScript actions (actions that use JavaScript)
+			if step.Uses != "" && strings.Contains(step.Uses, "actions/github-script") {
+				// Check the script content for system command execution
+				if step.With != nil {
+					if script, exists := step.With["script"]; exists {
+						scriptStr := fmt.Sprintf("%v", script)
+
+						for _, pattern := range jsExecPatterns {
+							if pattern.MatchString(scriptStr) {
+								lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+									Key:   "script",
+									Value: scriptStr,
+								})
+
+								lineNumber := 0
+								if lineResult != nil {
+									lineNumber = lineResult.LineNumber
+								}
+
+								findings = append(findings, Finding{
+									RuleID:      "DEBUG_JS_EXECUTION",
+									RuleName:    "Debug JavaScript Execution",
+									Description: "JavaScript script executes system commands which may be dangerous",
+									Severity:    Medium,
+									Category:    InjectionAttack,
+									FilePath:    workflow.Path,
+									JobName:     jobName,
+									StepName:    step.Name,
+									Evidence:    strings.TrimSpace(scriptStr),
+									LineNumber:  lineNumber,
+									Remediation: "Avoid executing system commands in JavaScript scripts, use safer alternatives",
+								})
+							}
+						}
+					}
+				}
+			}
+
+			// Also check run commands that might contain JavaScript execution
+			if step.Run != "" {
+				for _, pattern := range jsExecPatterns {
+					if pattern.MatchString(step.Run) {
+						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+							Key:   "run",
+							Value: step.Run,
+						})
+
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "DEBUG_JS_EXECUTION",
+							RuleName:    "Debug JavaScript Execution",
+							Description: "Script contains JavaScript system command execution patterns",
+							Severity:    Medium,
+							Category:    InjectionAttack,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    step.Name,
+							Evidence:    strings.TrimSpace(step.Run),
+							LineNumber:  lineNumber,
+							Remediation: "Review JavaScript system command usage for potential security risks",
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkDebugOidcActions detects workflows that use OIDC token authentication
+func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// OIDC-related patterns
+	oidcPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)id-token:\s*write`),
+		regexp.MustCompile(`(?i)ACTIONS_ID_TOKEN_REQUEST_TOKEN`),
+		regexp.MustCompile(`(?i)ACTIONS_ID_TOKEN_REQUEST_URL`),
+		regexp.MustCompile(`(?i)aws-actions/configure-aws-credentials`),
+		regexp.MustCompile(`(?i)azure/login`),
+		regexp.MustCompile(`(?i)google-github-actions/auth`),
+	}
+
+	// Check job permissions for id-token
+	for jobName, job := range workflow.Workflow.Jobs {
+		if job.Permissions != nil {
+			if permMap, ok := job.Permissions.(map[string]interface{}); ok {
+				if idTokenValue, exists := permMap["id-token"]; exists {
+					if idToken, ok := idTokenValue.(string); ok && idToken == "write" {
+						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+							Key:   "id-token",
+							Value: "write",
+						})
+
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "DEBUG_OIDC_ACTIONS",
+							RuleName:    "Debug OIDC Actions",
+							Description: "Workflow uses OIDC token authentication with id-token: write permission",
+							Severity:    Info,
+							Category:    AccessControl,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							Evidence:    "id-token: write",
+							LineNumber:  lineNumber,
+							Remediation: "Ensure OIDC token usage is properly scoped and necessary",
+						})
+					}
+				}
+			}
+		}
+
+		// Check steps for OIDC-related actions and environment variables
+		for _, step := range job.Steps {
+			if step.Uses != "" {
+				for _, pattern := range oidcPatterns {
+					if pattern.MatchString(step.Uses) {
+						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+							Key:   "uses",
+							Value: step.Uses,
+						})
+
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "DEBUG_OIDC_ACTIONS",
+							RuleName:    "Debug OIDC Actions",
+							Description: "Workflow uses OIDC-enabled action for cloud authentication",
+							Severity:    Info,
+							Category:    AccessControl,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    step.Name,
+							Evidence:    step.Uses,
+							LineNumber:  lineNumber,
+							Remediation: "Verify OIDC configuration is secure and follows best practices",
+						})
+					}
+				}
+			}
+
+			// Check environment variables for OIDC tokens
+			if step.Env != nil {
+				for envKey := range step.Env {
+					for _, pattern := range oidcPatterns {
+						if pattern.MatchString(envKey) {
+							lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+								Key:   envKey,
+								Value: "",
+							})
+
+							lineNumber := 0
+							if lineResult != nil {
+								lineNumber = lineResult.LineNumber
+							}
+
+							findings = append(findings, Finding{
+								RuleID:      "DEBUG_OIDC_ACTIONS",
+								RuleName:    "Debug OIDC Actions",
+								Description: "Workflow references OIDC token environment variables",
+								Severity:    Info,
+								Category:    AccessControl,
+								FilePath:    workflow.Path,
+								JobName:     jobName,
+								StepName:    step.Name,
+								Evidence:    envKey,
+								LineNumber:  lineNumber,
+								Remediation: "Ensure OIDC token environment variables are used securely",
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Check workflow-level permissions
+	if workflow.Workflow.Permissions != nil {
+		if permMap, ok := workflow.Workflow.Permissions.(map[string]interface{}); ok {
+			if idTokenValue, exists := permMap["id-token"]; exists {
+				if idToken, ok := idTokenValue.(string); ok && idToken == "write" {
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+						Key:   "id-token",
+						Value: "write",
+					})
+
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "DEBUG_OIDC_ACTIONS",
+						RuleName:    "Debug OIDC Actions",
+						Description: "Workflow has global id-token: write permission for OIDC authentication",
+						Severity:    Info,
+						Category:    AccessControl,
+						FilePath:    workflow.Path,
+						Evidence:    "id-token: write (global)",
+						LineNumber:  lineNumber,
+						Remediation: "Consider limiting id-token permissions to specific jobs that need OIDC",
+					})
+				}
+			}
+		}
+	}
+
+	return findings
 }

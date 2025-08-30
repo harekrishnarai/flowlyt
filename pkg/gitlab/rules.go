@@ -17,6 +17,7 @@ func GitLabRules() []rules.Rule {
 			Description: "Using latest tag or unverified Docker images",
 			Severity:    rules.High,
 			Category:    rules.SupplyChain,
+			Platform:    rules.PlatformGitLab, // GitLab CI specific
 			Check:       checkInsecureDockerImage,
 		},
 		{
@@ -25,6 +26,7 @@ func GitLabRules() []rules.Rule {
 			Description: "User input directly used in script commands without sanitization",
 			Severity:    rules.Critical,
 			Category:    rules.InjectionAttack,
+			Platform:    rules.PlatformGitLab, // GitLab CI specific
 			Check:       checkScriptInjection,
 		},
 		{
@@ -33,6 +35,7 @@ func GitLabRules() []rules.Rule {
 			Description: "Potentially sensitive variables exposed in pipeline configuration",
 			Severity:    rules.High,
 			Category:    rules.SecretsExposure,
+			Platform:    rules.PlatformGitLab, // GitLab CI specific
 			Check:       checkExposedVariables,
 		},
 		{
@@ -41,6 +44,7 @@ func GitLabRules() []rules.Rule {
 			Description: "Pipeline runs without proper branch or tag restrictions",
 			Severity:    rules.Medium,
 			Category:    rules.AccessControl,
+			Platform:    rules.PlatformGitLab, // GitLab CI specific
 			Check:       checkUnrestrictedRules,
 		},
 		{
@@ -49,6 +53,7 @@ func GitLabRules() []rules.Rule {
 			Description: "Using privileged Docker services which can be dangerous",
 			Severity:    rules.High,
 			Category:    rules.PrivilegeEscalation,
+			Platform:    rules.PlatformGitLab, // GitLab CI specific
 			Check:       checkPrivilegedServices,
 		},
 		{
@@ -57,6 +62,7 @@ func GitLabRules() []rules.Rule {
 			Description: "Artifacts configured without proper expiration or access controls",
 			Severity:    rules.Medium,
 			Category:    rules.DataExposure,
+			Platform:    rules.PlatformGitLab, // GitLab CI specific
 			Check:       checkInsecureArtifacts,
 		},
 	}

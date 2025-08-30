@@ -231,6 +231,9 @@ func (g *Generator) generateCLIReport() error {
 				if finding.GitHubURL != "" {
 					infoStyle.Printf("  %-12s ", "GitHub URL:")
 					fmt.Println(finding.GitHubURL)
+				} else if finding.GitLabURL != "" {
+					infoStyle.Printf("  %-12s ", "GitLab URL:")
+					fmt.Println(finding.GitLabURL)
 				} else {
 					infoStyle.Printf("  %-12s ", "File:")
 					fmt.Println(finding.FilePath)
@@ -368,6 +371,8 @@ func (g *Generator) generateMarkdownReport() error {
 				markdownBuilder.WriteString(fmt.Sprintf("#### %d. %s (%s)\n\n", i+1, finding.RuleName, finding.RuleID))
 				if finding.GitHubURL != "" {
 					markdownBuilder.WriteString(fmt.Sprintf("- **GitHub URL:** [%s](%s)\n", finding.FilePath, finding.GitHubURL))
+				} else if finding.GitLabURL != "" {
+					markdownBuilder.WriteString(fmt.Sprintf("- **GitLab URL:** [%s](%s)\n", finding.FilePath, finding.GitLabURL))
 				} else {
 					markdownBuilder.WriteString(fmt.Sprintf("- **File:** `%s`\n", finding.FilePath))
 				}

@@ -401,27 +401,29 @@ func findWorkflowFiles(workflowFile, repoLocalPath, platform string) ([]parser.W
 	return workflowFiles, nil
 }
 
-// prepareSecurityRules prepares and filters security rules based on configuration
+// prepareSecurityRules prepares and filters security rules based on configuration and platform
 func prepareSecurityRules(c *cli.Context, cfg *config.Config, platform string) ([]rules.Rule, error) {
-	var standardRules []rules.Rule
+	var allRules []rules.Rule
 
 	if c.Bool("no-default-rules") {
-		standardRules = []rules.Rule{}
+		allRules = []rules.Rule{}
 	} else {
-		switch platform {
-		case constants.PlatformGitHub:
-			standardRules = rules.StandardRules()
-		case constants.PlatformGitLab:
-			// Combine standard rules with GitLab-specific rules
-			standardRules = append(rules.StandardRules(), gitlab.GitLabRules()...)
-		default:
-			standardRules = rules.StandardRules()
+		// Always start with standard rules
+		allRules = rules.StandardRules()
+
+		// Add GitLab-specific rules if targeting GitLab
+		if platform == constants.PlatformGitLab {
+			allRules = append(allRules, gitlab.GitLabRules()...)
 		}
 	}
 
-	// Filter rules based on configuration
+	// Convert platform string to Platform enum and filter rules
+	targetPlatform := rules.StringToPlatform(platform)
+	platformCompatibleRules := rules.FilterRulesByPlatform(allRules, targetPlatform)
+
+	// Filter rules based on configuration (enabled/disabled rules)
 	filteredRules := []rules.Rule{}
-	for _, rule := range standardRules {
+	for _, rule := range platformCompatibleRules {
 		if cfg.IsRuleEnabled(rule.ID) {
 			filteredRules = append(filteredRules, rule)
 		}
@@ -453,10 +455,17 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 		return nil, err
 	}
 
-	// Enhance findings with GitHub URLs if scanning a remote repository
+	// Enhance findings with GitHub URLs if scanning a remote GitHub repository
 	if repoURL != "" && github.IsGitHubRepository(repoURL) {
 		for i := range findings {
 			findings[i].GitHubURL = github.GenerateFileURL(repoURL, findings[i].FilePath, findings[i].LineNumber)
+		}
+	}
+
+	// Enhance findings with GitLab URLs if scanning a remote GitLab repository
+	if repoURL != "" && gitlab.IsGitLabURL(repoURL) {
+		for i := range findings {
+			findings[i].GitLabURL = gitlab.GenerateFileURL(repoURL, findings[i].FilePath, findings[i].LineNumber)
 		}
 	}
 

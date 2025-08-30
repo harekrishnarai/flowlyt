@@ -1,5 +1,5 @@
 name: 'Flowlyt Security Analyzer'
-description: 'Security scanner for GitHub Actions workflows'
+description: 'Enterprise-grade security scanner for GitHub Actions workflows with policy enforcement'
 author: 'Flowlyt Team'
 
 branding:
@@ -10,61 +10,435 @@ inputs:
   repository:
     description: 'Repository to scan. Defaults to the current repository.'
     required: false
-    default: ''
+    default: '.'
   token:
-    description: 'GitHub token used to access repositories.'
+    description: 'GitHub token used to access repositories and create comments'
     required: false
-    default: ''
+    default: ${{ github.token }}
+  config-file:
+    description: 'Path to Flowlyt configuration file'
+    required: false
+    default: '.flowlyt.yml'
   output-format:
-    description: 'Output format (cli, json, markdown)'
+    description: 'Output format (cli, json, markdown, sarif)'
     required: false
-    default: 'markdown'
+    default: 'sarif'
   output-file:
     description: 'Output file path for findings'
     required: false
-    default: 'flowlyt-results.md'
-  policy-path:
-    description: 'Path to custom policy files'
+    default: 'flowlyt-results.sarif'
+  min-severity:
+    description: 'Minimum severity level to report (INFO, LOW, MEDIUM, HIGH, CRITICAL)'
     required: false
-    default: ''
-  no-default-rules:
-    description: 'Disable default security rules'
+    default: 'LOW'
+  fail-on-severity:
+    description: 'Fail the action if findings with this severity or higher are found (CRITICAL, HIGH, MEDIUM, LOW, INFO). Leave empty to never fail.'
+    required: false
+    default: 'CRITICAL'
+  max-critical:
+    description: 'Maximum number of critical findings allowed before failing (0 = no limit)'
+    required: false
+    default: '0'
+  max-high:
+    description: 'Maximum number of high severity findings allowed before failing (0 = no limit)'
+    required: false
+    default: '0'
+  enable-policy-enforcement:
+    description: 'Enable enterprise policy enforcement'
     required: false
     default: 'false'
-  entropy-threshold:
-    description: 'Entropy threshold for secret detection'
+  enable-vuln-intel:
+    description: 'Enable vulnerability intelligence from OSV.dev'
     required: false
-    default: '4.5'
+    default: 'false'
+  policy-config:
+    description: 'Path to enterprise policy configuration file'
+    required: false
+    default: ''
+  compliance-frameworks:
+    description: 'Comma-separated list of compliance frameworks to evaluate'
+    required: false
+    default: ''
   comment-on-pr:
     description: 'Whether to comment results on pull requests'
     required: false
     default: 'true'
-  fail-on-severity:
-    description: 'Fail the action if findings with this severity or higher are found (CRITICAL, HIGH, MEDIUM, LOW, INFO)'
+  upload-sarif:
+    description: 'Upload SARIF results to GitHub Security tab'
     required: false
-    default: ''
+    default: 'true'
+  sarif-category:
+    description: 'Category for SARIF upload (helps organize multiple scans)'
+    required: false
+    default: 'flowlyt'
+  create-issue:
+    description: 'Create GitHub issue for critical violations'
+    required: false
+    default: 'false'
+  issue-labels:
+    description: 'Comma-separated labels for created issues'
+    required: false
+    default: 'security,flowlyt'
+  continue-on-error:
+    description: 'Continue workflow even if critical issues are found'
+    required: false
+    default: 'false'
+  verbose:
+    description: 'Enable verbose output for debugging'
+    required: false
+    default: 'false'
 
 outputs:
   findings-count:
     description: 'Total number of findings'
+    value: ${{ steps.scan.outputs.findings-count }}
   critical-count:
     description: 'Number of critical findings'
+    value: ${{ steps.scan.outputs.critical-count }}
   high-count:
     description: 'Number of high severity findings'
+    value: ${{ steps.scan.outputs.high-count }}
+  medium-count:
+    description: 'Number of medium severity findings'
+    value: ${{ steps.scan.outputs.medium-count }}
+  low-count:
+    description: 'Number of low severity findings'
+    value: ${{ steps.scan.outputs.low-count }}
+  policy-violations:
+    description: 'Number of policy violations'
+    value: ${{ steps.scan.outputs.policy-violations }}
+  blocking-violations:
+    description: 'Number of blocking policy violations'
+    value: ${{ steps.scan.outputs.blocking-violations }}
+  compliance-status:
+    description: 'Overall compliance status (true/false)'
+    value: ${{ steps.scan.outputs.compliance-status }}
   results-file:
     description: 'Path to the results file'
+    value: ${{ steps.scan.outputs.results-file }}
+  sarif-file:
+    description: 'Path to the SARIF results file'
+    value: ${{ steps.scan.outputs.sarif-file }}
+  exit-code:
+    description: 'Exit code of the scan (0=success, 1=findings above threshold, 2=error)'
+    value: ${{ steps.scan.outputs.exit-code }}
+  summary:
+    description: 'Summary of findings in markdown format'
+    value: ${{ steps.scan.outputs.summary }}
 
 runs:
-  using: 'docker'
-  image: 'Dockerfile'
-  args:
-    - '--repo'
-    - '.'
-    - '--output'
-    - ${{ inputs.output-format }}
-    - '--output-file'
-    - ${{ inputs.output-file }}
-    - ${{ inputs.policy-path != '' && format('--policy {0}', inputs.policy-path) || '' }}
-    - ${{ inputs.no-default-rules == 'true' && '--no-default-rules' || '' }}
-    - ${{ inputs.entropy-threshold != '' && format('--entropy-threshold {0}', inputs.entropy-threshold) || '' }}
-    - ${{ inputs.token != '' && format('--token {0}', inputs.token) || '' }}
+  using: 'composite'
+  steps:
+    - name: Setup Flowlyt Scanner
+      shell: bash
+      run: |
+        echo "🔍 Setting up Flowlyt Security Scanner..."
+        echo "Repository: ${{ inputs.repository }}"
+        echo "Config: ${{ inputs.config-file }}"
+        echo "Output Format: ${{ inputs.output-format }}"
+        echo "Fail on Severity: ${{ inputs.fail-on-severity }}"
+        echo "Policy Enforcement: ${{ inputs.enable-policy-enforcement }}"
+        
+    - name: Run Flowlyt Scan
+      shell: bash
+      id: scan
+      run: |
+        set -o pipefail
+        
+        # Build scan command
+        SCAN_CMD="flowlyt scan"
+        SCAN_CMD="$SCAN_CMD --repo ${{ inputs.repository }}"
+        SCAN_CMD="$SCAN_CMD --config ${{ inputs.config-file }}"
+        SCAN_CMD="$SCAN_CMD --output ${{ inputs.output-format }}"
+        SCAN_CMD="$SCAN_CMD --output-file ${{ inputs.output-file }}"
+        SCAN_CMD="$SCAN_CMD --min-severity ${{ inputs.min-severity }}"
+        
+        # Add optional flags
+        if [ "${{ inputs.enable-policy-enforcement }}" = "true" ]; then
+          SCAN_CMD="$SCAN_CMD --enable-policy-enforcement"
+        fi
+        
+        if [ "${{ inputs.enable-vuln-intel }}" = "true" ]; then
+          SCAN_CMD="$SCAN_CMD --enable-vuln-intel"
+        fi
+        
+        if [ -n "${{ inputs.policy-config }}" ]; then
+          SCAN_CMD="$SCAN_CMD --policy-config ${{ inputs.policy-config }}"
+        fi
+        
+        if [ -n "${{ inputs.compliance-frameworks }}" ]; then
+          SCAN_CMD="$SCAN_CMD --compliance-frameworks ${{ inputs.compliance-frameworks }}"
+        fi
+        
+        if [ "${{ inputs.verbose }}" = "true" ]; then
+          SCAN_CMD="$SCAN_CMD --verbose"
+        fi
+        
+        echo "Executing: $SCAN_CMD"
+        
+        # Run scan and capture output
+        if $SCAN_CMD 2>&1 | tee scan_output.log; then
+          SCAN_EXIT_CODE=0
+        else
+          SCAN_EXIT_CODE=$?
+        fi
+        
+        echo "exit-code=$SCAN_EXIT_CODE" >> $GITHUB_OUTPUT
+        
+        # Parse scan output for metrics
+        if [ -f "${{ inputs.output-file }}" ]; then
+          # Extract counts from SARIF or JSON output
+          if [ "${{ inputs.output-format }}" = "sarif" ]; then
+            TOTAL_FINDINGS=$(jq '.runs[0].results | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            CRITICAL_COUNT=$(jq '[.runs[0].results[] | select(.level == "error" and (.properties.severity // "HIGH") == "CRITICAL")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            HIGH_COUNT=$(jq '[.runs[0].results[] | select(.level == "error" and (.properties.severity // "HIGH") == "HIGH")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            MEDIUM_COUNT=$(jq '[.runs[0].results[] | select(.level == "warning")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            LOW_COUNT=$(jq '[.runs[0].results[] | select(.level == "note")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+          elif [ "${{ inputs.output-format }}" = "json" ]; then
+            TOTAL_FINDINGS=$(jq '.findings | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            CRITICAL_COUNT=$(jq '[.findings[] | select(.Severity == "CRITICAL")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            HIGH_COUNT=$(jq '[.findings[] | select(.Severity == "HIGH")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            MEDIUM_COUNT=$(jq '[.findings[] | select(.Severity == "MEDIUM")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            LOW_COUNT=$(jq '[.findings[] | select(.Severity == "LOW")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+          else
+            # Parse from CLI output
+            TOTAL_FINDINGS=$(grep -E "Found [0-9]+ issues" scan_output.log | sed -E 's/.*Found ([0-9]+) issues.*/\1/' || echo "0")
+            CRITICAL_COUNT=$(grep -E "[0-9]+ Critical" scan_output.log | sed -E 's/.*([0-9]+) Critical.*/\1/' || echo "0")
+            HIGH_COUNT=$(grep -E "[0-9]+ High" scan_output.log | sed -E 's/.*([0-9]+) High.*/\1/' || echo "0")
+            MEDIUM_COUNT=$(grep -E "[0-9]+ Medium" scan_output.log | sed -E 's/.*([0-9]+) Medium.*/\1/' || echo "0")
+            LOW_COUNT=$(grep -E "[0-9]+ Low" scan_output.log | sed -E 's/.*([0-9]+) Low.*/\1/' || echo "0")
+          fi
+        else
+          TOTAL_FINDINGS=0
+          CRITICAL_COUNT=0
+          HIGH_COUNT=0
+          MEDIUM_COUNT=0
+          LOW_COUNT=0
+        fi
+        
+        # Output metrics
+        echo "findings-count=$TOTAL_FINDINGS" >> $GITHUB_OUTPUT
+        echo "critical-count=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
+        echo "high-count=$HIGH_COUNT" >> $GITHUB_OUTPUT
+        echo "medium-count=$MEDIUM_COUNT" >> $GITHUB_OUTPUT
+        echo "low-count=$LOW_COUNT" >> $GITHUB_OUTPUT
+        echo "results-file=${{ inputs.output-file }}" >> $GITHUB_OUTPUT
+        
+        # Create SARIF file output regardless of format
+        if [ "${{ inputs.output-format }}" = "sarif" ]; then
+          echo "sarif-file=${{ inputs.output-file }}" >> $GITHUB_OUTPUT
+        else
+          echo "sarif-file=" >> $GITHUB_OUTPUT
+        fi
+        
+        # Generate summary
+        cat > summary.md << EOF
+        ## 🛡️ Flowlyt Security Scan Results
+        
+        **Repository:** \`${{ inputs.repository }}\`  
+        **Scan Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')  
+        **Configuration:** \`${{ inputs.config-file }}\`
+        
+        ### 📊 Findings Summary
+        | Severity | Count |
+        |----------|-------|
+        | 🔴 Critical | $CRITICAL_COUNT |
+        | 🟡 High | $HIGH_COUNT |
+        | 🟠 Medium | $MEDIUM_COUNT |
+        | 🟢 Low | $LOW_COUNT |
+        | **Total** | **$TOTAL_FINDINGS** |
+        
+        EOF
+        
+        # Add policy information if enabled
+        if [ "${{ inputs.enable-policy-enforcement }}" = "true" ]; then
+          POLICY_VIOLATIONS=0
+          BLOCKING_VIOLATIONS=0
+          COMPLIANCE_STATUS="true"
+          
+          # Try to extract policy information from JSON output
+          if [ "${{ inputs.output-format }}" = "json" ] && [ -f "${{ inputs.output-file }}" ]; then
+            POLICY_VIOLATIONS=$(jq '.policy_evaluation.policy_violations // 0' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            BLOCKING_VIOLATIONS=$(jq '.policy_evaluation.blocking_violations // 0' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+            COMPLIANCE_STATUS=$(jq '.compliance_report.compliant // true' "${{ inputs.output-file }}" 2>/dev/null || echo "true")
+          fi
+          
+          echo "policy-violations=$POLICY_VIOLATIONS" >> $GITHUB_OUTPUT
+          echo "blocking-violations=$BLOCKING_VIOLATIONS" >> $GITHUB_OUTPUT
+          echo "compliance-status=$COMPLIANCE_STATUS" >> $GITHUB_OUTPUT
+          
+          cat >> summary.md << EOF
+        
+        ### 🏛️ Policy Enforcement
+        | Metric | Value |
+        |--------|-------|
+        | Policy Violations | $POLICY_VIOLATIONS |
+        | Blocking Violations | $BLOCKING_VIOLATIONS |
+        | Compliance Status | $([ "$COMPLIANCE_STATUS" = "true" ] && echo "✅ Compliant" || echo "❌ Non-Compliant") |
+        
+        EOF
+        fi
+        
+        echo "summary<<EOF" >> $GITHUB_OUTPUT
+        cat summary.md >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        # Determine if we should fail
+        SHOULD_FAIL=false
+        FAIL_REASON=""
+        
+        # Check fail-on-severity threshold
+        if [ -n "${{ inputs.fail-on-severity }}" ]; then
+          case "${{ inputs.fail-on-severity }}" in
+            "CRITICAL")
+              if [ "$CRITICAL_COUNT" -gt 0 ]; then
+                SHOULD_FAIL=true
+                FAIL_REASON="Found $CRITICAL_COUNT critical severity findings"
+              fi
+              ;;
+            "HIGH")
+              if [ "$CRITICAL_COUNT" -gt 0 ] || [ "$HIGH_COUNT" -gt 0 ]; then
+                SHOULD_FAIL=true
+                FAIL_REASON="Found $((CRITICAL_COUNT + HIGH_COUNT)) high or critical severity findings"
+              fi
+              ;;
+            "MEDIUM")
+              if [ "$CRITICAL_COUNT" -gt 0 ] || [ "$HIGH_COUNT" -gt 0 ] || [ "$MEDIUM_COUNT" -gt 0 ]; then
+                SHOULD_FAIL=true
+                FAIL_REASON="Found $((CRITICAL_COUNT + HIGH_COUNT + MEDIUM_COUNT)) medium or higher severity findings"
+              fi
+              ;;
+            "LOW")
+              if [ "$TOTAL_FINDINGS" -gt 0 ]; then
+                SHOULD_FAIL=true
+                FAIL_REASON="Found $TOTAL_FINDINGS security findings"
+              fi
+              ;;
+          esac
+        fi
+        
+        # Check maximum limits
+        if [ "${{ inputs.max-critical }}" -gt 0 ] && [ "$CRITICAL_COUNT" -gt "${{ inputs.max-critical }}" ]; then
+          SHOULD_FAIL=true
+          FAIL_REASON="Critical findings ($CRITICAL_COUNT) exceed limit (${{ inputs.max-critical }})"
+        fi
+        
+        if [ "${{ inputs.max-high }}" -gt 0 ] && [ "$HIGH_COUNT" -gt "${{ inputs.max-high }}" ]; then
+          SHOULD_FAIL=true
+          FAIL_REASON="High severity findings ($HIGH_COUNT) exceed limit (${{ inputs.max-high }})"
+        fi
+        
+        # Check blocking policy violations
+        if [ "${{ inputs.enable-policy-enforcement }}" = "true" ] && [ "${BLOCKING_VIOLATIONS:-0}" -gt 0 ]; then
+          SHOULD_FAIL=true
+          FAIL_REASON="Found $BLOCKING_VIOLATIONS blocking policy violations"
+        fi
+        
+        # Output final decision
+        if [ "$SHOULD_FAIL" = "true" ]; then
+          echo "🚨 Security scan failed: $FAIL_REASON"
+          echo "❌ Pipeline will be marked as failed due to security policy violations"
+          
+          if [ "${{ inputs.continue-on-error }}" != "true" ]; then
+            exit 1
+          else
+            echo "⚠️ Continuing despite failures due to continue-on-error setting"
+          fi
+        else
+          echo "✅ Security scan passed - no critical issues found"
+        fi
+        
+    - name: Upload SARIF to GitHub Security
+      if: inputs.upload-sarif == 'true' && inputs.output-format == 'sarif' && always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.output-file }}
+        category: ${{ inputs.sarif-category }}
+      continue-on-error: true
+        
+    - name: Comment on PR
+      if: inputs.comment-on-pr == 'true' && github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const fs = require('fs');
+          const summary = `${{ steps.scan.outputs.summary }}`;
+          
+          // Find existing comment
+          const comments = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number
+          });
+          
+          const existingComment = comments.data.find(comment => 
+            comment.body.includes('🛡️ Flowlyt Security Scan Results')
+          );
+          
+          const commentBody = `${summary}
+          
+          ---
+          *This comment was automatically generated by [Flowlyt Security Analyzer](https://github.com/harekrishnarai/flowlyt)*`;
+          
+          if (existingComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: commentBody
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: commentBody
+            });
+          }
+      continue-on-error: true
+      
+    - name: Create Issue for Critical Violations
+      if: inputs.create-issue == 'true' && steps.scan.outputs.critical-count > 0
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.token }}
+        script: |
+          const critical = '${{ steps.scan.outputs.critical-count }}';
+          const blocking = '${{ steps.scan.outputs.blocking-violations }}';
+          const labels = '${{ inputs.issue-labels }}'.split(',').map(l => l.trim()).filter(l => l);
+          
+          const title = `🚨 Critical Security Issues Found - ${critical} Critical Findings`;
+          const body = `## 🛡️ Critical Security Violations Detected
+          
+          **Repository:** \`${{ github.repository }}\`  
+          **Branch:** \`${{ github.ref_name }}\`  
+          **Commit:** \`${{ github.sha }}\`  
+          **Scan Time:** ${new Date().toISOString()}
+          
+          ### Summary
+          - 🔴 **Critical Findings:** ${critical}
+          - 🚫 **Blocking Violations:** ${blocking || 0}
+          
+          ### Action Required
+          These critical security issues must be resolved immediately:
+          
+          1. Review the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed findings
+          2. Address each critical vulnerability according to the remediation guidance
+          3. Re-run the security scan to verify fixes
+          
+          ### Files Scanned
+          - Workflow files in \`.github/workflows/\`
+          - Configuration: \`${{ inputs.config-file }}\`
+          
+          ---
+          *This issue was automatically created by [Flowlyt Security Analyzer](https://github.com/harekrishnarai/flowlyt)*`;
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: labels
+          });
+      continue-on-error: true

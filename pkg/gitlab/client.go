@@ -151,3 +151,30 @@ func (c *Client) ValidateConnection() error {
 
 	return nil
 }
+
+// GenerateFileURL generates a GitLab URL pointing to a specific file and line number
+func GenerateFileURL(repoURL, filePath string, lineNumber int) string {
+	// Parse repository URL to get instance, owner/namespace and repo
+	instanceURL, owner, repo, err := ParseRepositoryURL(repoURL)
+	if err != nil {
+		return ""
+	}
+
+	// Remove leading slash and any temporary directory prefixes from file path
+	cleanPath := strings.TrimPrefix(filePath, "/")
+
+	// Remove common temporary directory patterns
+	// Example: /var/folders/.../flowlyt-gitlab-owner-repo12345/.gitlab-ci.yml -> .gitlab-ci.yml
+	if idx := strings.Index(cleanPath, ".gitlab-ci.yml"); idx != -1 {
+		cleanPath = ".gitlab-ci.yml"
+	} else if idx := strings.Index(cleanPath, ".gitlab-ci.yaml"); idx != -1 {
+		cleanPath = ".gitlab-ci.yaml"
+	}
+
+	// Build GitLab URL format: https://gitlab.com/owner/repo/-/blob/master/file.yml?ref_type=heads#L123
+	if lineNumber > 0 {
+		return fmt.Sprintf("%s/%s/%s/-/blob/master/%s?ref_type=heads#L%d", instanceURL, owner, repo, cleanPath, lineNumber)
+	}
+
+	return fmt.Sprintf("%s/%s/%s/-/blob/master/%s?ref_type=heads", instanceURL, owner, repo, cleanPath)
+}
