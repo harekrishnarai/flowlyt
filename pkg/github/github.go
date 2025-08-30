@@ -365,3 +365,62 @@ func GenerateFileURL(repoURL, filePath string, lineNumber int) string {
 func IsGitHubRepository(repoURL string) bool {
 	return strings.Contains(repoURL, "github.com")
 }
+
+// DiscoverOrganizationRepositories discovers all repositories in a GitHub organization
+func (c *Client) DiscoverOrganizationRepositories(orgName string, filter interface{}) ([]RepositoryInfo, error) {
+	// Get repositories for the organization
+	opt := &github.RepositoryListByOrgOptions{
+		Type: "all", // public, private, forks, sources, member, all
+		ListOptions: github.ListOptions{
+			PerPage: 100, // Maximum per page
+		},
+	}
+	
+	var allRepos []RepositoryInfo
+	
+	for {
+		repos, resp, err := c.client.Repositories.ListByOrg(c.ctx, orgName, opt)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list organization repositories: %w", err)
+		}
+		
+		// Convert GitHub repositories to our format
+		for _, repo := range repos {
+			repoInfo := RepositoryInfo{
+				Name:        repo.GetName(),
+				FullName:    repo.GetFullName(),
+				URL:         repo.GetHTMLURL(),
+				CloneURL:    repo.GetCloneURL(),
+				IsPrivate:   repo.GetPrivate(),
+				IsFork:      repo.GetFork(),
+				IsArchived:  repo.GetArchived(),
+				Language:    repo.GetLanguage(),
+				Description: repo.GetDescription(),
+				UpdatedAt:   repo.GetUpdatedAt().Format(time.RFC3339),
+			}
+			
+			allRepos = append(allRepos, repoInfo)
+		}
+		
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	
+	return allRepos, nil
+}
+
+// RepositoryInfo represents basic information about a repository
+type RepositoryInfo struct {
+	Name        string `json:"name"`
+	FullName    string `json:"full_name"`
+	URL         string `json:"url"`
+	CloneURL    string `json:"clone_url"`
+	IsPrivate   bool   `json:"is_private"`
+	IsFork      bool   `json:"is_fork"`
+	IsArchived  bool   `json:"is_archived"`
+	Language    string `json:"language,omitempty"`
+	Description string `json:"description,omitempty"`
+	UpdatedAt   string `json:"updated_at,omitempty"`
+}

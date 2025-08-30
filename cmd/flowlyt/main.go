@@ -13,6 +13,7 @@ import (
 	"github.com/harekrishnarai/flowlyt/pkg/errors"
 	"github.com/harekrishnarai/flowlyt/pkg/github"
 	"github.com/harekrishnarai/flowlyt/pkg/gitlab"
+	"github.com/harekrishnarai/flowlyt/pkg/organization"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/pkg/policies"
 	"github.com/harekrishnarai/flowlyt/pkg/report"
@@ -129,6 +130,81 @@ func main() {
 				},
 				Action: scanAction,
 			},
+			{
+				Name:    "analyze-org",
+				Aliases: []string{"org"},
+				Usage:   "Analyze all repositories in a GitHub organization",
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:     "organization",
+						Aliases:  []string{"org", "o"},
+						Usage:    "GitHub organization name to analyze",
+						Required: true,
+					},
+					&cli.StringFlag{
+						Name:    "output-format",
+						Aliases: []string{"f"},
+						Value:   constants.DefaultOutputFormat,
+						Usage:   "Output format: cli, json, markdown",
+					},
+					&cli.StringFlag{
+						Name:    "output-file",
+						Aliases: []string{"o"},
+						Usage:   "Output file path (default: stdout)",
+					},
+					&cli.StringFlag{
+						Name:    "config",
+						Aliases: []string{"c"},
+						Usage:   "Configuration file path",
+					},
+					&cli.StringFlag{
+						Name:  "min-severity",
+						Value: constants.DefaultMinSeverity,
+						Usage: "Minimum severity level to report: INFO, LOW, MEDIUM, HIGH, CRITICAL",
+					},
+					&cli.IntFlag{
+						Name:  "max-repos",
+						Value: 100,
+						Usage: "Maximum number of repositories to analyze (0 = no limit)",
+					},
+					&cli.StringFlag{
+						Name:  "repo-filter",
+						Usage: "Regular expression to filter repository names",
+					},
+					&cli.BoolFlag{
+						Name:  "include-forks",
+						Usage: "Include forked repositories in the analysis",
+					},
+					&cli.BoolFlag{
+						Name:  "include-archived",
+						Usage: "Include archived repositories in the analysis",
+					},
+					&cli.BoolFlag{
+						Name:  "include-private",
+						Value: true,
+						Usage: "Include private repositories in the analysis",
+					},
+					&cli.BoolFlag{
+						Name:  "include-public",
+						Value: true,
+						Usage: "Include public repositories in the analysis",
+					},
+					&cli.IntFlag{
+						Name:  "max-workers",
+						Value: constants.DefaultMaxWorkers,
+						Usage: "Maximum number of concurrent workers (0 = CPU count)",
+					},
+					&cli.BoolFlag{
+						Name:  "no-progress",
+						Usage: "Disable progress reporting",
+					},
+					&cli.BoolFlag{
+						Name:  "summary-only",
+						Usage: "Show only organization-level summary, skip individual repository details",
+					},
+				},
+				Action: analyzeOrgAction,
+			},
 		},
 	}
 
@@ -145,6 +221,11 @@ func main() {
 // scanAction handles the scan command
 func scanAction(c *cli.Context) error {
 	return scan(c, c.String("output"), c.String("output-file"))
+}
+
+// analyzeOrgAction handles the analyze-org command
+func analyzeOrgAction(c *cli.Context) error {
+	return analyzeOrganization(c, c.String("output-format"), c.String("output-file"))
 }
 
 // loadAndOverrideConfig loads configuration and applies CLI flag overrides
@@ -602,4 +683,112 @@ func shouldIncludeSeverity(findingSeverity, minSeverity string) bool {
 	}
 
 	return findingLevel >= minLevel
+}
+
+// analyzeOrganization analyzes all repositories in a GitHub organization
+func analyzeOrganization(c *cli.Context, outputFormat, outputFile string) error {
+	// Initialize validator and validate inputs
+	validator := validation.NewValidator()
+	
+	// Validate organization name
+	orgName := c.String("organization")
+	if orgName == "" {
+		return fmt.Errorf("organization name is required")
+	}
+	
+	// Validate other inputs
+	if err := validator.ValidateOutputFormat(outputFormat); err != nil {
+		return err
+	}
+	
+	if err := validator.ValidateOutputFile(outputFile); err != nil {
+		return err
+	}
+	
+	// Load configuration
+	cfg, err := loadAndOverrideConfig(c, outputFormat, outputFile)
+	if err != nil {
+		return err
+	}
+	
+	// Initialize GitHub client
+	client := github.NewClient()
+	
+	// Create organization analyzer
+	analyzer := organization.NewAnalyzer(
+		client,
+		cfg,
+		c.Int("max-workers"),
+		!c.Bool("no-progress"),
+	)
+	
+	// Create repository filter
+	repoFilter := organization.RepositoryFilter{
+		IncludeForks:    c.Bool("include-forks"),
+		IncludeArchived: c.Bool("include-archived"),
+		IncludePrivate:  c.Bool("include-private"),
+		IncludePublic:   c.Bool("include-public"),
+		MaxRepos:        c.Int("max-repos"),
+		NameFilter:      c.String("repo-filter"),
+	}
+	
+	// Analyze the organization
+	ctx := context.Background()
+	orgResult, err := analyzer.AnalyzeOrganization(ctx, orgName, repoFilter)
+	if err != nil {
+		return fmt.Errorf("failed to analyze organization: %w", err)
+	}
+	
+	// Generate report
+	return generateOrganizationReport(orgResult, outputFormat, outputFile, c.Bool("summary-only"))
+}
+
+// generateOrganizationReport creates and outputs the organization analysis report
+func generateOrganizationReport(result *organization.OrganizationResult, outputFormat, outputFile string, summaryOnly bool) error {
+	// TODO: Implement proper organization reporting
+	// For now, just print basic information
+	
+	fmt.Printf("\n🏢 Organization Analysis Report: %s\n", result.Organization)
+	fmt.Printf("📊 Scan completed in: %v\n", result.Duration)
+	fmt.Printf("📦 Repositories analyzed: %d/%d\n", result.AnalyzedRepositories, result.TotalRepositories)
+	
+	if result.SkippedRepositories > 0 {
+		fmt.Printf("⚠️  Repositories skipped: %d\n", result.SkippedRepositories)
+	}
+	
+	// Print summary statistics
+	fmt.Printf("\n📈 Summary:\n")
+	fmt.Printf("  Total findings: %d\n", result.Summary.TotalFindings)
+	
+	if len(result.Summary.FindingsBySeverity) > 0 {
+		fmt.Printf("  Findings by severity:\n")
+		for severity, count := range result.Summary.FindingsBySeverity {
+			fmt.Printf("    %s: %d\n", severity, count)
+		}
+	}
+	
+	if len(result.Summary.RepositoriesByRisk) > 0 {
+		fmt.Printf("  Repositories by risk:\n")
+		for risk, count := range result.Summary.RepositoriesByRisk {
+			fmt.Printf("    %s: %d\n", risk, count)
+		}
+	}
+	
+	// Show individual repository results if not summary-only
+	if !summaryOnly && len(result.RepositoryResults) > 0 {
+		fmt.Printf("\n📋 Repository Details:\n")
+		for _, repoResult := range result.RepositoryResults {
+			if repoResult.Error != nil {
+				fmt.Printf("  ❌ %s: %v\n", repoResult.Repository.FullName, repoResult.Error)
+			} else {
+				fmt.Printf("  ✅ %s: %d findings (%v)\n", 
+					repoResult.Repository.FullName, 
+					len(repoResult.Findings), 
+					repoResult.Duration)
+			}
+		}
+	}
+	
+	fmt.Printf("\n✨ Organization analysis complete!\n")
+	return nil
 }
