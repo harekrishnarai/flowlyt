@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/harekrishnarai/flowlyt/pkg/constants"
 	"gopkg.in/yaml.v3"
 )
 
@@ -107,16 +108,11 @@ func DefaultConfig() *Config {
 			FalsePositives: FalsePositives{
 				Global: GlobalIgnores{
 					Patterns: []string{},
-					Strings:  []string{"example", "placeholder", "test", "dummy", "sample"},
+					Strings:  constants.DefaultIgnorePatterns[:5], // First 5 patterns
 				},
 				Secrets: SecretsIgnores{
 					Patterns: []string{},
-					Strings: []string{
-						"YOUR_SECRET_HERE", "your-secret-here", "changeme", "change-me",
-						"XXXXXX", "xxxxxx", "000000", "111111", "password", "secret",
-						"token", "key", "admin", "user", "default", "localhost",
-						"127.0.0.1", "0.0.0.0", "::1",
-					},
+					Strings:  constants.DefaultIgnorePatterns, // All ignore patterns
 					Contexts: []string{
 						`uses:.*@[a-f0-9]{40}`, // Action SHAs
 						`uses:.*@v\d+`,         // Version tags
@@ -133,8 +129,8 @@ func DefaultConfig() *Config {
 			},
 		},
 		Output: Output{
-			Format:          "cli",
-			MinSeverity:     "LOW",
+			Format:          constants.DefaultOutputFormat,
+			MinSeverity:     constants.DefaultMinSeverity,
 			ShowRemediation: true,
 			Fields: map[string]bool{
 				"line_number": true,
@@ -189,10 +185,10 @@ func LoadConfig(configPath string) (*Config, error) {
 func findConfigFile() string {
 	// Search order: current dir, home dir
 	candidates := []string{
-		".flowlyt.yml",
-		".flowlyt.yaml",
-		"flowlyt.yml",
-		"flowlyt.yaml",
+		constants.ConfigFileFlowlytYML,
+		constants.ConfigFileFlowlytYAML,
+		constants.ConfigFileBaseYML,
+		constants.ConfigFileBaseYAML,
 	}
 
 	// Check current directory first
