@@ -1,13 +1,17 @@
 package github
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/go-github/v53/github"
 	"golang.org/x/oauth2"
@@ -75,6 +79,11 @@ func ParseRepositoryURL(repoURL string) (owner, repo string, err error) {
 
 // CloneRepository clones a GitHub repository to a local directory
 func (c *Client) CloneRepository(repoURL, destDir string) (string, error) {
+	return c.CloneRepositoryWithProgress(repoURL, destDir, false, nil)
+}
+
+// CloneRepositoryWithProgress clones a GitHub repository with optional progress reporting
+func (c *Client) CloneRepositoryWithProgress(repoURL, destDir string, showProgress bool, progressCallback func(progress int, stage string)) (string, error) {
 	owner, repo, err := ParseRepositoryURL(repoURL)
 	if err != nil {
 		return "", err
@@ -101,12 +110,99 @@ func (c *Client) CloneRepository(repoURL, destDir string) (string, error) {
 		cloneURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", url.QueryEscape(token), owner, repo)
 	}
 
-	// Use the git command to clone the repository
+	if showProgress && progressCallback != nil {
+		progressCallback(0, "Initializing clone")
+		return c.cloneWithProgress(cloneURL, destDir, progressCallback)
+	}
+
+	// Use the git command to clone the repository (original behavior)
 	cmd := exec.Command("git", "clone", cloneURL, destDir)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git clone failed: %w, output: %s", err, string(output))
 	}
+
+	return destDir, nil
+}
+
+// cloneWithProgress performs git clone with progress reporting
+func (c *Client) cloneWithProgress(cloneURL, destDir string, progressCallback func(progress int, stage string)) (string, error) {
+	// Use git clone with progress reporting
+	cmd := exec.Command("git", "clone", "--progress", cloneURL, destDir)
+
+	// Create pipes to capture stderr (where git outputs progress)
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	// Start the command
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("failed to start git clone: %w", err)
+	}
+
+	// Parse progress output
+	scanner := bufio.NewScanner(stderr)
+	progressRegex := regexp.MustCompile(`(\d+)%.*?\((\d+)/(\d+)\)`)
+
+	go func() {
+		lastProgress := 0
+		lastStage := "Cloning"
+
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+
+			// Skip empty lines
+			if line == "" {
+				continue
+			}
+
+			// Determine stage based on git output
+			stage := lastStage
+			if strings.Contains(line, "Counting objects") {
+				stage = "Counting objects"
+			} else if strings.Contains(line, "Compressing objects") {
+				stage = "Compressing objects"
+			} else if strings.Contains(line, "Receiving objects") {
+				stage = "Receiving objects"
+			} else if strings.Contains(line, "Resolving deltas") {
+				stage = "Resolving deltas"
+			} else if strings.Contains(line, "Checking out files") {
+				stage = "Checking out files"
+			}
+
+			// Extract percentage if available
+			matches := progressRegex.FindStringSubmatch(line)
+			if len(matches) >= 2 {
+				if progress, err := strconv.Atoi(matches[1]); err == nil {
+					// Only update if progress has changed significantly (avoid spam)
+					if progress != lastProgress && (progress-lastProgress >= 5 || progress >= 100) {
+						progressCallback(progress, stage)
+						lastProgress = progress
+					}
+				}
+			} else if stage != lastStage {
+				// Stage changed, report progress
+				progressCallback(lastProgress, stage)
+			}
+
+			lastStage = stage
+		}
+
+		// Ensure we report 100% completion
+		if lastProgress < 100 {
+			progressCallback(100, "Completed")
+		}
+	}()
+
+	// Wait for the command to complete
+	err = cmd.Wait()
+	if err != nil {
+		return "", fmt.Errorf("git clone failed: %w", err)
+	}
+
+	// Give the progress goroutine a moment to finish
+	time.Sleep(100 * time.Millisecond)
 
 	return destDir, nil
 }
@@ -150,7 +246,7 @@ func (c *Client) DownloadWorkflowFiles(owner, repo, destDir string) ([]string, e
 	// Create workflows directory
 	workflowsDir := filepath.Join(destDir, ".github", "workflows")
 	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create workflows directory: %w", err)
+		return nil, fmt.Errorf("failed to create workflows directory: %w", err)
 	}
 
 	// Download each workflow file
@@ -237,4 +333,35 @@ func (c *Client) CreateCheckRun(owner, repo, sha string, findings []string) erro
 	}
 
 	return nil
+}
+
+// GenerateFileURL creates a GitHub URL pointing to a specific line in a file
+func GenerateFileURL(repoURL, filePath string, lineNumber int) string {
+	// Parse repository URL to get owner and repo
+	owner, repo, err := ParseRepositoryURL(repoURL)
+	if err != nil {
+		return ""
+	}
+
+	// Remove leading slash and any temporary directory prefixes from file path
+	cleanPath := strings.TrimPrefix(filePath, "/")
+
+	// Remove common temporary directory patterns
+	// Example: /var/folders/.../flowlyt-owner-repo12345/.github/workflows/file.yml -> .github/workflows/file.yml
+	if idx := strings.Index(cleanPath, ".github/workflows/"); idx != -1 {
+		cleanPath = cleanPath[idx:]
+	} else if idx := strings.Index(cleanPath, ".gitlab-ci.yml"); idx != -1 {
+		cleanPath = ".gitlab-ci.yml"
+	}
+
+	if lineNumber > 0 {
+		return fmt.Sprintf("https://github.com/%s/%s/blob/main/%s#L%d", owner, repo, cleanPath, lineNumber)
+	}
+
+	return fmt.Sprintf("https://github.com/%s/%s/blob/main/%s", owner, repo, cleanPath)
+}
+
+// IsGitHubRepository checks if a repository URL is a GitHub repository
+func IsGitHubRepository(repoURL string) bool {
+	return strings.Contains(repoURL, "github.com")
 }

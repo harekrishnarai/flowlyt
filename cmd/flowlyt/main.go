@@ -122,6 +122,10 @@ func main() {
 						Name:  "no-progress",
 						Usage: "Disable progress reporting",
 					},
+					&cli.BoolFlag{
+						Name:  "no-default-rules",
+						Usage: "Disable default security rules",
+					},
 				},
 				Action: scanAction,
 			},
@@ -199,7 +203,36 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 		case constants.PlatformGitHub:
 			client := github.NewClient()
 			tempDir := c.String("temp-dir")
-			repoLocalPath, err = client.CloneRepository(repoURL, tempDir)
+
+			// Determine if we should show progress
+			showProgress := !constants.IsRunningInCI() && !c.Bool("no-progress")
+
+			if showProgress {
+				fmt.Printf("🔄 Cloning GitHub repository: %s\n", repoURL)
+
+				// Create progress callback
+				progressCallback := func(progress int, stage string) {
+					// Create a simple progress bar
+					barWidth := 40
+					filled := int((float64(progress) / 100) * float64(barWidth))
+					bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+
+					// Print progress with carriage return to overwrite previous line
+					fmt.Printf("\r[%s] %d%% - %s", bar, progress, stage)
+					if progress >= 100 {
+						fmt.Println() // New line when complete
+					}
+				}
+
+				repoLocalPath, err = client.CloneRepositoryWithProgress(repoURL, tempDir, true, progressCallback)
+			} else {
+				// In CI environment or progress disabled, use quiet cloning
+				if constants.IsRunningInCI() {
+					fmt.Printf("Cloning repository: %s\n", repoURL)
+				}
+				repoLocalPath, err = client.CloneRepository(repoURL, tempDir)
+			}
+
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to clone GitHub repository: %w", err)
 			}
@@ -297,7 +330,7 @@ func prepareSecurityRules(c *cli.Context, cfg *config.Config, platform string) (
 }
 
 // runAnalysis executes all analysis steps on the workflow files using concurrent processing
-func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRules []rules.Rule, policyEngine *policies.PolicyEngine, cfg *config.Config) ([]rules.Finding, error) {
+func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRules []rules.Rule, policyEngine *policies.PolicyEngine, cfg *config.Config, repoURL string) ([]rules.Finding, error) {
 	// Create concurrent processor configuration
 	processorConfig := &concurrent.ProcessorConfig{
 		MaxWorkers:      c.Int("max-workers"),
@@ -306,15 +339,27 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 		ShowProgress:    !c.Bool("no-progress"),
 		BufferSize:      100,
 	}
-	
+
 	// Create processor
 	processor := concurrent.NewConcurrentProcessor(processorConfig)
-	
+
 	// Create context for cancellation
 	ctx := context.Background()
-	
+
 	// Process workflows concurrently
-	return processor.ProcessWorkflows(ctx, workflowFiles, standardRules, policyEngine, cfg)
+	findings, err := processor.ProcessWorkflows(ctx, workflowFiles, standardRules, policyEngine, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Enhance findings with GitHub URLs if scanning a remote repository
+	if repoURL != "" && github.IsGitHubRepository(repoURL) {
+		for i := range findings {
+			findings[i].GitHubURL = github.GenerateFileURL(repoURL, findings[i].FilePath, findings[i].LineNumber)
+		}
+	}
+
+	return findings, nil
 }
 
 // processAndGenerateReport filters findings, generates reports, and prints summary
@@ -535,7 +580,7 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	}
 
 	// Run analysis on all workflows
-	allFindings, err = runAnalysis(c, workflowFiles, standardRules, policyEngine, cfg)
+	allFindings, err = runAnalysis(c, workflowFiles, standardRules, policyEngine, cfg, repoURL)
 	if err != nil {
 		return err
 	}

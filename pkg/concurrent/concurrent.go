@@ -19,16 +19,16 @@ type ProcessorConfig struct {
 	// MaxWorkers defines the maximum number of concurrent workers
 	// If 0, uses number of CPU cores
 	MaxWorkers int
-	
+
 	// Timeout for processing a single workflow file
 	WorkflowTimeout time.Duration
-	
+
 	// Timeout for the entire analysis operation
 	TotalTimeout time.Duration
-	
+
 	// Enable progress reporting
 	ShowProgress bool
-	
+
 	// Buffer size for worker channels
 	BufferSize int
 }
@@ -62,9 +62,9 @@ type WorkflowResult struct {
 
 // ProgressReporter handles progress reporting during concurrent processing
 type ProgressReporter struct {
-	Total     int
-	Completed int
-	mutex     sync.RWMutex
+	Total        int
+	Completed    int
+	mutex        sync.RWMutex
 	showProgress bool
 }
 
@@ -81,14 +81,14 @@ func NewProgressReporter(total int, showProgress bool) *ProgressReporter {
 func (pr *ProgressReporter) Update(workflowName string) {
 	pr.mutex.Lock()
 	defer pr.mutex.Unlock()
-	
+
 	pr.Completed++
-	
+
 	if pr.showProgress {
 		percentage := float64(pr.Completed) / float64(pr.Total) * 100
-		fmt.Printf("\r🔍 Analyzing workflows... [%d/%d] (%.1f%%) - %s", 
+		fmt.Printf("\r🔍 Analyzing workflows... [%d/%d] (%.1f%%) - %s",
 			pr.Completed, pr.Total, percentage, workflowName)
-		
+
 		if pr.Completed == pr.Total {
 			fmt.Println() // New line when complete
 		}
@@ -113,12 +113,12 @@ func NewConcurrentProcessor(config *ProcessorConfig) *ConcurrentProcessor {
 	if config == nil {
 		config = DefaultProcessorConfig()
 	}
-	
+
 	// Ensure we have at least 1 worker
 	if config.MaxWorkers <= 0 {
 		config.MaxWorkers = runtime.NumCPU()
 	}
-	
+
 	return &ConcurrentProcessor{
 		config: config,
 	}
@@ -132,26 +132,26 @@ func (cp *ConcurrentProcessor) ProcessWorkflows(
 	policyEngine *policies.PolicyEngine,
 	cfg *config.Config,
 ) ([]rules.Finding, error) {
-	
+
 	if len(workflowFiles) == 0 {
 		return []rules.Finding{}, nil
 	}
-	
+
 	// Set up timeout context
 	if cp.config.TotalTimeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, cp.config.TotalTimeout)
 		defer cancel()
 	}
-	
+
 	// Initialize progress reporter
 	cp.reporter = NewProgressReporter(len(workflowFiles), cp.config.ShowProgress)
-	
+
 	// For small numbers of workflows, use sequential processing
 	if len(workflowFiles) <= 2 {
 		return cp.processSequentially(ctx, workflowFiles, standardRules, policyEngine, cfg)
 	}
-	
+
 	// Use concurrent processing for larger numbers
 	return cp.processConcurrently(ctx, workflowFiles, standardRules, policyEngine, cfg)
 }
@@ -164,33 +164,33 @@ func (cp *ConcurrentProcessor) processSequentially(
 	policyEngine *policies.PolicyEngine,
 	cfg *config.Config,
 ) ([]rules.Finding, error) {
-	
+
 	var allFindings []rules.Finding
-	
+
 	for _, workflow := range workflowFiles {
 		select {
 		case <-ctx.Done():
 			return allFindings, ctx.Err()
 		default:
 		}
-		
+
 		result := cp.processWorkflow(ctx, WorkflowJob{
 			Workflow:      workflow,
 			StandardRules: standardRules,
 			PolicyEngine:  policyEngine,
 			Config:        cfg,
 		})
-		
+
 		cp.reporter.Update(workflow.Name)
-		
+
 		if result.Error != nil {
 			fmt.Printf("Warning: error processing %s: %v\n", result.WorkflowName, result.Error)
 			continue
 		}
-		
+
 		allFindings = append(allFindings, result.Findings...)
 	}
-	
+
 	return allFindings, nil
 }
 
@@ -202,24 +202,24 @@ func (cp *ConcurrentProcessor) processConcurrently(
 	policyEngine *policies.PolicyEngine,
 	cfg *config.Config,
 ) ([]rules.Finding, error) {
-	
+
 	// Calculate optimal number of workers
 	numWorkers := cp.config.MaxWorkers
 	if numWorkers > len(workflowFiles) {
 		numWorkers = len(workflowFiles)
 	}
-	
+
 	// Create job and result channels
 	jobs := make(chan WorkflowJob, cp.config.BufferSize)
 	results := make(chan WorkflowResult, len(workflowFiles))
-	
+
 	// Start workers
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go cp.worker(ctx, &wg, jobs, results)
 	}
-	
+
 	// Send jobs
 	go func() {
 		defer close(jobs)
@@ -236,23 +236,23 @@ func (cp *ConcurrentProcessor) processConcurrently(
 			}
 		}
 	}()
-	
+
 	// Collect results
 	var allFindings []rules.Finding
 	var errors []error
-	
+
 	for i := 0; i < len(workflowFiles); i++ {
 		select {
 		case result := <-results:
 			cp.reporter.Update(result.WorkflowName)
-			
+
 			if result.Error != nil {
 				errors = append(errors, fmt.Errorf("error processing %s: %w", result.WorkflowName, result.Error))
 				continue
 			}
-			
+
 			allFindings = append(allFindings, result.Findings...)
-			
+
 		case <-ctx.Done():
 			// Wait for workers to finish
 			go func() {
@@ -262,34 +262,34 @@ func (cp *ConcurrentProcessor) processConcurrently(
 			return allFindings, ctx.Err()
 		}
 	}
-	
+
 	// Wait for all workers to complete
 	wg.Wait()
 	close(results)
-	
+
 	// Report any errors that occurred
 	if len(errors) > 0 {
 		for _, err := range errors {
 			fmt.Printf("Warning: %v\n", err)
 		}
 	}
-	
+
 	return allFindings, nil
 }
 
 // worker processes jobs from the job channel
 func (cp *ConcurrentProcessor) worker(ctx context.Context, wg *sync.WaitGroup, jobs <-chan WorkflowJob, results chan<- WorkflowResult) {
 	defer wg.Done()
-	
+
 	for job := range jobs {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		
+
 		result := cp.processWorkflow(ctx, job)
-		
+
 		select {
 		case results <- result:
 		case <-ctx.Done():
@@ -301,7 +301,7 @@ func (cp *ConcurrentProcessor) worker(ctx context.Context, wg *sync.WaitGroup, j
 // processWorkflow processes a single workflow with timeout
 func (cp *ConcurrentProcessor) processWorkflow(ctx context.Context, job WorkflowJob) WorkflowResult {
 	start := time.Now()
-	
+
 	// Set up workflow-level timeout
 	workflowCtx := ctx
 	if cp.config.WorkflowTimeout > 0 {
@@ -309,12 +309,12 @@ func (cp *ConcurrentProcessor) processWorkflow(ctx context.Context, job Workflow
 		workflowCtx, cancel = context.WithTimeout(ctx, cp.config.WorkflowTimeout)
 		defer cancel()
 	}
-	
+
 	result := WorkflowResult{
 		WorkflowName: job.Workflow.Name,
 		Findings:     []rules.Finding{},
 	}
-	
+
 	// Check for cancellation
 	select {
 	case <-workflowCtx.Done():
@@ -323,13 +323,13 @@ func (cp *ConcurrentProcessor) processWorkflow(ctx context.Context, job Workflow
 		return result
 	default:
 	}
-	
+
 	// Process the workflow
 	findings, err := cp.analyzeWorkflowConcurrently(workflowCtx, job)
 	result.Findings = findings
 	result.Error = err
 	result.Duration = time.Since(start)
-	
+
 	return result
 }
 
@@ -338,15 +338,15 @@ func (cp *ConcurrentProcessor) analyzeWorkflowConcurrently(ctx context.Context, 
 	var allFindings []rules.Finding
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	// Channel for collecting errors
 	errChan := make(chan error, 3) // Standard rules, shell analysis, policy evaluation
-	
+
 	// Apply standard rules concurrently
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		
+
 		var standardFindings []rules.Finding
 		for _, rule := range job.StandardRules {
 			select {
@@ -355,86 +355,86 @@ func (cp *ConcurrentProcessor) analyzeWorkflowConcurrently(ctx context.Context, 
 				return
 			default:
 			}
-			
+
 			findings := rule.Check(job.Workflow)
 			standardFindings = append(standardFindings, findings...)
 		}
-		
+
 		mu.Lock()
 		allFindings = append(allFindings, standardFindings...)
 		mu.Unlock()
 	}()
-	
+
 	// Apply shell analysis concurrently
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		
+
 		select {
 		case <-ctx.Done():
 			errChan <- ctx.Err()
 			return
 		default:
 		}
-		
+
 		shellAnalyzer := shell.NewAnalyzer()
 		shellFindings := shellAnalyzer.Analyze(job.Workflow)
-		
+
 		var filteredShellFindings []rules.Finding
 		for _, finding := range shellFindings {
 			if job.Config.IsRuleEnabled(finding.RuleID) {
 				filteredShellFindings = append(filteredShellFindings, finding)
 			}
 		}
-		
+
 		mu.Lock()
 		allFindings = append(allFindings, filteredShellFindings...)
 		mu.Unlock()
 	}()
-	
+
 	// Apply policy evaluation concurrently (if available)
 	if job.PolicyEngine != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			
+
 			select {
 			case <-ctx.Done():
 				errChan <- ctx.Err()
 				return
 			default:
 			}
-			
+
 			policyFindings, err := job.PolicyEngine.EvaluateWorkflow(job.Workflow)
 			if err != nil {
 				errChan <- fmt.Errorf("policy evaluation error: %w", err)
 				return
 			}
-			
+
 			var filteredPolicyFindings []rules.Finding
 			for _, finding := range policyFindings {
 				if job.Config.IsRuleEnabled(finding.RuleID) {
 					filteredPolicyFindings = append(filteredPolicyFindings, finding)
 				}
 			}
-			
+
 			mu.Lock()
 			allFindings = append(allFindings, filteredPolicyFindings...)
 			mu.Unlock()
 		}()
 	}
-	
+
 	// Wait for all analysis to complete
 	wg.Wait()
 	close(errChan)
-	
+
 	// Check for any errors
 	for err := range errChan {
 		if err != nil {
 			return allFindings, err
 		}
 	}
-	
+
 	return allFindings, nil
 }
 

@@ -1,5 +1,7 @@
 package constants
 
+import "os"
+
 // Application constants
 const (
 	// Version information
@@ -13,8 +15,8 @@ const (
 	DefaultPlatform         = "github"
 	DefaultEntropyThreshold = 4.5
 	DefaultConfigFile       = ".flowlyt.yml"
-	DefaultMaxWorkers       = 0 // 0 means use CPU count
-	DefaultWorkflowTimeout  = 30 // seconds
+	DefaultMaxWorkers       = 0   // 0 means use CPU count
+	DefaultWorkflowTimeout  = 30  // seconds
 	DefaultTotalTimeout     = 300 // seconds (5 minutes)
 
 	// Supported platforms
@@ -50,6 +52,12 @@ const (
 	// Common paths and patterns
 	GitHubWorkflowsPath = ".github/workflows"
 	GitLabCIFileName    = ".gitlab-ci.yml"
+
+	// GitHub Actions environment variables
+	EnvGitHubActions = "GITHUB_ACTIONS"
+	EnvCI            = "CI"
+	EnvGitHubActor   = "GITHUB_ACTOR"
+	EnvGitHubRunID   = "GITHUB_RUN_ID"
 
 	// Error messages
 	ErrInvalidPlatform       = "unsupported platform"
@@ -107,4 +115,41 @@ var SupportedOutputFormats = []string{
 	OutputFormatCLI,
 	OutputFormatJSON,
 	OutputFormatMarkdown,
+}
+
+// IsRunningInCI detects if the application is running in a CI environment
+func IsRunningInCI() bool {
+	// Check for GitHub Actions
+	if os.Getenv(EnvGitHubActions) == "true" {
+		return true
+	}
+
+	// Check for generic CI environment
+	if os.Getenv(EnvCI) == "true" {
+		return true
+	}
+
+	// Check for other common CI environment variables
+	ciEnvs := []string{
+		"TRAVIS",          // Travis CI
+		"CIRCLECI",        // Circle CI
+		"JENKINS_URL",     // Jenkins
+		"GITLAB_CI",       // GitLab CI
+		"BUILDKITE",       // Buildkite
+		"TF_BUILD",        // Azure DevOps
+		"GITHUB_WORKFLOW", // GitHub Actions (alternative check)
+	}
+
+	for _, env := range ciEnvs {
+		if os.Getenv(env) != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// IsRunningInGitHubActions specifically detects GitHub Actions environment
+func IsRunningInGitHubActions() bool {
+	return os.Getenv(EnvGitHubActions) == "true"
 }

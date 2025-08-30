@@ -226,8 +226,13 @@ func (g *Generator) generateCLIReport() error {
 				severityStyles[severity].Printf("%s [%d] %s (%s)\n", severityIcons[severity], count, finding.RuleName, finding.RuleID)
 
 				// Format finding details in a visually appealing way
-				infoStyle.Printf("  %-12s ", "File:")
-				fmt.Println(finding.FilePath)
+				if finding.GitHubURL != "" {
+					infoStyle.Printf("  %-12s ", "GitHub URL:")
+					fmt.Println(finding.GitHubURL)
+				} else {
+					infoStyle.Printf("  %-12s ", "File:")
+					fmt.Println(finding.FilePath)
+				}
 
 				if finding.LineNumber > 0 {
 					infoStyle.Printf("  %-12s ", "Line:")
@@ -359,7 +364,11 @@ func (g *Generator) generateMarkdownReport() error {
 
 			for i, finding := range severityFindings {
 				markdownBuilder.WriteString(fmt.Sprintf("#### %d. %s (%s)\n\n", i+1, finding.RuleName, finding.RuleID))
-				markdownBuilder.WriteString(fmt.Sprintf("- **File:** `%s`\n", finding.FilePath))
+				if finding.GitHubURL != "" {
+					markdownBuilder.WriteString(fmt.Sprintf("- **GitHub URL:** [%s](%s)\n", finding.FilePath, finding.GitHubURL))
+				} else {
+					markdownBuilder.WriteString(fmt.Sprintf("- **File:** `%s`\n", finding.FilePath))
+				}
 				if finding.JobName != "" {
 					markdownBuilder.WriteString(fmt.Sprintf("- **Job:** `%s`\n", finding.JobName))
 				}

@@ -12,27 +12,27 @@ func TestValidator_ValidateConfig(t *testing.T) {
 	validator := NewValidator()
 
 	tests := []struct {
-		name      string
+		name       string
 		configPath string
-		wantError bool
-		errorType errors.ErrorType
+		wantError  bool
+		errorType  errors.ErrorType
 	}{
 		{
-			name:      "empty config path should be valid",
+			name:       "empty config path should be valid",
 			configPath: "",
-			wantError: false,
+			wantError:  false,
 		},
 		{
-			name:      "path traversal should be invalid",
+			name:       "path traversal should be invalid",
 			configPath: "../../../etc/passwd",
-			wantError: true,
-			errorType: errors.ErrorTypeConfig,
+			wantError:  true,
+			errorType:  errors.ErrorTypeConfig,
 		},
 		{
-			name:      "non-existent file should be invalid",
+			name:       "non-existent file should be invalid",
 			configPath: "non-existent-config.yml",
-			wantError: true,
-			errorType: errors.ErrorTypeConfig,
+			wantError:  true,
+			errorType:  errors.ErrorTypeConfig,
 		},
 	}
 

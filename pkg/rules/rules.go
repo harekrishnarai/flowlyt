@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/harekrishnarai/flowlyt/pkg/linenum"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 )
 
@@ -101,7 +102,8 @@ type Finding struct {
 	StepName    string
 	Evidence    string
 	Remediation string
-	LineNumber  int // Line number where the issue was found
+	LineNumber  int    // Line number where the issue was found
+	GitHubURL   string // Direct GitHub URL to the line (for remote repositories)
 }
 
 // StandardRules returns the list of built-in security rules
@@ -181,16 +183,8 @@ func checkCurlPipeToShell(workflow parser.WorkflowFile) []Finding {
 	// Regular expression to match curl/wget piped to bash/sh/zsh
 	re := regexp.MustCompile(`(?i)(curl|wget).*\s*\|\s*(bash|sh|zsh)`)
 
-	// Preprocess content to calculate line numbers
-	content := string(workflow.Content)
-	lines := strings.Split(content, "\n")
-	lineToChar := make([]int, len(lines)+1)
-
-	// Build a mapping of line numbers to character positions
-	lineToChar[0] = 0
-	for i, line := range lines {
-		lineToChar[i+1] = lineToChar[i] + len(line) + 1 // +1 for the newline character
-	}
+	// Create line mapper for improved line number detection
+	lineMapper := linenum.NewLineMapper(workflow.Content)
 
 	for jobName, job := range workflow.Workflow.Jobs {
 		for _, step := range job.Steps {
@@ -199,8 +193,17 @@ func checkCurlPipeToShell(workflow parser.WorkflowFile) []Finding {
 			}
 
 			if re.MatchString(step.Run) {
-				// Find the line number by searching for the step in the content
-				lineNumber := findLineNumber(content, step.Name, step.Run, lineToChar)
+				// Use the new line mapper to find accurate line numbers
+				pattern := linenum.FindPattern{
+					Key:   "run",
+					Value: step.Run,
+				}
+				lineResult := lineMapper.FindLineNumber(pattern)
+
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
 
 				findings = append(findings, Finding{
 					RuleID:      "MALICIOUS_CURL_PIPE_BASH",
@@ -229,17 +232,6 @@ func checkBase64DecodeExecution(workflow parser.WorkflowFile) []Finding {
 	// Regular expression to match base64 decode piped to execution
 	re := regexp.MustCompile(`(?i)(base64\s*-d|base64\s*--decode|base64\s*-D).*\s*\|\s*(bash|sh|zsh|eval)`)
 
-	// Preprocess content to calculate line numbers
-	content := string(workflow.Content)
-	lines := strings.Split(content, "\n")
-	lineToChar := make([]int, len(lines)+1)
-
-	// Build a mapping of line numbers to character positions
-	lineToChar[0] = 0
-	for i, line := range lines {
-		lineToChar[i+1] = lineToChar[i] + len(line) + 1 // +1 for the newline character
-	}
-
 	for jobName, job := range workflow.Workflow.Jobs {
 		for _, step := range job.Steps {
 			if step.Run == "" {
@@ -247,8 +239,8 @@ func checkBase64DecodeExecution(workflow parser.WorkflowFile) []Finding {
 			}
 
 			if re.MatchString(step.Run) {
-				// Find the line number by searching for the step in the content
-				lineNumber := findLineNumber(content, step.Name, step.Run, lineToChar)
+				// Use the helper function for line number detection
+				lineNumber := findLineNumberWithMapper(workflow, step.Name, step.Run)
 
 				findings = append(findings, Finding{
 					RuleID:      "MALICIOUS_BASE64_DECODE",
@@ -316,17 +308,6 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 		regexp.MustCompile(`(?i)(bash -i >& |nc -e |python -c ['"]import socket,subprocess,os)`),
 	}
 
-	// Preprocess content to calculate line numbers
-	content := string(workflow.Content)
-	lines := strings.Split(content, "\n")
-	lineToChar := make([]int, len(lines)+1)
-
-	// Build a mapping of line numbers to character positions
-	lineToChar[0] = 0
-	for i, line := range lines {
-		lineToChar[i+1] = lineToChar[i] + len(line) + 1 // +1 for the newline character
-	}
-
 	for jobName, job := range workflow.Workflow.Jobs {
 		for _, step := range job.Steps {
 			if step.Run == "" {
@@ -337,7 +318,7 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 			for _, pattern := range exfilPatterns {
 				if pattern.MatchString(step.Run) {
 					// Find the line number by searching for the step in the content
-					lineNumber := findLineNumber(content, step.Name, step.Run, lineToChar)
+					lineNumber := findLineNumberWithMapper(workflow, step.Name, step.Run)
 
 					findings = append(findings, Finding{
 						RuleID:      "MALICIOUS_DATA_EXFILTRATION",
@@ -364,7 +345,7 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 				for _, pattern := range exfilPatterns {
 					if pattern.MatchString(value) {
 						// Find the line number for this environment variable
-						lineNumber := findLineNumber(content, key+":", value, lineToChar)
+						lineNumber := findLineNumberWithMapper(workflow, key+":", value)
 
 						findings = append(findings, Finding{
 							RuleID:      "MALICIOUS_DATA_EXFILTRATION",
@@ -392,7 +373,7 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 			for _, pattern := range exfilPatterns {
 				if pattern.MatchString(value) {
 					// Find the line number for this environment variable
-					lineNumber := findLineNumber(content, key+":", value, lineToChar)
+					lineNumber := findLineNumberWithMapper(workflow, key+":", value)
 
 					findings = append(findings, Finding{
 						RuleID:      "MALICIOUS_DATA_EXFILTRATION",
@@ -412,55 +393,6 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 	}
 
 	return findings
-}
-
-// findLineNumber helps locate the line number for a specific pattern in the content
-func findLineNumber(content, key, value string, lineToChar []int) int {
-	// If we have both a key and value, try to find them together
-	if key != "" && value != "" {
-		// Try different formats to match key-value pairs in YAML
-		searchPatterns := []string{
-			key + ":" + " " + value,
-			key + ":" + " '" + value + "'",
-			key + ":" + " \"" + value + "\"",
-			value, // Fallback to just searching for the value
-		}
-
-		for _, pattern := range searchPatterns {
-			if idx := strings.Index(content, pattern); idx != -1 {
-				// Find which line contains this index
-				for i := 1; i < len(lineToChar); i++ {
-					if lineToChar[i] > idx {
-						return i // Line numbers are 1-based
-					}
-				}
-			}
-		}
-	}
-
-	// If the above didn't find anything, just search for the value
-	if value != "" {
-		if idx := strings.Index(content, value); idx != -1 {
-			// Find which line contains this index
-			for i := 1; i < len(lineToChar); i++ {
-				if lineToChar[i] > idx {
-					return i // Line numbers are 1-based
-				}
-			}
-		}
-	}
-
-	// Fallback - do a more exhaustive search
-	lines := strings.Split(content, "\n")
-	for i, line := range lines {
-		// Try to find the key or value in the line
-		if (key != "" && strings.Contains(line, key)) ||
-			(value != "" && strings.Contains(line, value)) {
-			return i + 1 // Line numbers are 1-based
-		}
-	}
-
-	return 0 // Couldn't find the line
 }
 
 // checkInsecurePullRequestTarget checks for insecure pull_request_target usage
@@ -488,17 +420,6 @@ func checkInsecurePullRequestTarget(workflow parser.WorkflowFile) []Finding {
 		return findings
 	}
 
-	// Preprocess content to calculate line numbers
-	content := string(workflow.Content)
-	lines := strings.Split(content, "\n")
-	lineToChar := make([]int, len(lines)+1)
-
-	// Build a mapping of line numbers to character positions
-	lineToChar[0] = 0
-	for i, line := range lines {
-		lineToChar[i+1] = lineToChar[i] + len(line) + 1 // +1 for the newline character
-	}
-
 	// Check for code checkout in pull_request_target context
 	for jobName, job := range workflow.Workflow.Jobs {
 		for _, step := range job.Steps {
@@ -516,7 +437,7 @@ func checkInsecurePullRequestTarget(workflow parser.WorkflowFile) []Finding {
 
 							// Find the line number
 							stepStr := "uses: " + step.Uses
-							lineNumber := findLineNumber(content, step.Name, stepStr, lineToChar)
+							lineNumber := findLineNumberWithMapper(workflow, step.Name, stepStr)
 
 							findings = append(findings, Finding{
 								RuleID:      "INSECURE_PULL_REQUEST_TARGET",
@@ -1046,18 +967,6 @@ func checkContinueOnErrorCriticalJob(workflow parser.WorkflowFile) []Finding {
 		"authentication", "auth", "iam", "admin", "validate", "verification",
 	}
 
-	// Preprocess content to calculate line numbers
-	content := string(workflow.Content)
-	lines := strings.Split(content, "\n")
-	lineToChar := make([]int, len(lines)+1)
-
-	char := 0
-	for i, line := range lines {
-		lineToChar[i] = char
-		char += len(line) + 1 // +1 for newline
-	}
-	lineToChar[len(lines)] = char
-
 	for jobName, job := range workflow.Workflow.Jobs {
 		// Check if this is a critical job
 		isCritical := false
@@ -1070,18 +979,8 @@ func checkContinueOnErrorCriticalJob(workflow parser.WorkflowFile) []Finding {
 		}
 
 		if isCritical && job.ContinueOnError {
-			// Find line number for this job
-			jobPattern := regexp.MustCompile(`(?m)^\s*` + regexp.QuoteMeta(jobName) + `\s*:`)
-			match := jobPattern.FindStringIndex(content)
-			lineNumber := 1
-			if match != nil {
-				for i, pos := range lineToChar {
-					if pos > match[0] {
-						lineNumber = i
-						break
-					}
-				}
-			}
+			// Find line number for this job using the LineMapper
+			lineNumber := findLineNumberWithMapper(workflow, jobName+":", "")
 
 			findings = append(findings, Finding{
 				RuleID:      "CONTINUE_ON_ERROR_CRITICAL_JOB",
@@ -1138,4 +1037,21 @@ func checkBroadPermissions(workflow parser.WorkflowFile) []Finding {
 	}
 
 	return findings
+}
+
+// findLineNumberWithMapper is a helper function that uses the new LineMapper
+// for backward compatibility and easier migration
+func findLineNumberWithMapper(workflow parser.WorkflowFile, key, value string) int {
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+	pattern := linenum.FindPattern{
+		Key:   key,
+		Value: value,
+	}
+
+	result := lineMapper.FindLineNumber(pattern)
+	if result != nil {
+		return result.LineNumber
+	}
+
+	return 0
 }

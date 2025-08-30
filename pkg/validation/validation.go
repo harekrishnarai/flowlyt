@@ -281,7 +281,7 @@ func (v *Validator) ValidateEntropyThreshold(threshold float64) error {
 func (v *Validator) validatePathSafety(path string) error {
 	// Clean the path and check for traversal
 	cleanPath := filepath.Clean(path)
-	
+
 	// Check for directory traversal patterns
 	if strings.Contains(cleanPath, "..") {
 		return fmt.Errorf("path contains directory traversal sequence")
@@ -296,7 +296,7 @@ func (v *Validator) validatePathSafety(path string) error {
 				return fmt.Errorf("path accesses restricted system directory")
 			}
 		}
-		
+
 		// Special handling for /var - allow temp directories but block others
 		if strings.HasPrefix(cleanPath, "/var") {
 			// Allow /var/folders (macOS temp), /var/tmp, etc.
@@ -342,7 +342,7 @@ func (v *Validator) isPrivateOrLocalhost(host string) bool {
 		"10\\.", "192\\.168\\.", "172\\.(1[6-9]|2[0-9]|3[01])\\.",
 		"169\\.254\\.", // Link-local
 	}
-	
+
 	for _, pattern := range privatePatterns {
 		if matched, _ := regexp.MatchString("^"+pattern, host); matched {
 			return true
@@ -376,7 +376,7 @@ func (v *Validator) isKnownGitHost(host string) bool {
 
 	// Check for GitLab instances (common patterns)
 	gitlabPatterns := []string{
-		"gitlab\\.", // gitlab.company.com
+		"gitlab\\.",    // gitlab.company.com
 		"\\.gitlab\\.", // sub.gitlab.company.com
 	}
 
@@ -393,7 +393,7 @@ func (v *Validator) isKnownGitHost(host string) bool {
 func (v *Validator) isValidWorkflowFile(path string) bool {
 	ext := strings.ToLower(filepath.Ext(path))
 	base := strings.ToLower(filepath.Base(path))
-	
+
 	// Check for common workflow file patterns
 	validPatterns := []string{
 		".yml", ".yaml", // Generic YAML files
