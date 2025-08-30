@@ -127,6 +127,10 @@ func main() {
 						Name:  "no-default-rules",
 						Usage: "Disable default security rules",
 					},
+					&cli.BoolFlag{
+						Name:  "enable-vuln-intel",
+						Usage: "Enable vulnerability intelligence from OSV.dev (experimental)",
+					},
 				},
 				Action: scanAction,
 			},
@@ -444,7 +448,7 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 }
 
 // processAndGenerateReport filters findings, generates reports, and prints summary
-func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, outputFormat, outputFile string, startTime time.Time, workflowsCount, rulesCount int, repoLocalPath string) error {
+func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, outputFormat, outputFile string, startTime time.Time, workflowsCount, rulesCount int, repoLocalPath string, enableVulnIntel bool) error {
 	// Filter findings based on configuration
 	filteredFindings := []rules.Finding{}
 	for _, finding := range allFindings {
@@ -500,9 +504,22 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 		}
 	}
 
-	reportGenerator := report.NewGenerator(result, actualOutputFormat, false, actualOutputFile)
-	if err := reportGenerator.Generate(); err != nil {
-		return fmt.Errorf("failed to generate report: %w", err)
+	// Use intelligence-enhanced reporting if enabled
+	if enableVulnIntel {
+		intelGenerator := report.NewIntelligenceGenerator(result, actualOutputFormat, false, actualOutputFile, true)
+		if err := intelGenerator.GenerateWithIntelligence(); err != nil {
+			// Fall back to standard reporting on error
+			fmt.Printf("Warning: Intelligence-enhanced reporting failed, falling back to standard report: %v\n", err)
+			reportGenerator := report.NewGenerator(result, actualOutputFormat, false, actualOutputFile)
+			if err := reportGenerator.Generate(); err != nil {
+				return fmt.Errorf("failed to generate report: %w", err)
+			}
+		}
+	} else {
+		reportGenerator := report.NewGenerator(result, actualOutputFormat, false, actualOutputFile)
+		if err := reportGenerator.Generate(); err != nil {
+			return fmt.Errorf("failed to generate report: %w", err)
+		}
 	}
 
 	// Print scan completion message
@@ -667,7 +684,7 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	}
 
 	// Process results and generate report
-	return processAndGenerateReport(allFindings, cfg, outputFormat, outputFile, startTime, len(workflowFiles), len(standardRules), repoLocalPath)
+	return processAndGenerateReport(allFindings, cfg, outputFormat, outputFile, startTime, len(workflowFiles), len(standardRules), repoLocalPath, c.Bool("enable-vuln-intel"))
 }
 
 // shouldIncludeSeverity checks if a finding should be included based on minimum severity
