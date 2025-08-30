@@ -15,37 +15,37 @@ import (
 type IntelligenceReport struct {
 	ScanResult
 	VulnerabilityIntelligence VulnerabilityIntelligence `json:"vulnerability_intelligence"`
-	EnhancedFindings         []osv.EnhancedFinding      `json:"enhanced_findings"`
-	IntelligenceSummary      IntelligenceSummary        `json:"intelligence_summary"`
+	EnhancedFindings          []osv.EnhancedFinding     `json:"enhanced_findings"`
+	IntelligenceSummary       IntelligenceSummary       `json:"intelligence_summary"`
 }
 
 // VulnerabilityIntelligence provides metadata about vulnerability correlation
 type VulnerabilityIntelligence struct {
-	Enabled           bool      `json:"enabled"`
-	QueryTime         time.Time `json:"query_time"`
-	QueriesPerformed  int       `json:"queries_performed"`
-	VulnerabilitiesFound int    `json:"vulnerabilities_found"`
-	HighRiskFindings  int       `json:"high_risk_findings"`
-	CVEsFound         []string  `json:"cves_found"`
-	DataSource        string    `json:"data_source"`
+	Enabled              bool      `json:"enabled"`
+	QueryTime            time.Time `json:"query_time"`
+	QueriesPerformed     int       `json:"queries_performed"`
+	VulnerabilitiesFound int       `json:"vulnerabilities_found"`
+	HighRiskFindings     int       `json:"high_risk_findings"`
+	CVEsFound            []string  `json:"cves_found"`
+	DataSource           string    `json:"data_source"`
 }
 
 // IntelligenceSummary provides intelligence-enhanced summary statistics
 type IntelligenceSummary struct {
 	ResultSummary
-	IntelligenceLevels map[string]int `json:"intelligence_levels"`
-	RiskScoreDistribution map[string]int `json:"risk_score_distribution"`
+	IntelligenceLevels      map[string]int `json:"intelligence_levels"`
+	RiskScoreDistribution   map[string]int `json:"risk_score_distribution"`
 	VulnerabilityCategories map[string]int `json:"vulnerability_categories"`
-	RecentVulnerabilities int           `json:"recent_vulnerabilities"`
-	KnownExploits        int            `json:"known_exploits"`
+	RecentVulnerabilities   int            `json:"recent_vulnerabilities"`
+	KnownExploits           int            `json:"known_exploits"`
 }
 
 // IntelligenceGenerator creates intelligence-enhanced reports
 type IntelligenceGenerator struct {
 	*Generator
-	osvClient    *osv.Client
-	enableIntel  bool
-	timeout      time.Duration
+	osvClient   *osv.Client
+	enableIntel bool
+	timeout     time.Duration
 }
 
 // NewIntelligenceGenerator creates a new intelligence-enhanced report generator
@@ -99,9 +99,9 @@ func (ig *IntelligenceGenerator) GenerateWithIntelligence() error {
 func (ig *IntelligenceGenerator) createIntelligenceReport(enhanced []osv.EnhancedFinding, startTime time.Time) IntelligenceReport {
 	// Calculate intelligence statistics
 	vulnIntel := VulnerabilityIntelligence{
-		Enabled:     true,
-		QueryTime:   startTime,
-		DataSource:  "OSV.dev",
+		Enabled:    true,
+		QueryTime:  startTime,
+		DataSource: "OSV.dev",
 	}
 
 	intelSummary := IntelligenceSummary{
@@ -114,10 +114,10 @@ func (ig *IntelligenceGenerator) createIntelligenceReport(enhanced []osv.Enhance
 	var cveIDs []string
 	for _, finding := range enhanced {
 		vulnIntel.QueriesPerformed++
-		
+
 		if finding.VulnerabilityInfo != nil {
 			vulnIntel.VulnerabilitiesFound++
-			
+
 			if finding.VulnerabilityInfo.CVEID != "" {
 				cveIDs = append(cveIDs, finding.VulnerabilityInfo.CVEID)
 			}
@@ -151,8 +151,8 @@ func (ig *IntelligenceGenerator) createIntelligenceReport(enhanced []osv.Enhance
 	return IntelligenceReport{
 		ScanResult:                ig.Result,
 		VulnerabilityIntelligence: vulnIntel,
-		EnhancedFindings:         enhanced,
-		IntelligenceSummary:      intelSummary,
+		EnhancedFindings:          enhanced,
+		IntelligenceSummary:       intelSummary,
 	}
 }
 
@@ -243,10 +243,10 @@ func (ig *IntelligenceGenerator) generateIntelligenceMarkdownReport(report Intel
 
 	// Add intelligence section to the markdown
 	var markdownBuilder strings.Builder
-	
+
 	markdownBuilder.WriteString("\n## 🧠 Vulnerability Intelligence\n\n")
 	intel := report.VulnerabilityIntelligence
-	
+
 	markdownBuilder.WriteString(fmt.Sprintf("- **Data Source:** %s\n", intel.DataSource))
 	markdownBuilder.WriteString(fmt.Sprintf("- **Queries Performed:** %d\n", intel.QueriesPerformed))
 	markdownBuilder.WriteString(fmt.Sprintf("- **Vulnerabilities Found:** %d\n", intel.VulnerabilitiesFound))
@@ -266,7 +266,7 @@ func (ig *IntelligenceGenerator) generateIntelligenceMarkdownReport(report Intel
 		}
 	}
 
-	// Risk distribution  
+	// Risk distribution
 	if len(report.IntelligenceSummary.RiskScoreDistribution) > 0 {
 		markdownBuilder.WriteString("\n### Risk Score Distribution\n\n")
 		markdownBuilder.WriteString("| Risk Range | Count |\n")

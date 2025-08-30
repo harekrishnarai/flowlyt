@@ -36,43 +36,43 @@ type PolicyEnhancedFinding struct {
 
 // ComplianceInfo provides compliance framework information
 type ComplianceInfo struct {
-	Frameworks    []string          `json:"frameworks"`
-	Controls      []string          `json:"controls"`
-	Requirements  []string          `json:"requirements"`
-	Violations    map[string]string `json:"violations"`
+	Frameworks   []string          `json:"frameworks"`
+	Controls     []string          `json:"controls"`
+	Requirements []string          `json:"requirements"`
+	Violations   map[string]string `json:"violations"`
 }
 
 // PolicyAwareReport extends standard reports with policy information
 type PolicyAwareReport struct {
-	Standard          interface{}                `json:"standard_report"`
-	PolicyEvaluation  PolicyEvaluationSummary   `json:"policy_evaluation"`
-	ComplianceReport  config.ComplianceReport   `json:"compliance_report"`
-	EnhancedFindings  []PolicyEnhancedFinding   `json:"enhanced_findings"`
-	Recommendations   []PolicyRecommendation    `json:"recommendations"`
-	GeneratedAt       time.Time                 `json:"generated_at"`
+	Standard         interface{}             `json:"standard_report"`
+	PolicyEvaluation PolicyEvaluationSummary `json:"policy_evaluation"`
+	ComplianceReport config.ComplianceReport `json:"compliance_report"`
+	EnhancedFindings []PolicyEnhancedFinding `json:"enhanced_findings"`
+	Recommendations  []PolicyRecommendation  `json:"recommendations"`
+	GeneratedAt      time.Time               `json:"generated_at"`
 }
 
 // PolicyEvaluationSummary summarizes policy evaluation results
 type PolicyEvaluationSummary struct {
-	TotalPolicies       int                     `json:"total_policies"`
-	PoliciesEvaluated   int                     `json:"policies_evaluated"`
-	PolicyViolations    int                     `json:"policy_violations"`
-	BlockingViolations  int                     `json:"blocking_violations"`
-	ErrorViolations     int                     `json:"error_violations"`
-	WarningViolations   int                     `json:"warning_violations"`
-	ExceptionsApplied   int                     `json:"exceptions_applied"`
-	ComplianceStatus    map[string]bool         `json:"compliance_status"`
-	PolicyBreakdown     map[string]PolicyStats  `json:"policy_breakdown"`
+	TotalPolicies      int                    `json:"total_policies"`
+	PoliciesEvaluated  int                    `json:"policies_evaluated"`
+	PolicyViolations   int                    `json:"policy_violations"`
+	BlockingViolations int                    `json:"blocking_violations"`
+	ErrorViolations    int                    `json:"error_violations"`
+	WarningViolations  int                    `json:"warning_violations"`
+	ExceptionsApplied  int                    `json:"exceptions_applied"`
+	ComplianceStatus   map[string]bool        `json:"compliance_status"`
+	PolicyBreakdown    map[string]PolicyStats `json:"policy_breakdown"`
 }
 
 // PolicyStats provides statistics for individual policies
 type PolicyStats struct {
-	PolicyID      string `json:"policy_id"`
-	PolicyName    string `json:"policy_name"`
-	Violations    int    `json:"violations"`
-	Exceptions    int    `json:"exceptions"`
-	Compliant     bool   `json:"compliant"`
-	Enforcement   string `json:"enforcement"`
+	PolicyID    string `json:"policy_id"`
+	PolicyName  string `json:"policy_name"`
+	Violations  int    `json:"violations"`
+	Exceptions  int    `json:"exceptions"`
+	Compliant   bool   `json:"compliant"`
+	Enforcement string `json:"enforcement"`
 }
 
 // PolicyRecommendation provides actionable recommendations
@@ -89,54 +89,54 @@ type PolicyRecommendation struct {
 func (parg *PolicyAwareReportGenerator) GenerateReport(findings []rules.Finding, context config.PolicyContext, outputFormat string) (*PolicyAwareReport, error) {
 	// Enhance findings with policy information
 	enhancedFindings := parg.enhanceFindings(findings, context)
-	
+
 	// Generate compliance report
 	complianceReport := parg.policyEngine.GetComplianceReport(findings, context)
-	
+
 	// Generate policy evaluation summary
 	policyEvaluation := parg.generatePolicyEvaluationSummary(enhancedFindings)
-	
+
 	// Generate recommendations
 	recommendations := parg.generateRecommendations(enhancedFindings, complianceReport)
-	
+
 	// Generate base report using standard generator
 	var standardReport interface{}
 	switch outputFormat {
 	case "cli":
 		standardReport = "CLI Report Generated" // Placeholder
 	case "json":
-		standardReport = "JSON Report Generated" // Placeholder  
+		standardReport = "JSON Report Generated" // Placeholder
 	case "sarif":
 		standardReport = "SARIF Report Generated" // Placeholder
 	}
-	
+
 	return &PolicyAwareReport{
-		Standard:          standardReport,
-		PolicyEvaluation:  policyEvaluation,
-		ComplianceReport:  complianceReport,
-		EnhancedFindings:  enhancedFindings,
-		Recommendations:   recommendations,
-		GeneratedAt:       time.Now(),
+		Standard:         standardReport,
+		PolicyEvaluation: policyEvaluation,
+		ComplianceReport: complianceReport,
+		EnhancedFindings: enhancedFindings,
+		Recommendations:  recommendations,
+		GeneratedAt:      time.Now(),
 	}, nil
 }
 
 // enhanceFindings enhances findings with policy and compliance information
 func (parg *PolicyAwareReportGenerator) enhanceFindings(findings []rules.Finding, context config.PolicyContext) []PolicyEnhancedFinding {
 	var enhanced []PolicyEnhancedFinding
-	
+
 	for _, finding := range findings {
 		// Evaluate policy for this finding
 		evaluation := parg.policyEngine.EvaluatePolicy(finding, context)
-		
+
 		// Calculate risk score with policy impact
 		riskScore := parg.calculateRiskScore(finding, evaluation)
-		
+
 		// Get compliance information
 		complianceInfo := parg.getComplianceInfo(finding, evaluation)
-		
+
 		// Determine enforcement level
 		enforcementLevel := parg.getEnforcementLevel(evaluation)
-		
+
 		enhanced = append(enhanced, PolicyEnhancedFinding{
 			Finding:          finding,
 			PolicyViolations: evaluation.Violations,
@@ -146,14 +146,14 @@ func (parg *PolicyAwareReportGenerator) enhanceFindings(findings []rules.Finding
 			EnforcementLevel: enforcementLevel,
 		})
 	}
-	
+
 	return enhanced
 }
 
 // calculateRiskScore calculates risk score with policy impact
 func (parg *PolicyAwareReportGenerator) calculateRiskScore(finding rules.Finding, evaluation config.PolicyEvaluation) int {
 	baseScore := 50 // Base score
-	
+
 	// Adjust based on severity
 	switch finding.Severity {
 	case "CRITICAL":
@@ -165,7 +165,7 @@ func (parg *PolicyAwareReportGenerator) calculateRiskScore(finding rules.Finding
 	case "LOW":
 		baseScore += 10
 	}
-	
+
 	// Adjust based on policy violations
 	for _, violation := range evaluation.Violations {
 		switch violation.Enforcement {
@@ -177,12 +177,12 @@ func (parg *PolicyAwareReportGenerator) calculateRiskScore(finding rules.Finding
 			baseScore += 5
 		}
 	}
-	
+
 	// Reduce score if exceptions apply
 	if len(evaluation.Exceptions) > 0 {
 		baseScore -= 10
 	}
-	
+
 	// Ensure score is within bounds
 	if baseScore > 100 {
 		baseScore = 100
@@ -190,7 +190,7 @@ func (parg *PolicyAwareReportGenerator) calculateRiskScore(finding rules.Finding
 	if baseScore < 0 {
 		baseScore = 0
 	}
-	
+
 	return baseScore
 }
 
@@ -200,7 +200,7 @@ func (parg *PolicyAwareReportGenerator) getComplianceInfo(finding rules.Finding,
 	controls := make(map[string]bool)
 	requirements := make(map[string]bool)
 	violations := make(map[string]string)
-	
+
 	for _, violation := range evaluation.Violations {
 		// Extract compliance information from policy
 		// This would be enhanced based on actual policy compliance mappings
@@ -209,11 +209,11 @@ func (parg *PolicyAwareReportGenerator) getComplianceInfo(finding rules.Finding,
 			violations[violation.PolicyID] = violation.RuleID
 		}
 	}
-	
+
 	if len(frameworks) == 0 {
 		return nil
 	}
-	
+
 	return &ComplianceInfo{
 		Frameworks:   mapKeysToSlice(frameworks),
 		Controls:     mapKeysToSlice(controls),
@@ -227,7 +227,7 @@ func (parg *PolicyAwareReportGenerator) getEnforcementLevel(evaluation config.Po
 	if len(evaluation.Violations) == 0 {
 		return ""
 	}
-	
+
 	// Find highest enforcement level
 	highestLevel := config.EnforcementDisabled
 	for _, violation := range evaluation.Violations {
@@ -235,7 +235,7 @@ func (parg *PolicyAwareReportGenerator) getEnforcementLevel(evaluation config.Po
 			highestLevel = violation.Enforcement
 		}
 	}
-	
+
 	return string(highestLevel)
 }
 
@@ -245,13 +245,13 @@ func (parg *PolicyAwareReportGenerator) generatePolicyEvaluationSummary(findings
 		ComplianceStatus: make(map[string]bool),
 		PolicyBreakdown:  make(map[string]PolicyStats),
 	}
-	
+
 	policyStats := make(map[string]*PolicyStats)
-	
+
 	for _, finding := range findings {
 		for _, violation := range finding.PolicyViolations {
 			summary.PolicyViolations++
-			
+
 			switch violation.Enforcement {
 			case config.EnforcementBlock:
 				summary.BlockingViolations++
@@ -260,7 +260,7 @@ func (parg *PolicyAwareReportGenerator) generatePolicyEvaluationSummary(findings
 			case config.EnforcementWarn:
 				summary.WarningViolations++
 			}
-			
+
 			// Track policy statistics
 			if _, exists := policyStats[violation.PolicyID]; !exists {
 				policyStats[violation.PolicyID] = &PolicyStats{
@@ -271,26 +271,26 @@ func (parg *PolicyAwareReportGenerator) generatePolicyEvaluationSummary(findings
 			}
 			policyStats[violation.PolicyID].Violations++
 		}
-		
+
 		summary.ExceptionsApplied += len(finding.PolicyExceptions)
 	}
-	
+
 	// Convert policy stats to breakdown
 	for id, stats := range policyStats {
 		stats.Compliant = stats.Violations == 0
 		summary.PolicyBreakdown[id] = *stats
 		summary.ComplianceStatus[stats.PolicyName] = stats.Compliant
 	}
-	
+
 	summary.PoliciesEvaluated = len(policyStats)
-	
+
 	return summary
 }
 
 // generateRecommendations generates actionable recommendations
 func (parg *PolicyAwareReportGenerator) generateRecommendations(findings []PolicyEnhancedFinding, compliance config.ComplianceReport) []PolicyRecommendation {
 	var recommendations []PolicyRecommendation
-	
+
 	// High-priority recommendations for blocking violations
 	blockingCount := 0
 	for _, finding := range findings {
@@ -298,7 +298,7 @@ func (parg *PolicyAwareReportGenerator) generateRecommendations(findings []Polic
 			blockingCount++
 		}
 	}
-	
+
 	if blockingCount > 0 {
 		recommendations = append(recommendations, PolicyRecommendation{
 			ID:          "blocking-violations",
@@ -316,7 +316,7 @@ func (parg *PolicyAwareReportGenerator) generateRecommendations(findings []Polic
 			},
 		})
 	}
-	
+
 	// Compliance framework recommendations
 	if !compliance.Compliant {
 		recommendations = append(recommendations, PolicyRecommendation{
@@ -334,7 +334,7 @@ func (parg *PolicyAwareReportGenerator) generateRecommendations(findings []Polic
 			},
 		})
 	}
-	
+
 	// Security best practices recommendations
 	secretFindings := 0
 	for _, finding := range findings {
@@ -342,7 +342,7 @@ func (parg *PolicyAwareReportGenerator) generateRecommendations(findings []Polic
 			secretFindings++
 		}
 	}
-	
+
 	if secretFindings > 0 {
 		recommendations = append(recommendations, PolicyRecommendation{
 			ID:          "secret-management",
@@ -360,7 +360,7 @@ func (parg *PolicyAwareReportGenerator) generateRecommendations(findings []Polic
 			},
 		})
 	}
-	
+
 	return recommendations
 }
 
@@ -370,22 +370,22 @@ func (parg *PolicyAwareReportGenerator) PolicyAwareCLIReport(findings []rules.Fi
 	if err != nil {
 		return fmt.Sprintf("Error generating policy-aware report: %v", err)
 	}
-	
+
 	var output strings.Builder
-	
+
 	// Standard CLI output first
 	if report.Standard != nil {
 		output.WriteString(fmt.Sprintf("%v\n", report.Standard))
 	}
-	
+
 	// Add policy evaluation section
 	output.WriteString("\n🏛️ POLICY EVALUATION\n")
 	output.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	
+
 	eval := report.PolicyEvaluation
 	output.WriteString(fmt.Sprintf("Policies Evaluated:   %d\n", eval.PoliciesEvaluated))
 	output.WriteString(fmt.Sprintf("Policy Violations:    %d\n", eval.PolicyViolations))
-	
+
 	if eval.BlockingViolations > 0 {
 		output.WriteString(fmt.Sprintf("❌ Blocking:          %d (MUST RESOLVE)\n", eval.BlockingViolations))
 	}
@@ -398,7 +398,7 @@ func (parg *PolicyAwareReportGenerator) PolicyAwareCLIReport(findings []rules.Fi
 	if eval.ExceptionsApplied > 0 {
 		output.WriteString(fmt.Sprintf("🔒 Exceptions:        %d\n", eval.ExceptionsApplied))
 	}
-	
+
 	// Compliance status
 	if len(eval.ComplianceStatus) > 0 {
 		output.WriteString("\nCompliance Status:\n")
@@ -410,12 +410,12 @@ func (parg *PolicyAwareReportGenerator) PolicyAwareCLIReport(findings []rules.Fi
 			output.WriteString(fmt.Sprintf("  %s %s\n", status, framework))
 		}
 	}
-	
+
 	// Recommendations
 	if len(report.Recommendations) > 0 {
 		output.WriteString("\n💡 RECOMMENDATIONS\n")
 		output.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-		
+
 		for i, rec := range report.Recommendations {
 			priority := rec.Priority
 			if priority == "CRITICAL" {
@@ -423,7 +423,7 @@ func (parg *PolicyAwareReportGenerator) PolicyAwareCLIReport(findings []rules.Fi
 			} else if priority == "HIGH" {
 				priority = "⚠️  HIGH"
 			}
-			
+
 			output.WriteString(fmt.Sprintf("[%d] %s (%s)\n", i+1, rec.Title, priority))
 			output.WriteString(fmt.Sprintf("    %s\n", rec.Description))
 			if len(rec.Actions) > 0 {
@@ -435,7 +435,7 @@ func (parg *PolicyAwareReportGenerator) PolicyAwareCLIReport(findings []rules.Fi
 			output.WriteString("\n")
 		}
 	}
-	
+
 	return output.String()
 }
 
@@ -445,12 +445,12 @@ func (parg *PolicyAwareReportGenerator) PolicyAwareJSONReport(findings []rules.F
 	if err != nil {
 		return "", err
 	}
-	
+
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal policy-aware JSON report: %w", err)
 	}
-	
+
 	return string(data), nil
 }
 

@@ -32,17 +32,17 @@ func NewClient() *Client {
 
 // Vulnerability represents an OSV vulnerability record
 type Vulnerability struct {
-	ID             string           `json:"id"`
-	Summary        string           `json:"summary"`
-	Details        string           `json:"details"`
-	Aliases        []string         `json:"aliases"`
-	Modified       time.Time        `json:"modified"`
-	Published      time.Time        `json:"published"`
-	References     []Reference      `json:"references"`
-	Affected       []AffectedPackage `json:"affected"`
-	Severity       []SeverityRating `json:"severity"`
+	ID               string                 `json:"id"`
+	Summary          string                 `json:"summary"`
+	Details          string                 `json:"details"`
+	Aliases          []string               `json:"aliases"`
+	Modified         time.Time              `json:"modified"`
+	Published        time.Time              `json:"published"`
+	References       []Reference            `json:"references"`
+	Affected         []AffectedPackage      `json:"affected"`
+	Severity         []SeverityRating       `json:"severity"`
 	DatabaseSpecific map[string]interface{} `json:"database_specific,omitempty"`
-	SchemaVersion  string           `json:"schema_version"`
+	SchemaVersion    string                 `json:"schema_version"`
 }
 
 // Reference represents a vulnerability reference
@@ -53,9 +53,9 @@ type Reference struct {
 
 // AffectedPackage represents an affected package or ecosystem
 type AffectedPackage struct {
-	Package    Package    `json:"package"`
-	Ranges     []Range    `json:"ranges"`
-	Versions   []string   `json:"versions,omitempty"`
+	Package           Package                `json:"package"`
+	Ranges            []Range                `json:"ranges"`
+	Versions          []string               `json:"versions,omitempty"`
 	EcosystemSpecific map[string]interface{} `json:"ecosystem_specific,omitempty"`
 }
 
@@ -87,7 +87,7 @@ type SeverityRating struct {
 
 // QueryRequest represents a vulnerability query request
 type QueryRequest struct {
-	Version string `json:"version,omitempty"`
+	Version string  `json:"version,omitempty"`
 	Package Package `json:"package"`
 }
 
@@ -161,7 +161,7 @@ func (c *Client) QueryVulnerability(ctx context.Context, ecosystem, packageName,
 // GetVulnerabilityByID retrieves a specific vulnerability by ID
 func (c *Client) GetVulnerabilityByID(ctx context.Context, vulnID string) (*Vulnerability, error) {
 	url := fmt.Sprintf("%s/v1/vulns/%s", c.baseURL, vulnID)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -178,7 +178,7 @@ func (c *Client) GetVulnerabilityByID(ctx context.Context, vulnID string) (*Vuln
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, nil // Vulnerability not found
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("OSV API returned status %d", resp.StatusCode)
 	}
@@ -221,7 +221,7 @@ func (c *Client) EnhanceFindings(ctx context.Context, findings []rules.Finding) 
 func (c *Client) analyzeForVulnerabilities(ctx context.Context, finding rules.Finding) *VulnerabilityInfo {
 	// Extract package information from evidence
 	packages := c.extractPackageInfo(finding.Evidence)
-	
+
 	for _, pkg := range packages {
 		vulns, err := c.QueryVulnerability(ctx, pkg.Ecosystem, pkg.Name, "")
 		if err != nil {
@@ -252,7 +252,7 @@ func (c *Client) analyzeForVulnerabilities(ctx context.Context, finding rules.Fi
 // extractPackageInfo extracts package information from evidence text
 func (c *Client) extractPackageInfo(evidence string) []Package {
 	var packages []Package
-	
+
 	// Common GitHub Actions patterns
 	if strings.Contains(evidence, "actions/") {
 		// Extract GitHub Actions
@@ -419,7 +419,7 @@ func (c *Client) extractPipPackages(evidence string) []string {
 // extractCVEIDs extracts CVE and GHSA IDs from evidence text
 func (c *Client) extractCVEIDs(evidence string) []string {
 	var ids []string
-	
+
 	// CVE pattern: CVE-YYYY-NNNN
 	cvePattern := `CVE-\d{4}-\d{4,}`
 	if matches := c.findMatches(evidence, cvePattern); len(matches) > 0 {
@@ -439,7 +439,7 @@ func (c *Client) extractCVEIDs(evidence string) []string {
 func (c *Client) findMatches(text, pattern string) []string {
 	// Simplified implementation - in real implementation, use regexp package
 	var matches []string
-	
+
 	// Check for CVE pattern
 	if strings.Contains(pattern, "CVE") {
 		words := strings.Fields(text)
@@ -449,7 +449,7 @@ func (c *Client) findMatches(text, pattern string) []string {
 			}
 		}
 	}
-	
+
 	// Check for GHSA pattern
 	if strings.Contains(pattern, "GHSA") {
 		words := strings.Fields(text)
@@ -459,7 +459,7 @@ func (c *Client) findMatches(text, pattern string) []string {
 			}
 		}
 	}
-	
+
 	return matches
 }
 
@@ -469,16 +469,16 @@ func (c *Client) isRelevantVulnerability(vuln Vulnerability, finding rules.Findi
 	switch finding.Category {
 	case rules.MaliciousPattern:
 		return strings.Contains(strings.ToLower(vuln.Summary), "malicious") ||
-			   strings.Contains(strings.ToLower(vuln.Summary), "backdoor") ||
-			   strings.Contains(strings.ToLower(vuln.Summary), "injection")
+			strings.Contains(strings.ToLower(vuln.Summary), "backdoor") ||
+			strings.Contains(strings.ToLower(vuln.Summary), "injection")
 	case rules.SupplyChain:
 		return strings.Contains(strings.ToLower(vuln.Summary), "supply") ||
-			   strings.Contains(strings.ToLower(vuln.Summary), "dependency") ||
-			   strings.Contains(strings.ToLower(vuln.Summary), "package")
+			strings.Contains(strings.ToLower(vuln.Summary), "dependency") ||
+			strings.Contains(strings.ToLower(vuln.Summary), "package")
 	case rules.SecretExposure:
 		return strings.Contains(strings.ToLower(vuln.Summary), "secret") ||
-			   strings.Contains(strings.ToLower(vuln.Summary), "credential") ||
-			   strings.Contains(strings.ToLower(vuln.Summary), "token")
+			strings.Contains(strings.ToLower(vuln.Summary), "credential") ||
+			strings.Contains(strings.ToLower(vuln.Summary), "token")
 	}
 
 	// Always consider high-severity vulnerabilities relevant
@@ -547,7 +547,7 @@ func (c *Client) cvssToSeverity(score string) string {
 // calculateBaseRiskScore calculates base risk score for a finding
 func (c *Client) calculateBaseRiskScore(finding rules.Finding) int {
 	score := 0
-	
+
 	switch finding.Severity {
 	case rules.Critical:
 		score += 40
@@ -577,8 +577,8 @@ func (c *Client) calculateBaseRiskScore(finding rules.Finding) int {
 
 	// Evidence-based scoring
 	if strings.Contains(strings.ToLower(finding.Evidence), "secret") ||
-	   strings.Contains(strings.ToLower(finding.Evidence), "token") ||
-	   strings.Contains(strings.ToLower(finding.Evidence), "password") {
+		strings.Contains(strings.ToLower(finding.Evidence), "token") ||
+		strings.Contains(strings.ToLower(finding.Evidence), "password") {
 		score += 10
 	}
 
@@ -588,7 +588,7 @@ func (c *Client) calculateBaseRiskScore(finding rules.Finding) int {
 // calculateEnhancedRiskScore calculates enhanced risk score with vulnerability intel
 func (c *Client) calculateEnhancedRiskScore(finding rules.Finding, vulnInfo *VulnerabilityInfo) int {
 	baseScore := c.calculateBaseRiskScore(finding)
-	
+
 	// Add vulnerability intelligence bonus
 	switch vulnInfo.Severity {
 	case "CRITICAL":

@@ -16,20 +16,20 @@ import (
 // SARIF represents a Static Analysis Results Interchange Format report
 // Based on SARIF v2.1.0 specification: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
 type SARIF struct {
-	Version string      `json:"version"`
-	Schema  string      `json:"$schema"`
-	Runs    []SARIFRun  `json:"runs"`
+	Version string     `json:"version"`
+	Schema  string     `json:"$schema"`
+	Runs    []SARIFRun `json:"runs"`
 }
 
 // SARIFRun represents a single analysis run
 type SARIFRun struct {
-	Tool         SARIFTool          `json:"tool"`
-	Invocation   SARIFInvocation    `json:"invocation"`
-	Results      []SARIFResult      `json:"results"`
-	Artifacts    []SARIFArtifact    `json:"artifacts,omitempty"`
-	Rules        []SARIFRule        `json:"rules,omitempty"`
-	ColumnKind   string             `json:"columnKind,omitempty"`
-	Properties   map[string]interface{} `json:"properties,omitempty"`
+	Tool       SARIFTool              `json:"tool"`
+	Invocation SARIFInvocation        `json:"invocation"`
+	Results    []SARIFResult          `json:"results"`
+	Artifacts  []SARIFArtifact        `json:"artifacts,omitempty"`
+	Rules      []SARIFRule            `json:"rules,omitempty"`
+	ColumnKind string                 `json:"columnKind,omitempty"`
+	Properties map[string]interface{} `json:"properties,omitempty"`
 }
 
 // SARIFTool represents the analysis tool
@@ -49,14 +49,14 @@ type SARIFDriver struct {
 
 // SARIFRule represents a rule definition
 type SARIFRule struct {
-	ID                   string                   `json:"id"`
-	Name                 string                   `json:"name,omitempty"`
-	ShortDescription     SARIFMessage             `json:"shortDescription,omitempty"`
-	FullDescription      SARIFMessage             `json:"fullDescription,omitempty"`
-	DefaultConfiguration SARIFRuleConfiguration   `json:"defaultConfiguration,omitempty"`
-	Help                 SARIFMessage             `json:"help,omitempty"`
-	HelpUri              string                   `json:"helpUri,omitempty"`
-	Properties           map[string]interface{}   `json:"properties,omitempty"`
+	ID                   string                 `json:"id"`
+	Name                 string                 `json:"name,omitempty"`
+	ShortDescription     SARIFMessage           `json:"shortDescription,omitempty"`
+	FullDescription      SARIFMessage           `json:"fullDescription,omitempty"`
+	DefaultConfiguration SARIFRuleConfiguration `json:"defaultConfiguration,omitempty"`
+	Help                 SARIFMessage           `json:"help,omitempty"`
+	HelpUri              string                 `json:"helpUri,omitempty"`
+	Properties           map[string]interface{} `json:"properties,omitempty"`
 }
 
 // SARIFRuleConfiguration represents rule configuration
@@ -66,37 +66,37 @@ type SARIFRuleConfiguration struct {
 
 // SARIFInvocation represents tool invocation details
 type SARIFInvocation struct {
-	CommandLine       string    `json:"commandLine,omitempty"`
-	StartTimeUtc      time.Time `json:"startTimeUtc"`
-	EndTimeUtc        time.Time `json:"endTimeUtc"`
-	ExecutionSuccessful bool    `json:"executionSuccessful"`
+	CommandLine         string    `json:"commandLine,omitempty"`
+	StartTimeUtc        time.Time `json:"startTimeUtc"`
+	EndTimeUtc          time.Time `json:"endTimeUtc"`
+	ExecutionSuccessful bool      `json:"executionSuccessful"`
 }
 
 // SARIFResult represents a single analysis result (finding)
 type SARIFResult struct {
-	RuleID          string           `json:"ruleId"`
-	RuleIndex       int              `json:"ruleIndex,omitempty"`
-	Level           string           `json:"level"`
-	Message         SARIFMessage     `json:"message"`
-	Locations       []SARIFLocation  `json:"locations"`
-	PartialFingerprints map[string]string `json:"partialFingerprints,omitempty"`
-	Properties      map[string]interface{} `json:"properties,omitempty"`
+	RuleID              string                 `json:"ruleId"`
+	RuleIndex           int                    `json:"ruleIndex,omitempty"`
+	Level               string                 `json:"level"`
+	Message             SARIFMessage           `json:"message"`
+	Locations           []SARIFLocation        `json:"locations"`
+	PartialFingerprints map[string]string      `json:"partialFingerprints,omitempty"`
+	Properties          map[string]interface{} `json:"properties,omitempty"`
 }
 
 // SARIFMessage represents a message in SARIF
 type SARIFMessage struct {
-	Text     string                 `json:"text"`
-	Markdown string                 `json:"markdown,omitempty"`
-	Arguments []string              `json:"arguments,omitempty"`
-	ID       string                 `json:"id,omitempty"`
+	Text       string                 `json:"text"`
+	Markdown   string                 `json:"markdown,omitempty"`
+	Arguments  []string               `json:"arguments,omitempty"`
+	ID         string                 `json:"id,omitempty"`
 	Properties map[string]interface{} `json:"properties,omitempty"`
 }
 
 // SARIFLocation represents a location where an issue was found
 type SARIFLocation struct {
-	PhysicalLocation SARIFPhysicalLocation `json:"physicalLocation"`
+	PhysicalLocation SARIFPhysicalLocation  `json:"physicalLocation"`
 	LogicalLocations []SARIFLogicalLocation `json:"logicalLocations,omitempty"`
-	Message          SARIFMessage          `json:"message,omitempty"`
+	Message          SARIFMessage           `json:"message,omitempty"`
 	Properties       map[string]interface{} `json:"properties,omitempty"`
 }
 
@@ -109,12 +109,12 @@ type SARIFPhysicalLocation struct {
 
 // SARIFLogicalLocation represents a logical location (job, step, etc.)
 type SARIFLogicalLocation struct {
-	Name             string                 `json:"name,omitempty"`
-	Index            int                    `json:"index,omitempty"`
-	FullyQualifiedName string               `json:"fullyQualifiedName,omitempty"`
-	DecoratedName    string                 `json:"decoratedName,omitempty"`
-	Kind             string                 `json:"kind,omitempty"`
-	Properties       map[string]interface{} `json:"properties,omitempty"`
+	Name               string                 `json:"name,omitempty"`
+	Index              int                    `json:"index,omitempty"`
+	FullyQualifiedName string                 `json:"fullyQualifiedName,omitempty"`
+	DecoratedName      string                 `json:"decoratedName,omitempty"`
+	Kind               string                 `json:"kind,omitempty"`
+	Properties         map[string]interface{} `json:"properties,omitempty"`
 }
 
 // SARIFArtifactLocation represents a reference to an artifact
@@ -143,8 +143,8 @@ type SARIFRegion struct {
 
 // SARIFArtifactContent represents content of an artifact
 type SARIFArtifactContent struct {
-	Text       string                 `json:"text,omitempty"`
-	Binary     string                 `json:"binary,omitempty"`
+	Text       string                  `json:"text,omitempty"`
+	Binary     string                  `json:"binary,omitempty"`
 	Rendered   SARIFMultiformatMessage `json:"rendered,omitempty"`
 	Properties map[string]interface{}  `json:"properties,omitempty"`
 }
@@ -158,22 +158,22 @@ type SARIFMultiformatMessage struct {
 
 // SARIFArtifact represents a file or other artifact
 type SARIFArtifact struct {
-	Location    SARIFArtifactLocation `json:"location"`
-	Length      int64                 `json:"length,omitempty"`
-	MimeType    string                `json:"mimeType,omitempty"`
-	Contents    SARIFArtifactContent  `json:"contents,omitempty"`
-	Encoding    string                `json:"encoding,omitempty"`
-	SourceLanguage string             `json:"sourceLanguage,omitempty"`
-	Hashes      map[string]string     `json:"hashes,omitempty"`
-	LastModifiedTimeUtc time.Time     `json:"lastModifiedTimeUtc,omitempty"`
-	Description SARIFMessage          `json:"description,omitempty"`
-	Properties  map[string]interface{} `json:"properties,omitempty"`
+	Location            SARIFArtifactLocation  `json:"location"`
+	Length              int64                  `json:"length,omitempty"`
+	MimeType            string                 `json:"mimeType,omitempty"`
+	Contents            SARIFArtifactContent   `json:"contents,omitempty"`
+	Encoding            string                 `json:"encoding,omitempty"`
+	SourceLanguage      string                 `json:"sourceLanguage,omitempty"`
+	Hashes              map[string]string      `json:"hashes,omitempty"`
+	LastModifiedTimeUtc time.Time              `json:"lastModifiedTimeUtc,omitempty"`
+	Description         SARIFMessage           `json:"description,omitempty"`
+	Properties          map[string]interface{} `json:"properties,omitempty"`
 }
 
 // generateSARIFReport creates a SARIF-compliant report
 func (g *Generator) generateSARIFReport() error {
 	sarif := g.createSARIFReport()
-	
+
 	data, err := json.MarshalIndent(sarif, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal SARIF: %w", err)
@@ -255,7 +255,7 @@ func (g *Generator) createSARIFReport() SARIF {
 // createSARIFRule converts a finding to a SARIF rule definition
 func (g *Generator) createSARIFRule(finding rules.Finding) SARIFRule {
 	level := g.severityToSARIFLevel(finding.Severity)
-	
+
 	return SARIFRule{
 		ID:   finding.RuleID,
 		Name: finding.RuleName,
@@ -273,10 +273,10 @@ func (g *Generator) createSARIFRule(finding rules.Finding) SARIFRule {
 			Markdown: g.formatRemediation(finding.Remediation),
 		},
 		Properties: map[string]interface{}{
-			"category":    string(finding.Category),
-			"severity":    string(finding.Severity),
-			"tags":        []string{"security", "ci-cd", string(finding.Category)},
-			"precision":   "high",
+			"category":         string(finding.Category),
+			"severity":         string(finding.Severity),
+			"tags":             []string{"security", "ci-cd", string(finding.Category)},
+			"precision":        "high",
 			"problem.severity": string(finding.Severity),
 		},
 	}
@@ -285,12 +285,12 @@ func (g *Generator) createSARIFRule(finding rules.Finding) SARIFRule {
 // createSARIFResult converts a finding to a SARIF result
 func (g *Generator) createSARIFResult(finding rules.Finding, ruleIndex int) SARIFResult {
 	level := g.severityToSARIFLevel(finding.Severity)
-	
+
 	// Create message with context
 	message := SARIFMessage{
 		Text: finding.Description,
 	}
-	
+
 	// Create locations
 	locations := []SARIFLocation{
 		g.createSARIFLocation(finding),
@@ -302,9 +302,9 @@ func (g *Generator) createSARIFResult(finding rules.Finding, ruleIndex int) SARI
 	}
 
 	properties := map[string]interface{}{
-		"category":   string(finding.Category),
-		"severity":   string(finding.Severity),
-		"evidence":   MaskSecrets(finding.Evidence),
+		"category":    string(finding.Category),
+		"severity":    string(finding.Severity),
+		"evidence":    MaskSecrets(finding.Evidence),
 		"remediation": finding.Remediation,
 	}
 
@@ -334,7 +334,7 @@ func (g *Generator) createSARIFResult(finding rules.Finding, ruleIndex int) SARI
 func (g *Generator) createSARIFLocation(finding rules.Finding) SARIFLocation {
 	// Normalize file path for SARIF (use forward slashes, relative path)
 	normalizedPath := g.normalizeFilePath(finding.FilePath)
-	
+
 	physicalLocation := SARIFPhysicalLocation{
 		ArtifactLocation: SARIFArtifactLocation{
 			URI: normalizedPath,
@@ -355,19 +355,19 @@ func (g *Generator) createSARIFLocation(finding rules.Finding) SARIFLocation {
 
 	// Add logical locations for workflow context
 	var logicalLocations []SARIFLogicalLocation
-	
+
 	if finding.JobName != "" {
 		logicalLocations = append(logicalLocations, SARIFLogicalLocation{
-			Name: finding.JobName,
-			Kind: "job",
+			Name:               finding.JobName,
+			Kind:               "job",
 			FullyQualifiedName: finding.JobName,
 		})
 	}
-	
+
 	if finding.StepName != "" {
 		logicalLocations = append(logicalLocations, SARIFLogicalLocation{
-			Name: finding.StepName,
-			Kind: "step",
+			Name:               finding.StepName,
+			Kind:               "step",
 			FullyQualifiedName: g.getFullyQualifiedStepName(finding),
 		})
 	}
@@ -382,10 +382,10 @@ func (g *Generator) createSARIFLocation(finding rules.Finding) SARIFLocation {
 // createSARIFArtifacts creates artifact entries for analyzed files
 func (g *Generator) createSARIFArtifacts() []SARIFArtifact {
 	artifactMap := make(map[string]SARIFArtifact)
-	
+
 	for _, finding := range g.Result.Findings {
 		normalizedPath := g.normalizeFilePath(finding.FilePath)
-		
+
 		if _, exists := artifactMap[normalizedPath]; !exists {
 			artifact := SARIFArtifact{
 				Location: SARIFArtifactLocation{
@@ -400,13 +400,13 @@ func (g *Generator) createSARIFArtifacts() []SARIFArtifact {
 					"fileType": "workflow",
 				},
 			}
-			
+
 			// Try to get file info if it's a local file
 			if info, err := os.Stat(finding.FilePath); err == nil {
 				artifact.Length = info.Size()
 				artifact.LastModifiedTimeUtc = info.ModTime()
 			}
-			
+
 			artifactMap[normalizedPath] = artifact
 		}
 	}
@@ -454,7 +454,7 @@ func (g *Generator) getRuleIndex(ruleID string, rules []SARIFRule) int {
 func (g *Generator) normalizeFilePath(filePath string) string {
 	// Convert to forward slashes
 	normalized := filepath.ToSlash(filePath)
-	
+
 	// Remove common temporary directory patterns and make relative
 	if strings.Contains(normalized, ".github/workflows/") {
 		if idx := strings.Index(normalized, ".github/workflows/"); idx != -1 {
@@ -475,12 +475,12 @@ func (g *Generator) normalizeFilePath(filePath string) string {
 			}
 		}
 	}
-	
+
 	// URL encode if necessary
 	if strings.Contains(normalized, " ") {
 		normalized = url.QueryEscape(normalized)
 	}
-	
+
 	return normalized
 }
 
@@ -521,14 +521,14 @@ func (g *Generator) formatRemediation(remediation string) string {
 	// Convert plain text to basic Markdown
 	lines := strings.Split(remediation, "\n")
 	var markdownLines []string
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			markdownLines = append(markdownLines, "")
 			continue
 		}
-		
+
 		// Convert code snippets
 		if strings.Contains(line, "`") {
 			markdownLines = append(markdownLines, line)
@@ -539,6 +539,6 @@ func (g *Generator) formatRemediation(remediation string) string {
 			markdownLines = append(markdownLines, line)
 		}
 	}
-	
+
 	return strings.Join(markdownLines, "\n")
 }

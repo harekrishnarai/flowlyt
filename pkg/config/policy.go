@@ -19,17 +19,17 @@ type PolicyEngine struct {
 
 // Policy represents an organization-wide security policy
 type Policy struct {
-	ID           string            `yaml:"id" json:"id"`
-	Name         string            `yaml:"name" json:"name"`
-	Description  string            `yaml:"description" json:"description"`
-	Version      string            `yaml:"version" json:"version"`
-	Enabled      bool              `yaml:"enabled" json:"enabled"`
-	Enforcement  EnforcementLevel  `yaml:"enforcement" json:"enforcement"`
-	Scope        PolicyScope       `yaml:"scope" json:"scope"`
-	Rules        []PolicyRule      `yaml:"rules" json:"rules"`
-	Exceptions   []PolicyException `yaml:"exceptions" json:"exceptions"`
-	Metadata     PolicyMetadata    `yaml:"metadata" json:"metadata"`
-	Compliance   []string          `yaml:"compliance" json:"compliance"` // SOX, PCI-DSS, etc.
+	ID          string            `yaml:"id" json:"id"`
+	Name        string            `yaml:"name" json:"name"`
+	Description string            `yaml:"description" json:"description"`
+	Version     string            `yaml:"version" json:"version"`
+	Enabled     bool              `yaml:"enabled" json:"enabled"`
+	Enforcement EnforcementLevel  `yaml:"enforcement" json:"enforcement"`
+	Scope       PolicyScope       `yaml:"scope" json:"scope"`
+	Rules       []PolicyRule      `yaml:"rules" json:"rules"`
+	Exceptions  []PolicyException `yaml:"exceptions" json:"exceptions"`
+	Metadata    PolicyMetadata    `yaml:"metadata" json:"metadata"`
+	Compliance  []string          `yaml:"compliance" json:"compliance"` // SOX, PCI-DSS, etc.
 }
 
 // EnforcementLevel defines how strictly a policy is enforced
@@ -55,23 +55,23 @@ type PolicyScope struct {
 
 // PolicyRule defines a rule within a policy
 type PolicyRule struct {
-	RuleID       string            `yaml:"rule_id" json:"rule_id"`
-	Severity     string            `yaml:"severity,omitempty" json:"severity,omitempty"`
-	Enforcement  EnforcementLevel  `yaml:"enforcement,omitempty" json:"enforcement,omitempty"`
-	Parameters   map[string]string `yaml:"parameters,omitempty" json:"parameters,omitempty"`
+	RuleID       string                 `yaml:"rule_id" json:"rule_id"`
+	Severity     string                 `yaml:"severity,omitempty" json:"severity,omitempty"`
+	Enforcement  EnforcementLevel       `yaml:"enforcement,omitempty" json:"enforcement,omitempty"`
+	Parameters   map[string]string      `yaml:"parameters,omitempty" json:"parameters,omitempty"`
 	CustomConfig map[string]interface{} `yaml:"custom_config,omitempty" json:"custom_config,omitempty"`
 }
 
 // PolicyException defines exceptions to policy rules
 type PolicyException struct {
-	ID           string    `yaml:"id" json:"id"`
-	Description  string    `yaml:"description" json:"description"`
-	RuleID       string    `yaml:"rule_id" json:"rule_id"`
-	Scope        PolicyScope `yaml:"scope" json:"scope"`
-	Justification string   `yaml:"justification" json:"justification"`
-	Approver     string    `yaml:"approver" json:"approver"`
-	ExpiryDate   *time.Time `yaml:"expiry_date,omitempty" json:"expiry_date,omitempty"`
-	TicketURL    string    `yaml:"ticket_url,omitempty" json:"ticket_url,omitempty"`
+	ID            string      `yaml:"id" json:"id"`
+	Description   string      `yaml:"description" json:"description"`
+	RuleID        string      `yaml:"rule_id" json:"rule_id"`
+	Scope         PolicyScope `yaml:"scope" json:"scope"`
+	Justification string      `yaml:"justification" json:"justification"`
+	Approver      string      `yaml:"approver" json:"approver"`
+	ExpiryDate    *time.Time  `yaml:"expiry_date,omitempty" json:"expiry_date,omitempty"`
+	TicketURL     string      `yaml:"ticket_url,omitempty" json:"ticket_url,omitempty"`
 }
 
 // PolicyMetadata contains policy metadata
@@ -87,31 +87,31 @@ type PolicyMetadata struct {
 
 // RuleTemplate defines reusable rule configurations
 type RuleTemplate struct {
-	ID           string            `yaml:"id" json:"id"`
-	Name         string            `yaml:"name" json:"name"`
-	Description  string            `yaml:"description" json:"description"`
-	Category     string            `yaml:"category" json:"category"`
-	Severity     string            `yaml:"severity" json:"severity"`
-	Parameters   map[string]TemplateParameter `yaml:"parameters" json:"parameters"`
-	BaseRule     CustomRule        `yaml:"base_rule" json:"base_rule"`
-	Examples     []TemplateExample `yaml:"examples" json:"examples"`
+	ID          string                       `yaml:"id" json:"id"`
+	Name        string                       `yaml:"name" json:"name"`
+	Description string                       `yaml:"description" json:"description"`
+	Category    string                       `yaml:"category" json:"category"`
+	Severity    string                       `yaml:"severity" json:"severity"`
+	Parameters  map[string]TemplateParameter `yaml:"parameters" json:"parameters"`
+	BaseRule    CustomRule                   `yaml:"base_rule" json:"base_rule"`
+	Examples    []TemplateExample            `yaml:"examples" json:"examples"`
 }
 
 // TemplateParameter defines configurable parameters in templates
 type TemplateParameter struct {
-	Type         string      `yaml:"type" json:"type"` // string, number, boolean, array
-	Description  string      `yaml:"description" json:"description"`
-	Default      interface{} `yaml:"default,omitempty" json:"default,omitempty"`
-	Required     bool        `yaml:"required" json:"required"`
-	Validation   string      `yaml:"validation,omitempty" json:"validation,omitempty"` // regex for validation
+	Type        string      `yaml:"type" json:"type"` // string, number, boolean, array
+	Description string      `yaml:"description" json:"description"`
+	Default     interface{} `yaml:"default,omitempty" json:"default,omitempty"`
+	Required    bool        `yaml:"required" json:"required"`
+	Validation  string      `yaml:"validation,omitempty" json:"validation,omitempty"` // regex for validation
 }
 
 // TemplateExample provides example usage of a template
 type TemplateExample struct {
-	Name        string            `yaml:"name" json:"name"`
-	Description string            `yaml:"description" json:"description"`
+	Name        string                 `yaml:"name" json:"name"`
+	Description string                 `yaml:"description" json:"description"`
 	Parameters  map[string]interface{} `yaml:"parameters" json:"parameters"`
-	Expected    string            `yaml:"expected" json:"expected"`
+	Expected    string                 `yaml:"expected" json:"expected"`
 }
 
 // ComplianceFramework defines compliance framework requirements
@@ -126,11 +126,11 @@ type ComplianceFramework struct {
 
 // ComplianceControl maps to specific security controls
 type ComplianceControl struct {
-	ID          string   `yaml:"id" json:"id"`
-	Title       string   `yaml:"title" json:"title"`
-	Description string   `yaml:"description" json:"description"`
+	ID            string   `yaml:"id" json:"id"`
+	Title         string   `yaml:"title" json:"title"`
+	Description   string   `yaml:"description" json:"description"`
 	RequiredRules []string `yaml:"required_rules" json:"required_rules"`
-	Severity    string   `yaml:"severity" json:"severity"`
+	Severity      string   `yaml:"severity" json:"severity"`
 }
 
 // NewPolicyEngine creates a new policy engine
@@ -182,13 +182,13 @@ func (pe *PolicyEngine) EvaluatePolicy(finding rules.Finding, context PolicyCont
 
 				// Create violation
 				violation := PolicyViolation{
-					PolicyID:     policy.ID,
-					PolicyName:   policy.Name,
-					RuleID:       policyRule.RuleID,
-					Enforcement:  policyRule.Enforcement,
-					Severity:     policyRule.Severity,
-					Finding:      finding,
-					Context:      context,
+					PolicyID:    policy.ID,
+					PolicyName:  policy.Name,
+					RuleID:      policyRule.RuleID,
+					Enforcement: policyRule.Enforcement,
+					Severity:    policyRule.Severity,
+					Finding:     finding,
+					Context:     context,
 				}
 				violations = append(violations, violation)
 			}
@@ -217,13 +217,13 @@ type PolicyContext struct {
 
 // PolicyViolation represents a policy violation
 type PolicyViolation struct {
-	PolicyID    string            `json:"policy_id"`
-	PolicyName  string            `json:"policy_name"`
-	RuleID      string            `json:"rule_id"`
-	Enforcement EnforcementLevel  `json:"enforcement"`
-	Severity    string            `json:"severity"`
-	Finding     rules.Finding     `json:"finding"`
-	Context     PolicyContext     `json:"context"`
+	PolicyID    string           `json:"policy_id"`
+	PolicyName  string           `json:"policy_name"`
+	RuleID      string           `json:"rule_id"`
+	Enforcement EnforcementLevel `json:"enforcement"`
+	Severity    string           `json:"severity"`
+	Finding     rules.Finding    `json:"finding"`
+	Context     PolicyContext    `json:"context"`
 }
 
 // PolicyEvaluation represents the result of policy evaluation
@@ -308,7 +308,7 @@ func (pe *PolicyEngine) InstantiateTemplate(templateID string, parameters map[st
 
 	// Create custom rule from template
 	rule := template.BaseRule
-	
+
 	// Replace parameter placeholders in rule configuration
 	rule = pe.replaceTemplateParameters(rule, parameters)
 
@@ -383,10 +383,10 @@ func (pe *PolicyEngine) GetComplianceReport(findings []rules.Finding, context Po
 	// Evaluate each finding against policies
 	for _, finding := range findings {
 		evaluation := pe.EvaluatePolicy(finding, context)
-		
+
 		for _, violation := range evaluation.Violations {
 			report.TotalViolations++
-			
+
 			// Count violations by enforcement level
 			switch violation.Enforcement {
 			case EnforcementBlock:
@@ -406,33 +406,33 @@ func (pe *PolicyEngine) GetComplianceReport(findings []rules.Finding, context Po
 
 // ComplianceReport represents compliance status
 type ComplianceReport struct {
-	Context             PolicyContext                    `json:"context"`
-	GeneratedAt         time.Time                       `json:"generated_at"`
-	Compliant           bool                            `json:"compliant"`
-	TotalViolations     int                             `json:"total_violations"`
-	BlockingViolations  int                             `json:"blocking_violations"`
-	ErrorViolations     int                             `json:"error_violations"`
-	WarningViolations   int                             `json:"warning_violations"`
-	Frameworks          map[string]FrameworkCompliance  `json:"frameworks"`
+	Context            PolicyContext                  `json:"context"`
+	GeneratedAt        time.Time                      `json:"generated_at"`
+	Compliant          bool                           `json:"compliant"`
+	TotalViolations    int                            `json:"total_violations"`
+	BlockingViolations int                            `json:"blocking_violations"`
+	ErrorViolations    int                            `json:"error_violations"`
+	WarningViolations  int                            `json:"warning_violations"`
+	Frameworks         map[string]FrameworkCompliance `json:"frameworks"`
 }
 
 // FrameworkCompliance represents compliance with a specific framework
 type FrameworkCompliance struct {
-	FrameworkID   string                     `json:"framework_id"`
-	FrameworkName string                     `json:"framework_name"`
-	Version       string                     `json:"version"`
-	Compliant     bool                       `json:"compliant"`
-	Controls      map[string]ControlStatus   `json:"controls"`
-	Score         float64                    `json:"score"`
+	FrameworkID   string                   `json:"framework_id"`
+	FrameworkName string                   `json:"framework_name"`
+	Version       string                   `json:"version"`
+	Compliant     bool                     `json:"compliant"`
+	Controls      map[string]ControlStatus `json:"controls"`
+	Score         float64                  `json:"score"`
 }
 
 // ControlStatus represents the status of a compliance control
 type ControlStatus struct {
-	ControlID   string   `json:"control_id"`
-	Title       string   `json:"title"`
-	Compliant   bool     `json:"compliant"`
-	Violations  []string `json:"violations"`
-	Severity    string   `json:"severity"`
+	ControlID  string   `json:"control_id"`
+	Title      string   `json:"title"`
+	Compliant  bool     `json:"compliant"`
+	Violations []string `json:"violations"`
+	Severity   string   `json:"severity"`
 }
 
 // Helper functions
