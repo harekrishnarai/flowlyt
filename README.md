@@ -1,12 +1,11 @@
 <img width="945" height="299" alt="flowlytgh" src="https://github.com/user-attachments/assets/a994d9b6-be4c-41d0-a3e8-adda9d72caaa" />
 
-<img width="945" height="299" alt="flowlytgh" src="https://github.com/user-attachments/assets/a994d9b6-be4c-41d0-a3e8-adda9d72caaa" />
-
 <div align="center">
   
-![AST](https://img.shields.io/badge/AST-Powered-45b7d1?style=for-the-badge&logo=tree&logoColor=white)
+
+<!-- Conference Recognition -->
 ![Black Hat Europe 2025](https://img.shields.io/badge/UPCOMING-Black%20Hat%20EU%202025-000000?style=for-the-badge&logo=blackhat&logoColor=white)
-![Performance](https://img.shields.io/badge/62%25-Faster-00d2d3?style=for-the-badge&logo=speedometer&logoColor=white)
+![AppSec Defcon 33](https://img.shields.io/badge/PRESENTED-AppSec%20Village-6c5ce7?style=for-the-badge&logo=security&logoColor=white)
 
   <strong>🔒 Secure your CI/CD pipelines with Flowlyt</strong>
   <br>
