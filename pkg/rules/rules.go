@@ -427,7 +427,7 @@ func StandardRules() []Rule {
 			Platform:    PlatformGitHub, // GitHub OIDC tokens
 			Check:       checkDebugOidcActions,
 		},
-		
+
 		// New critical security rules from zizmor analysis
 		{
 			ID:          "CACHE_POISONING",
@@ -2986,8 +2986,8 @@ func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 				if len(actionParts) > 1 {
 					ref := actionParts[1]
 					// Check for potentially confusing refs
-					if ref == "master" || ref == "main" || ref == "develop" || 
-					   strings.HasPrefix(ref, "v") && len(ref) < 6 { // Short version tags
+					if ref == "master" || ref == "main" || ref == "develop" ||
+						strings.HasPrefix(ref, "v") && len(ref) < 6 { // Short version tags
 
 						pattern := linenum.FindPattern{
 							Key:   "uses",
@@ -3573,10 +3573,10 @@ func checkUseTrustedPublishing(workflow parser.WorkflowFile) []Finding {
 			}
 
 			// Check for PyPI publishing actions
-			if step.Uses != "" && (strings.Contains(step.Uses, "pypi") || 
+			if step.Uses != "" && (strings.Contains(step.Uses, "pypi") ||
 				strings.Contains(step.Uses, "twine") ||
 				strings.Contains(step.Uses, "pypa/gh-action-pypi-publish")) {
-				
+
 				usingOIDC := false
 				hasCredentials := false
 
@@ -3585,12 +3585,12 @@ func checkUseTrustedPublishing(workflow parser.WorkflowFile) []Finding {
 					for key, value := range step.With {
 						keyLower := strings.ToLower(key)
 						valueStr := fmt.Sprintf("%v", value)
-						
+
 						if keyLower == "password" || keyLower == "token" {
 							hasCredentials = true
 						}
-						if keyLower == "use-trusted-publishing" || 
-						   strings.Contains(valueStr, "id-token") {
+						if keyLower == "use-trusted-publishing" ||
+							strings.Contains(valueStr, "id-token") {
 							usingOIDC = true
 						}
 					}
@@ -3748,19 +3748,19 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 			}
 
 			// Check for artifact upload/download actions
-			if step.Uses != "" && (strings.Contains(step.Uses, "upload-artifact") || 
+			if step.Uses != "" && (strings.Contains(step.Uses, "upload-artifact") ||
 				strings.Contains(step.Uses, "download-artifact")) {
-				
+
 				if step.With != nil {
 					// Check for overly broad path patterns
 					if path, exists := step.With["path"]; exists {
 						pathStr := fmt.Sprintf("%v", path)
-						
+
 						// Dangerous patterns
 						if pathStr == "." || pathStr == "/*" || pathStr == "**" ||
-						   strings.Contains(pathStr, "../") ||
-						   strings.Contains(pathStr, "~") {
-							
+							strings.Contains(pathStr, "../") ||
+							strings.Contains(pathStr, "~") {
+
 							pattern := linenum.FindPattern{
 								Key:   "path",
 								Value: pathStr,
@@ -3833,13 +3833,13 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 func hasUnsoundLogic(condition string) bool {
 	// Check for potentially dangerous condition patterns
 	unsoundPatterns := []string{
-		`github\.event\..*==.*'.*'`,      // String comparison with user input
-		`contains\(.*github\.event`,      // Contains with event data
-		`startsWith\(.*github\.event`,    // StartsWith with event data
+		`github\.event\..*==.*'.*'`,              // String comparison with user input
+		`contains\(.*github\.event`,              // Contains with event data
+		`startsWith\(.*github\.event`,            // StartsWith with event data
 		`github\.event\.pull_request\.head\.ref`, // Direct ref access
-		`github\.event\.issue\..*user`,   // Issue user data
-		`\|\|.*always\(\)`,               // OR with always()
-		`&&.*\!.*cancelled\(\)`,          // Complex negation patterns
+		`github\.event\.issue\..*user`,           // Issue user data
+		`\|\|.*always\(\)`,                       // OR with always()
+		`&&.*\!.*cancelled\(\)`,                  // Complex negation patterns
 	}
 
 	for _, pattern := range unsoundPatterns {
@@ -3855,9 +3855,9 @@ func hasUnsoundLogic(condition string) bool {
 func hasVulnerableContains(condition string) bool {
 	// Check for contains() patterns that can be bypassed
 	vulnerablePatterns := []string{
-		`contains\(.*github\.event.*,\s*'[^']*'\)`,     // Contains with event data and fixed string
-		`contains\(.*github\.actor.*,\s*'[^']*'\)`,     // Contains with actor and fixed string  
-		`contains\(.*github\.ref.*,\s*'[^']*'\)`,       // Contains with ref and fixed string
+		`contains\(.*github\.event.*,\s*'[^']*'\)`,      // Contains with event data and fixed string
+		`contains\(.*github\.actor.*,\s*'[^']*'\)`,      // Contains with actor and fixed string
+		`contains\(.*github\.ref.*,\s*'[^']*'\)`,        // Contains with ref and fixed string
 		`contains\(.*steps\..*\.outputs.*,\s*'[^']*'\)`, // Contains with step outputs
 	}
 
