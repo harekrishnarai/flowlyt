@@ -145,7 +145,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 Thanks to all the people who already contributed!   
 [Hare Krishna Rai](https://www.linkedin.com/in/harekrishnarai/)  
 [Gaurav Joshi](https://www.linkedin.com/in/gauravjoshii/)  
-[Chanchal Kalnarayan](https://www.linkedin.com/in/ckalnarayan) 
+[Chanchal Kalnarayan](https://www.linkedin.com/in/ckalnarayan)  
 [Prashant Venkatesh](https://www.linkedin.com/in/prashant-venkatesh-99018999/)    
 [Nandan Gupta](https://www.linkedin.com/in/nandan-gupta-698aa11b)  
 [Mohd. Arif](https://www.linkedin.com/in/mohd--arif/)  
