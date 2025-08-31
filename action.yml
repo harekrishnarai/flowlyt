@@ -271,6 +271,20 @@ runs:
         
         echo "exit-code=$SCAN_EXIT_CODE" >> $GITHUB_OUTPUT
         
+        # Debug: Check current directory and files
+        echo "📁 Current working directory: $(pwd)"
+        echo "📁 Listing current directory:"
+        ls -la
+        echo "📄 Checking for output file: ${{ inputs.output-file }}"
+        if [ -f "${{ inputs.output-file }}" ]; then
+          echo "✅ Output file exists: $(ls -la "${{ inputs.output-file }}")"
+        else
+          echo "❌ Output file not found: ${{ inputs.output-file }}"
+          echo "📄 Files matching pattern:"
+          ls -la *sarif* 2>/dev/null || echo "No SARIF files found"
+          ls -la test-* 2>/dev/null || echo "No test-* files found"
+        fi
+        
         # Parse scan output for metrics
         if [ -f "${{ inputs.output-file }}" ]; then
           # Extract counts from SARIF or JSON output
