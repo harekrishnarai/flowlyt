@@ -1,0 +1,55 @@
+name: Basic Security Scan
+
+# Trigger on pushes to main/develop and all pull requests
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+# Required permissions for Flowlyt
+permissions:
+  contents: read
+  security-events: write  # For SARIF upload
+  pull-requests: write    # For PR comments
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Checkout repository code
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      # Run Flowlyt security scan
+      - name: Run Security Scan
+        uses: harekrishnarai/flowlyt@v1
+        with:
+          # Basic configuration
+          repository: '.'
+          config-file: '.flowlyt.yml'
+          
+          # Output settings
+          output-format: 'sarif'
+          output-file: 'security-results.sarif'
+          
+          # Severity settings
+          min-severity: 'MEDIUM'           # Report MEDIUM and above
+          fail-on-severity: 'CRITICAL'    # Fail pipeline on CRITICAL issues
+          
+          # Integration settings
+          upload-sarif: 'true'             # Upload to GitHub Security tab
+          comment-on-pr: 'true'            # Comment on pull requests
+          
+          # Optional: Limit findings
+          max-critical: '0'                # No critical issues allowed
+          max-high: '5'                    # Maximum 5 high severity issues
+      
+      # Upload results as workflow artifact (optional)
+      - name: Upload Security Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: security-results.sarif
+        if: always()  # Upload even if scan fails

@@ -139,14 +139,100 @@ runs:
         echo "Fail on Severity: ${{ inputs.fail-on-severity }}"
         echo "Policy Enforcement: ${{ inputs.enable-policy-enforcement }}"
         
+        # Auto-detect platform and architecture
+        OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+        ARCH=$(uname -m)
+        
+        case "$OS" in
+          linux) PLATFORM="linux" ;;
+          darwin) PLATFORM="darwin" ;;
+          mingw*|msys*|cygwin*) PLATFORM="windows" ;;
+          *) echo "❌ Unsupported OS: $OS" && exit 1 ;;
+        esac
+        
+        case "$ARCH" in
+          x86_64|amd64) ARCHITECTURE="amd64" ;;
+          arm64|aarch64) ARCHITECTURE="arm64" ;;
+          *) echo "❌ Unsupported architecture: $ARCH" && exit 1 ;;
+        esac
+        
+        # Determine binary name and extension
+        BINARY_NAME="flowlyt-${PLATFORM}-${ARCHITECTURE}"
+        if [ "$PLATFORM" = "windows" ]; then
+          BINARY_NAME="${BINARY_NAME}.exe"
+          FLOWLYT_BINARY="flowlyt.exe"
+        else
+          FLOWLYT_BINARY="flowlyt"
+        fi
+        
+        echo "Detected platform: $PLATFORM-$ARCHITECTURE"
+        echo "Binary to download: $BINARY_NAME"
+        
+        # Check if binary already exists (from cache or previous step)
+        if [ -x "./$FLOWLYT_BINARY" ]; then
+          echo "✅ Flowlyt binary already available"
+          ./$FLOWLYT_BINARY --version
+        else
+          echo "📥 Downloading Flowlyt binary..."
+          
+          # Get latest release version
+          LATEST_VERSION=$(curl -s https://api.github.com/repos/harekrishnarai/flowlyt/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -z "$LATEST_VERSION" ]; then
+            echo "⚠️ Could not determine latest version, using 'latest' tag"
+            LATEST_VERSION="latest"
+          fi
+          
+          echo "Latest version: $LATEST_VERSION"
+          
+          # Download binary from GitHub releases
+          DOWNLOAD_URL="https://github.com/harekrishnarai/flowlyt/releases/latest/download/${BINARY_NAME}"
+          echo "Downloading from: $DOWNLOAD_URL"
+          
+          if curl -L -f -o "$FLOWLYT_BINARY" "$DOWNLOAD_URL"; then
+            chmod +x "$FLOWLYT_BINARY"
+            echo "✅ Downloaded and installed Flowlyt binary"
+            ./$FLOWLYT_BINARY --version
+          else
+            echo "❌ Failed to download binary from releases"
+            echo "🔄 Attempting to build from source as fallback..."
+            
+            # Fallback: Install Go and build from source
+            if ! command -v go >/dev/null 2>&1; then
+              echo "Installing Go..."
+              curl -L -o go.tar.gz "https://go.dev/dl/go1.23.0.linux-amd64.tar.gz"
+              sudo tar -C /usr/local -xzf go.tar.gz
+              export PATH=$PATH:/usr/local/go/bin
+            fi
+            
+            echo "Building Flowlyt from source..."
+            go build -o "$FLOWLYT_BINARY" ./cmd/flowlyt
+            chmod +x "$FLOWLYT_BINARY"
+            echo "✅ Built Flowlyt from source"
+            ./$FLOWLYT_BINARY --version
+          fi
+        fi
+        
+        # Make binary available for subsequent steps
+        echo "FLOWLYT_BINARY=./$FLOWLYT_BINARY" >> $GITHUB_ENV
+        echo "FLOWLYT_INSTALLED=true" >> $GITHUB_ENV
+        
     - name: Run Flowlyt Scan
       shell: bash
       id: scan
       run: |
         set -o pipefail
         
+        # Verify Flowlyt is installed
+        if [ "$FLOWLYT_INSTALLED" != "true" ] || [ ! -x "$FLOWLYT_BINARY" ]; then
+          echo "❌ Flowlyt binary not found or not executable"
+          echo "Setup step may have failed"
+          exit 1
+        fi
+        
+        echo "Using Flowlyt binary: $FLOWLYT_BINARY"
+        
         # Build scan command
-        SCAN_CMD="flowlyt scan"
+        SCAN_CMD="$FLOWLYT_BINARY scan"
         SCAN_CMD="$SCAN_CMD --repo ${{ inputs.repository }}"
         SCAN_CMD="$SCAN_CMD --config ${{ inputs.config-file }}"
         SCAN_CMD="$SCAN_CMD --output ${{ inputs.output-format }}"

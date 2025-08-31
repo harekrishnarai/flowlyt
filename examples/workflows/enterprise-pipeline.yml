@@ -1,0 +1,289 @@
+name: Enterprise Security Pipeline
+
+on:
+  push:
+    branches: [main, develop, release/*]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Daily security scan at 2 AM UTC
+    - cron: '0 2 * * *'
+
+permissions:
+  contents: read
+  security-events: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  # Multi-stage security scanning
+  security-analysis:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        scan-type:
+          - name: 'baseline'
+            config: '.flowlyt.yml'
+            severity: 'MEDIUM'
+          - name: 'enterprise'
+            config: '.flowlyt-enterprise.yml'
+            severity: 'LOW'
+          - name: 'compliance'
+            config: '.flowlyt-compliance.yml'
+            severity: 'INFO'
+    
+    outputs:
+      baseline-critical: ${{ steps.baseline-scan.outputs.critical-count }}
+      enterprise-violations: ${{ steps.enterprise-scan.outputs.policy-violations }}
+      compliance-status: ${{ steps.compliance-scan.outputs.compliance-status }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Security Scan - ${{ matrix.scan-type.name }}
+        id: ${{ matrix.scan-type.name }}-scan
+        uses: harekrishnarai/flowlyt@v1
+        with:
+          # Configuration
+          repository: '.'
+          config-file: ${{ matrix.scan-type.config }}
+          
+          # Enterprise features
+          enable-policy-enforcement: 'true'
+          enable-vuln-intel: 'true'
+          
+          # Compliance frameworks (for enterprise/compliance scans)
+          compliance-frameworks: ${{ matrix.scan-type.name == 'compliance' && 'pci-dss,sox,nist-800-53' || '' }}
+          
+          # Output configuration
+          output-format: 'sarif'
+          output-file: 'security-${{ matrix.scan-type.name }}.sarif'
+          min-severity: ${{ matrix.scan-type.severity }}
+          
+          # Integration settings
+          upload-sarif: 'true'
+          sarif-category: 'flowlyt-${{ matrix.scan-type.name }}'
+          comment-on-pr: ${{ matrix.scan-type.name == 'baseline' && 'true' || 'false' }}
+          
+          # Security gates
+          fail-on-severity: ${{ matrix.scan-type.name == 'baseline' && 'CRITICAL' || 'NONE' }}
+          continue-on-error: ${{ matrix.scan-type.name != 'baseline' }}
+          
+          # Verbose output for enterprise scans
+          verbose: ${{ matrix.scan-type.name != 'baseline' && 'true' || 'false' }}
+      
+      - name: Upload Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-results-${{ matrix.scan-type.name }}
+          path: |
+            security-${{ matrix.scan-type.name }}.sarif
+            *.json
+            *.log
+        if: always()
+
+  # Security gate decision
+  security-gate:
+    needs: security-analysis
+    runs-on: ubuntu-latest
+    if: always()
+    
+    outputs:
+      gate-passed: ${{ steps.gate-decision.outputs.passed }}
+      requires-approval: ${{ steps.gate-decision.outputs.approval-required }}
+    
+    steps:
+      - name: Download All Security Results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: security-results-*
+          merge-multiple: true
+      
+      - name: Security Gate Decision
+        id: gate-decision
+        run: |
+          echo "🔒 Evaluating enterprise security gate..."
+          
+          BASELINE_CRITICAL="${{ needs.security-analysis.outputs.baseline-critical }}"
+          ENTERPRISE_VIOLATIONS="${{ needs.security-analysis.outputs.enterprise-violations }}"
+          COMPLIANCE_STATUS="${{ needs.security-analysis.outputs.compliance-status }}"
+          
+          echo "📊 Security Metrics:"
+          echo "- Baseline Critical Issues: $BASELINE_CRITICAL"
+          echo "- Enterprise Policy Violations: $ENTERPRISE_VIOLATIONS"
+          echo "- Compliance Status: $COMPLIANCE_STATUS"
+          
+          # Determine gate status
+          GATE_PASSED=true
+          APPROVAL_REQUIRED=false
+          
+          # Critical security gate
+          if [ "$BASELINE_CRITICAL" -gt 0 ]; then
+            echo "🚨 SECURITY GATE: BLOCKED - Critical security issues detected"
+            GATE_PASSED=false
+          fi
+          
+          # Enterprise policy gate
+          if [ "$ENTERPRISE_VIOLATIONS" -gt 0 ]; then
+            echo "⚠️ POLICY GATE: WARNING - Enterprise policy violations detected"
+            APPROVAL_REQUIRED=true
+          fi
+          
+          # Compliance gate
+          if [ "$COMPLIANCE_STATUS" = "false" ]; then
+            echo "📋 COMPLIANCE GATE: BLOCKED - Compliance requirements not met"
+            GATE_PASSED=false
+          fi
+          
+          if [ "$GATE_PASSED" = "true" ] && [ "$APPROVAL_REQUIRED" = "false" ]; then
+            echo "✅ SECURITY GATE: PASSED - All security requirements met"
+          elif [ "$GATE_PASSED" = "true" ] && [ "$APPROVAL_REQUIRED" = "true" ]; then
+            echo "⚠️ SECURITY GATE: CONDITIONAL PASS - Manual approval required"
+          fi
+          
+          echo "passed=$GATE_PASSED" >> $GITHUB_OUTPUT
+          echo "approval-required=$APPROVAL_REQUIRED" >> $GITHUB_OUTPUT
+      
+      - name: Create Security Summary Report
+        run: |
+          cat > security-summary.md << EOF
+          # 🛡️ Enterprise Security Analysis Summary
+          
+          **Repository:** \`${{ github.repository }}\`  
+          **Branch:** \`${{ github.ref_name }}\`  
+          **Commit:** \`${{ github.sha }}\`  
+          **Scan Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          
+          ## 📊 Security Metrics
+          
+          | Scan Type | Critical Issues | Policy Violations | Compliance |
+          |-----------|----------------|-------------------|------------|
+          | Baseline | ${{ needs.security-analysis.outputs.baseline-critical }} | - | - |
+          | Enterprise | - | ${{ needs.security-analysis.outputs.enterprise-violations }} | - |
+          | Compliance | - | - | ${{ needs.security-analysis.outputs.compliance-status == 'true' && '✅ Compliant' || '❌ Non-Compliant' }} |
+          
+          ## 🔒 Security Gate Status
+          
+          **Overall Status:** $([ "${{ steps.gate-decision.outputs.passed }}" = "true" ] && echo "✅ PASSED" || echo "❌ BLOCKED")  
+          **Approval Required:** $([ "${{ steps.gate-decision.outputs.approval-required }}" = "true" ] && echo "⚠️ YES" || echo "✅ NO")
+          
+          ## 📋 Next Steps
+          
+          $(if [ "${{ steps.gate-decision.outputs.passed }}" = "true" ]; then
+            if [ "${{ steps.gate-decision.outputs.approval-required }}" = "true" ]; then
+              echo "1. **Manual Review Required** - Security team approval needed"
+              echo "2. **Policy Violations** - Review and address policy violations"
+              echo "3. **Proceed with Caution** - Additional monitoring recommended"
+            else
+              echo "1. **Deployment Approved** - All security requirements met"
+              echo "2. **Continue Pipeline** - Safe to proceed to next stage"
+              echo "3. **Monitor Production** - Continue security monitoring"
+            fi
+          else
+            echo "1. **DEPLOYMENT BLOCKED** - Critical security issues detected"
+            echo "2. **Immediate Action Required** - Fix security vulnerabilities"
+            echo "3. **Re-scan Required** - Run security scan after fixes"
+          fi)
+          
+          ## 📚 Security Resources
+          
+          - [Security Findings](https://github.com/${{ github.repository }}/security/code-scanning)
+          - [Policy Documentation](https://docs.company.com/security-policies)
+          - [Compliance Framework](https://docs.company.com/compliance)
+          - [Security Team Contact](mailto:security@company.com)
+          
+          EOF
+          
+          cat security-summary.md >> $GITHUB_STEP_SUMMARY
+      
+      - name: Create Issue for Critical Violations
+        if: steps.gate-decision.outputs.passed == 'false'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '🚨 Critical Security Issues Detected - Deployment Blocked';
+            const body = `## 🛡️ Enterprise Security Gate Violation
+            
+            **Repository:** \`${{ github.repository }}\`  
+            **Branch:** \`${{ github.ref_name }}\`  
+            **Commit:** \`${{ github.sha }}\`  
+            **Workflow:** [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            
+            ### 🚨 Critical Issues Detected
+            - **Baseline Critical:** ${{ needs.security-analysis.outputs.baseline-critical }}
+            - **Policy Violations:** ${{ needs.security-analysis.outputs.enterprise-violations }}
+            - **Compliance Status:** ${{ needs.security-analysis.outputs.compliance-status }}
+            
+            ### 🔒 Security Gate Status
+            **DEPLOYMENT BLOCKED** - Critical security requirements not met
+            
+            ### ⚡ Immediate Actions Required
+            1. Review security findings in the [Security tab](https://github.com/${{ github.repository }}/security/code-scanning)
+            2. Address all critical vulnerabilities according to remediation guidance
+            3. Fix any enterprise policy violations
+            4. Ensure compliance requirements are met
+            5. Re-run security pipeline after fixes
+            
+            ### 📞 Escalation
+            For urgent deployments, contact the security team at security@company.com
+            
+            ---
+            *Auto-generated by Flowlyt Enterprise Security Pipeline*`;
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['security', 'critical', 'deployment-blocked', 'flowlyt']
+            });
+
+  # Conditional approval workflow
+  security-approval:
+    needs: [security-analysis, security-gate]
+    if: needs.security-gate.outputs.requires-approval == 'true' && needs.security-gate.outputs.gate-passed == 'true'
+    runs-on: ubuntu-latest
+    environment: security-approval  # Requires manual approval
+    
+    steps:
+      - name: Security Team Approval Required
+        run: |
+          echo "⚠️ Manual security approval required"
+          echo "Policy violations detected but no critical security issues"
+          echo "Security team review and approval needed before deployment"
+      
+      - name: Notify Security Team
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '⚠️ Security Team Approval Required',
+              body: `Manual approval requested for deployment due to policy violations.
+              
+              **Workflow:** [${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+              **Policy Violations:** ${{ needs.security-analysis.outputs.enterprise-violations }}
+              
+              Please review and approve/reject the deployment.`,
+              labels: ['security', 'approval-required', 'flowlyt']
+            });
+
+  # Final deployment readiness
+  deployment-readiness:
+    needs: [security-gate, security-approval]
+    if: always() && (needs.security-gate.outputs.gate-passed == 'true')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deployment Readiness Check
+        run: |
+          if [ "${{ needs.security-gate.outputs.requires-approval }}" = "true" ]; then
+            echo "✅ Security approval completed - Deployment authorized"
+          else
+            echo "✅ Security gate passed - Deployment ready"
+          fi
+          
+          echo "🚀 Safe to proceed with deployment to production"
