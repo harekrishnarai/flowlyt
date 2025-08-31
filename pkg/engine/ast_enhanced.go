@@ -126,7 +126,7 @@ func (e *ASTEnhancedEngine) AnalyzeWithAST(ctx context.Context, workflowFiles []
 			// Merge standard results
 			enhancedResult.Workflows = append(enhancedResult.Workflows, standardResult.Workflows...)
 			enhancedResult.CombinedFindings = append(enhancedResult.CombinedFindings, standardResult.CombinedFindings...)
-			
+
 			// Update statistics
 			for platform, count := range standardResult.Statistics.PlatformBreakdown {
 				enhancedResult.Statistics.PlatformBreakdown[platform] += count
@@ -240,7 +240,7 @@ func (e *ASTEnhancedEngine) createSharedWorkflowContext(workflowFile parser.Work
 			Steps:  []platform.Step{},
 			RunsOn: astJob.RunsOn,
 		}
-		
+
 		// Convert steps (simplified)
 		for i, astStep := range astJob.Steps {
 			step := platform.Step{
@@ -253,7 +253,7 @@ func (e *ASTEnhancedEngine) createSharedWorkflowContext(workflowFile parser.Work
 			}
 			standardJob.Steps = append(standardJob.Steps, step)
 		}
-		
+
 		standardWorkflow.Jobs = append(standardWorkflow.Jobs, standardJob)
 	}
 

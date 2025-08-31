@@ -109,29 +109,227 @@ func (dfa *DataFlowAnalyzer) AnalyzeDataFlowWithCallGraph(workflow *WorkflowAST,
 
 // traceDataFlowsWithCallGraph uses call graph for more accurate analysis
 func (dfa *DataFlowAnalyzer) traceDataFlowsWithCallGraph(workflow *WorkflowAST, callGraph *CallGraph) {
-	// Use call graph edges for more accurate reachability
+	// 🚀 PERFORMANCE FIX: Use efficient O(V+E) graph traversal instead of O(n²)
 	for sourceID, source := range dfa.sources {
-		for sinkID, sink := range dfa.sinks {
-			// Check if there's a path in the call graph
-			if callGraph.IsReachable(source.NodeID, sink.NodeID) {
-				path := callGraph.FindPaths(source.NodeID, sink.NodeID, 10) // Max depth 10
-				if len(path) > 0 {
-					severity := dfa.calculateFlowSeverity(source, sink)
-					risk := dfa.calculateFlowRisk(source, sink)
+		// Find only reachable sinks for this source using BFS (O(V+E) per source)
+		reachableSinks := dfa.findReachableSinksForSource(source, callGraph)
 
-					flow := &DataFlow{
-						SourceID: sourceID,
-						SinkID:   sinkID,
-						Path:     path[0], // Use first/shortest path
-						Tainted:  source.Tainted,
-						Severity: severity,
-						Risk:     risk,
-					}
-					dfa.flows = append(dfa.flows, flow)
+		for _, sinkInfo := range reachableSinks {
+			// Only create flows for sinks that have actual data dependencies
+			if dfa.hasActualDataFlow(source, sinkInfo.sink, sinkInfo.path) {
+				severity := dfa.calculateFlowSeverity(source, sinkInfo.sink)
+				risk := dfa.calculateFlowRisk(source, sinkInfo.sink)
+
+				flow := &DataFlow{
+					SourceID: sourceID,
+					SinkID:   sinkInfo.sink.ID,
+					Path:     sinkInfo.path,
+					Tainted:  source.Tainted,
+					Severity: severity,
+					Risk:     risk,
 				}
+				dfa.flows = append(dfa.flows, flow)
 			}
 		}
 	}
+}
+
+// SinkInfo contains sink and path information
+type SinkInfo struct {
+	sink *DataSink
+	path []string
+}
+
+// findReachableSinksForSource efficiently finds all reachable sinks for a source
+func (dfa *DataFlowAnalyzer) findReachableSinksForSource(source *DataSource, callGraph *CallGraph) []SinkInfo {
+	var result []SinkInfo
+	visited := make(map[string]bool)
+	queue := []string{source.NodeID}
+	parent := make(map[string]string)
+
+	for len(queue) > 0 {
+		currentNode := queue[0]
+		queue = queue[1:]
+
+		if visited[currentNode] {
+			continue
+		}
+		visited[currentNode] = true
+
+		// Check if this node has sinks
+		for _, sink := range dfa.sinks {
+			if sink.NodeID == currentNode {
+				// Reconstruct path from source to this sink
+				path := dfa.reconstructPath(source.NodeID, currentNode, parent)
+				result = append(result, SinkInfo{
+					sink: sink,
+					path: path,
+				})
+			}
+		}
+
+		// Add connected nodes to queue
+		edges := callGraph.GetEdges(currentNode)
+		for _, nextNode := range edges {
+			if !visited[nextNode] {
+				parent[nextNode] = currentNode
+				queue = append(queue, nextNode)
+			}
+		}
+	}
+
+	return result
+}
+
+// reconstructPath builds the path from source to sink
+func (dfa *DataFlowAnalyzer) reconstructPath(start, end string, parent map[string]string) []string {
+	if start == end {
+		return []string{start}
+	}
+
+	path := []string{}
+	current := end
+
+	for current != "" && current != start {
+		path = append([]string{current}, path...)
+		current = parent[current]
+	}
+
+	if current == start {
+		path = append([]string{start}, path...)
+	}
+
+	return path
+}
+
+// hasActualDataFlow checks if there's a real data dependency between source and sink
+func (dfa *DataFlowAnalyzer) hasActualDataFlow(source *DataSource, sink *DataSink, path []string) bool {
+	// 🎯 ACCURACY FIX: Filter out unrelated data flows
+
+	// 1. Check if source and sink are data-type compatible
+	if !dfa.areDataTypesCompatible(source, sink) {
+		return false
+	}
+
+	// 2. Check if the path involves actual data usage (not just reachability)
+	if !dfa.pathInvolvesSameData(source, sink, path) {
+		return false
+	}
+
+	// 3. Check if it's within the same logical workflow context
+	if !dfa.withinSameContext(source, sink) {
+		return false
+	}
+
+	// 4. Filter out obvious false positives
+	if dfa.isObviousFalsePositive(source, sink) {
+		return false
+	}
+
+	return true
+}
+
+// areDataTypesCompatible checks if source and sink can actually exchange data
+func (dfa *DataFlowAnalyzer) areDataTypesCompatible(source *DataSource, sink *DataSink) bool {
+	// Environment variables can flow to environment assignments or command execution
+	if source.Type == "env" {
+		return sink.Type == "env" || sink.Type == "log" || sink.Type == "action_input"
+	}
+
+	// Secrets should only flow to specific secure contexts
+	if source.Type == "secret" {
+		return sink.Type == "action_input" || sink.Type == "env" ||
+			(sink.Type == "network" && sink.Sensitive) ||
+			(sink.Type == "log" && sink.Sensitive)
+	}
+
+	// Outputs can flow to most places
+	if source.Type == "output" {
+		return true
+	}
+
+	// GitHub context has specific usage patterns
+	if source.Type == "github_context" {
+		return sink.Type == "action_input" || sink.Type == "env" || sink.Type == "log"
+	}
+
+	return true
+}
+
+// pathInvolvesSameData checks if the path actually involves the same data
+func (dfa *DataFlowAnalyzer) pathInvolvesSameData(source *DataSource, sink *DataSink, path []string) bool {
+	// For now, implement basic heuristics
+	// In production, this would analyze variable usage along the path
+
+	// If source and sink have similar names, likely related
+	if strings.Contains(strings.ToLower(sink.Name), strings.ToLower(source.Name)) ||
+		strings.Contains(strings.ToLower(source.Name), strings.ToLower(sink.Name)) {
+		return true
+	}
+
+	// If both involve secrets/tokens, likely related
+	sourceHasSecret := strings.Contains(strings.ToLower(source.Name), "secret") ||
+		strings.Contains(strings.ToLower(source.Name), "token")
+	sinkHasSecret := strings.Contains(strings.ToLower(sink.Name), "secret") ||
+		strings.Contains(strings.ToLower(sink.Name), "token")
+
+	if sourceHasSecret && sinkHasSecret {
+		return true
+	}
+
+	// If path is very short (direct connection), more likely to be real
+	return len(path) <= 3
+}
+
+// withinSameContext checks if source and sink are in related contexts
+func (dfa *DataFlowAnalyzer) withinSameContext(source *DataSource, sink *DataSink) bool {
+	// Global sources can reach anywhere
+	if source.NodeID == "global" {
+		return true
+	}
+
+	// Same step - definitely related
+	if source.NodeID == sink.NodeID {
+		return true
+	}
+
+	// Same job - likely related
+	sourceJob := dfa.extractJobFromNodeID(source.NodeID)
+	sinkJob := dfa.extractJobFromNodeID(sink.NodeID)
+
+	return sourceJob == sinkJob || sourceJob == "" || sinkJob == ""
+}
+
+// extractJobFromNodeID extracts job name from node ID
+func (dfa *DataFlowAnalyzer) extractJobFromNodeID(nodeID string) string {
+	if strings.HasPrefix(nodeID, "job_") {
+		return strings.TrimPrefix(nodeID, "job_")
+	}
+	if strings.HasPrefix(nodeID, "step_") {
+		parts := strings.Split(nodeID, "_")
+		if len(parts) >= 2 {
+			return parts[1]
+		}
+	}
+	return ""
+}
+
+// isObviousFalsePositive filters out clearly unrelated flows
+func (dfa *DataFlowAnalyzer) isObviousFalsePositive(source *DataSource, sink *DataSink) bool {
+	// Don't create flows between different unrelated environment variables
+	if source.Type == "env" && sink.Type == "env" &&
+		source.NodeID != sink.NodeID &&
+		!strings.Contains(strings.ToLower(sink.Name), strings.ToLower(source.Name)) {
+		return true
+	}
+
+	// Don't create flows between unrelated secrets
+	if source.Type == "secret" && sink.Type == "action_input" &&
+		!strings.Contains(strings.ToLower(sink.Command), strings.ToLower(source.Name)) {
+		return true
+	}
+
+	return false
 }
 
 func (dfa *DataFlowAnalyzer) identifyDataSources(workflow *WorkflowAST) {
