@@ -5,7 +5,7 @@
 
 <!-- Conference Recognition -->
 ![Black Hat Europe 2025](https://img.shields.io/badge/UPCOMING-Black%20Hat%20EU%202025-000000?style=for-the-badge&logo=blackhat&logoColor=white)
-![AppSec Defcon 33](https://img.shields.io/badge/PRESENTED-AppSec%20Village%DEFCON%2033-6c5ce7?style=for-the-badge&logo=security&logoColor=white)
+![AppSec Defcon 33](https://img.shields.io/badge/PRESENTED-AppSec%20Village%20DEFCON%2033-6c5ce7?style=for-the-badge&logo=security&logoColor=white)
 
   <strong>🔒 Secure your CI/CD pipelines with Flowlyt</strong>
   <br>
