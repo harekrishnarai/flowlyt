@@ -257,7 +257,7 @@ jobs:
           name: flowlyt-action-${{ needs.prepare-action.outputs.version }}
       
       - name: Create GitHub Release for Action
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8  # v2.3.2
         with:
           files: |
             flowlyt-action-${{ needs.prepare-action.outputs.version }}.tar.gz

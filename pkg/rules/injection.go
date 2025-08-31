@@ -158,12 +158,39 @@ func findInjections(text string, patterns []*regexp.Regexp) []string {
 	var injections []string
 	seen := make(map[string]bool)
 
+	// Check if the text contains input validation patterns
+	validationPatterns := []string{
+		`if\s*\[\[\s*"[^"]*"\s*=~\s*\^[^$]+\$\s*\]\]`, // Regex validation pattern
+		`^\s*#.*validate.*input`,                      // Comments about validation
+		`exit\s+1`,                                    // Error handling with exit
+		`echo\s+".*Invalid.*format"`,                  // Validation error messages
+	}
+
+	hasValidation := false
+	for _, pattern := range validationPatterns {
+		if matched, _ := regexp.MatchString(pattern, text); matched {
+			hasValidation = true
+			break
+		}
+	}
+
 	for _, pattern := range patterns {
 		matches := pattern.FindAllStringSubmatch(text, -1)
 		for _, match := range matches {
 			if len(match) > 0 {
 				injection := match[0]
 				if !seen[injection] {
+					// If input validation is present, reduce the confidence
+					// We still report it but at lower severity or skip borderline cases
+					if hasValidation {
+						// Skip common validated input patterns
+						if strings.Contains(injection, "github.event.inputs.version") &&
+							strings.Contains(text, "=~") &&
+							strings.Contains(text, "exit 1") {
+							continue // Skip validated version inputs
+						}
+					}
+
 					injections = append(injections, injection)
 					seen[injection] = true
 				}

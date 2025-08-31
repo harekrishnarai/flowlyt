@@ -105,25 +105,25 @@ jobs:
       matrix:
         test-case:
           - name: "minimal"
-            inputs: |
-              repository: './test/sample-repo'
-              min-severity: 'HIGH'
+            repository: './test/sample-repo'
+            min-severity: 'HIGH'
+            output-format: 'sarif'
           - name: "json-output"
-            inputs: |
-              repository: './test/sample-repo'
-              output-format: 'json'
-              output-file: 'results.json'
+            repository: './test/sample-repo'
+            output-format: 'json'
+            output-file: 'results.json'
+            min-severity: 'MEDIUM'
           - name: "fail-on-high"
-            inputs: |
-              repository: './test/sample-repo'
-              fail-on-severity: 'HIGH'
-              continue-on-error: 'true'
+            repository: './test/sample-repo'
+            fail-on-severity: 'HIGH'
+            continue-on-error: 'true'
+            min-severity: 'LOW'
           - name: "policy-enforcement"
-            inputs: |
-              repository: './test/sample-repo'
-              enable-policy-enforcement: 'true'
-              enable-vuln-intel: 'true'
-              verbose: 'true'
+            repository: './test/sample-repo'
+            enable-policy-enforcement: 'true'
+            enable-vuln-intel: 'true'
+            verbose: 'true'
+            min-severity: 'MEDIUM'
     
     steps:
       - name: Checkout
@@ -132,7 +132,18 @@ jobs:
       - name: Test Configuration - ${{ matrix.test-case.name }}
         id: test-config
         uses: ./
-        with: ${{ fromJSON(matrix.test-case.inputs) }}
+        with:
+          repository: ${{ matrix.test-case.repository }}
+          output-format: ${{ matrix.test-case.output-format || 'sarif' }}
+          output-file: ${{ matrix.test-case.output-file || 'results.sarif' }}
+          min-severity: ${{ matrix.test-case.min-severity || 'MEDIUM' }}
+          fail-on-severity: ${{ matrix.test-case.fail-on-severity || 'CRITICAL' }}
+          enable-policy-enforcement: ${{ matrix.test-case.enable-policy-enforcement || 'false' }}
+          enable-vuln-intel: ${{ matrix.test-case.enable-vuln-intel || 'false' }}
+          verbose: ${{ matrix.test-case.verbose || 'false' }}
+          continue-on-error: ${{ matrix.test-case.continue-on-error || 'false' }}
+          upload-sarif: 'false'
+          comment-on-pr: 'false'
         continue-on-error: true
       
       - name: Validate Configuration Test

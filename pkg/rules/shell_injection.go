@@ -24,23 +24,35 @@ func checkShellInjectionVulnerabilities(workflow parser.WorkflowFile) []Finding 
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
 
-	// Patterns for shell injection detection
+	// More specific patterns for shell injection detection that avoid common false positives
 	shellInjectionPatterns := []string{
-		// Command substitution with user input
-		`\$\([^)]*\$\{\{[^}]*\}\}[^)]*\)`,
-		// Eval with user input
-		`eval.*\$\{\{[^}]*\}\}`,
-		// Direct command execution with interpolation
-		`(bash|sh|zsh)\s+-c\s+["'].*\$\{\{[^}]*\}\}.*["']`,
-		// Dangerous script execution patterns
-		`\|\s*(bash|sh|zsh).*\$\{\{[^}]*\}\}`,
+		// Eval with direct user input (high risk)
+		`eval.*\$\{\{\s*(github\.event\.(issue\.(title|body)|pull_request\.(title|body)|comment\.body)|github\.head_ref)`,
+		// Direct command execution with user-controlled input
+		`(bash|sh|zsh)\s+-c\s+["'].*\$\{\{\s*(github\.event\.(issue|pull_request|comment)|github\.head_ref)`,
+		// Dangerous piping of user input to shell
+		`echo.*\$\{\{\s*(github\.event\.(issue|pull_request|comment)|github\.head_ref).*\|\s*(bash|sh|zsh)`,
+	}
+
+	// Less specific patterns that might have legitimate use but still worth flagging
+	potentialPatterns := []string{
+		// Command substitution with any user input (medium risk)
+		`\$\([^)]*\$\{\{\s*github\.event\.[^}]*\}\}[^)]*\)`,
 	}
 
 	// Compile patterns
-	var compiledPatterns []*regexp.Regexp
+	var compiledHighRiskPatterns []*regexp.Regexp
+	var compiledMediumRiskPatterns []*regexp.Regexp
+
 	for _, pattern := range shellInjectionPatterns {
 		if compiled, err := regexp.Compile(pattern); err == nil {
-			compiledPatterns = append(compiledPatterns, compiled)
+			compiledHighRiskPatterns = append(compiledHighRiskPatterns, compiled)
+		}
+	}
+
+	for _, pattern := range potentialPatterns {
+		if compiled, err := regexp.Compile(pattern); err == nil {
+			compiledMediumRiskPatterns = append(compiledMediumRiskPatterns, compiled)
 		}
 	}
 
@@ -53,8 +65,8 @@ func checkShellInjectionVulnerabilities(workflow parser.WorkflowFile) []Finding 
 			}
 
 			if step.Run != "" {
-				// Check for shell injection patterns
-				for _, pattern := range compiledPatterns {
+				// Check high-risk patterns first
+				for _, pattern := range compiledHighRiskPatterns {
 					if pattern.MatchString(step.Run) {
 						pattern := linenum.FindPattern{
 							Key:   "run",
@@ -77,6 +89,35 @@ func checkShellInjectionVulnerabilities(workflow parser.WorkflowFile) []Finding 
 							StepName:    stepName,
 							Evidence:    step.Run,
 							Remediation: "Sanitize user input or use environment variables instead of direct interpolation in shell commands",
+							LineNumber:  lineNumber,
+						})
+					}
+				}
+
+				// Check medium-risk patterns
+				for _, pattern := range compiledMediumRiskPatterns {
+					if pattern.MatchString(step.Run) {
+						pattern := linenum.FindPattern{
+							Key:   "run",
+							Value: step.Run,
+						}
+						lineResult := lineMapper.FindLineNumber(pattern)
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "SHELL_INJECTION",
+							RuleName:    "Shell Injection Vulnerability",
+							Description: "The script contains potential shell injection where GitHub Actions expressions are used in command substitution",
+							Severity:    High,
+							Category:    InjectionAttack,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    stepName,
+							Evidence:    step.Run,
+							Remediation: "Use environment variables or validate input before using in command substitution",
 							LineNumber:  lineNumber,
 						})
 					}
@@ -233,25 +274,38 @@ func isPullRequestTriggered(workflow parser.WorkflowFile) bool {
 func isJobUsingSelfHostedRunner(job parser.Job) bool {
 	// GitHub-hosted runner labels
 	githubHostedRunners := map[string]bool{
-		"ubuntu-latest":  true,
-		"ubuntu-20.04":   true,
-		"ubuntu-18.04":   true,
-		"ubuntu-22.04":   true,
-		"windows-latest": true,
-		"windows-2019":   true,
-		"windows-2022":   true,
-		"macos-latest":   true,
-		"macos-11":       true,
-		"macos-12":       true,
-		"macos-13":       true,
+		"ubuntu-latest":          true,
+		"ubuntu-20.04":           true,
+		"ubuntu-18.04":           true,
+		"ubuntu-22.04":           true,
+		"windows-latest":         true,
+		"windows-2019":           true,
+		"windows-2022":           true,
+		"macos-latest":           true,
+		"macos-11":               true,
+		"macos-12":               true,
+		"macos-13":               true,
+		"macos-latest-large":     true,
+		"ubuntu-latest-4-cores":  true,
+		"ubuntu-latest-8-cores":  true,
+		"ubuntu-latest-16-cores": true,
 	}
 
 	switch runsOn := job.RunsOn.(type) {
 	case string:
+		// Handle matrix expressions like ${{ matrix.os }}
+		if strings.Contains(runsOn, "${{") && strings.Contains(runsOn, "matrix") {
+			// For matrix expressions, be conservative and don't flag as self-hosted
+			// unless we can definitively determine otherwise
+			return false
+		}
 		return !githubHostedRunners[runsOn]
 	case []interface{}:
 		for _, runner := range runsOn {
 			if runnerStr, ok := runner.(string); ok {
+				if strings.Contains(runnerStr, "${{") && strings.Contains(runnerStr, "matrix") {
+					return false // Conservative approach for matrix runners
+				}
 				if !githubHostedRunners[runnerStr] {
 					return true
 				}

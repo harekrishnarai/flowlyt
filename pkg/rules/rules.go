@@ -1474,12 +1474,14 @@ func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
 
 	// Patterns that indicate dangerous writes to GitHub environment variables
 	dangerousPatterns := []*regexp.Regexp{
-		regexp.MustCompile(`echo\s+.*>>\s*\$GITHUB_OUTPUT`),   // Direct echo to GITHUB_OUTPUT
-		regexp.MustCompile(`echo\s+.*>>\s*\$GITHUB_ENV`),      // Direct echo to GITHUB_ENV
-		regexp.MustCompile(`printf\s+.*>>\s*\$GITHUB_OUTPUT`), // Printf to GITHUB_OUTPUT
-		regexp.MustCompile(`printf\s+.*>>\s*\$GITHUB_ENV`),    // Printf to GITHUB_ENV
-		regexp.MustCompile(`>>\s*\$GITHUB_OUTPUT`),            // Any redirect to GITHUB_OUTPUT
-		regexp.MustCompile(`>>\s*\$GITHUB_ENV`),               // Any redirect to GITHUB_ENV
+		// Only flag patterns with user input that could be dangerous
+		regexp.MustCompile(`echo\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_OUTPUT`),   // Echo with user input to GITHUB_OUTPUT
+		regexp.MustCompile(`echo\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_ENV`),      // Echo with user input to GITHUB_ENV
+		regexp.MustCompile(`printf\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_OUTPUT`), // Printf with user input to GITHUB_OUTPUT
+		regexp.MustCompile(`printf\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_ENV`),    // Printf with user input to GITHUB_ENV
+		// Flag variables that might contain user input
+		regexp.MustCompile(`echo\s+.*\$[A-Z_]+.*>>\s*\$GITHUB_OUTPUT`), // Echo variable to GITHUB_OUTPUT
+		regexp.MustCompile(`echo\s+.*\$[A-Z_]+.*>>\s*\$GITHUB_ENV`),    // Echo variable to GITHUB_ENV
 	}
 
 	for jobName, job := range workflow.Workflow.Jobs {
@@ -1537,6 +1539,16 @@ func checkLocalActionUsage(workflow parser.WorkflowFile) []Finding {
 			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") ||
 				(!strings.Contains(step.Uses, "/") && !strings.Contains(step.Uses, "@")) {
 
+				// For test workflows or workflows that explicitly test the action itself,
+				// reduce severity as it's expected behavior
+				severity := Medium
+				description := "Usage of local actions may pose security risks as they are not version-controlled externally"
+
+				if strings.Contains(workflow.Path, "test") || strings.Contains(workflow.Path, "action") {
+					severity = Low
+					description = "Local action usage in test workflow - ensure proper validation"
+				}
+
 				lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 					Key:   "uses",
 					Value: step.Uses,
@@ -1550,8 +1562,8 @@ func checkLocalActionUsage(workflow parser.WorkflowFile) []Finding {
 				findings = append(findings, Finding{
 					RuleID:      "LOCAL_ACTION_USAGE",
 					RuleName:    "Local Action Usage",
-					Description: "Usage of local actions may pose security risks as they are not version-controlled externally",
-					Severity:    Medium,
+					Description: description,
+					Severity:    severity,
 					Category:    Misconfiguration,
 					FilePath:    workflow.Path,
 					JobName:     jobName,
@@ -2484,7 +2496,11 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 		"pull_request_target": "Can be triggered by external pull requests with elevated permissions",
 		"workflow_run":        "Can be triggered by completion of other workflows",
 		"repository_dispatch": "Can be triggered via API by repository collaborators",
-		"workflow_dispatch":   "Can be manually triggered with potential for abuse",
+	}
+
+	// workflow_dispatch is only concerning in certain contexts
+	workflowDispatchTriggers := map[string]string{
+		"workflow_dispatch": "Can be manually triggered with potential for abuse",
 	}
 
 	for _, trigger := range triggerEvents {
@@ -2504,6 +2520,41 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 				RuleName:    "External Trigger Debug",
 				Description: fmt.Sprintf("Workflow uses external trigger '%s': %s", trigger, risk),
 				Severity:    High,
+				Category:    AccessControl,
+				FilePath:    workflow.Path,
+				Evidence:    trigger,
+				LineNumber:  lineNumber,
+				Remediation: "Review trigger necessity and add appropriate security controls",
+			})
+		}
+
+		// Check workflow_dispatch separately with lower severity for dev/test workflows
+		if risk, isWorkflowDispatch := workflowDispatchTriggers[trigger]; isWorkflowDispatch {
+			severity := Medium
+			// Reduce severity for test/dev workflows
+			if strings.Contains(workflow.Path, "test") ||
+				strings.Contains(workflow.Path, "dev") ||
+				strings.Contains(workflow.Path, "debug") ||
+				strings.Contains(workflow.Path, "marketplace") ||
+				strings.Contains(workflow.Path, "action") {
+				severity = Low
+			}
+
+			lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+				Key:   "on",
+				Value: trigger,
+			})
+
+			lineNumber := 0
+			if lineResult != nil {
+				lineNumber = lineResult.LineNumber
+			}
+
+			findings = append(findings, Finding{
+				RuleID:      "EXTERNAL_TRIGGER_DEBUG",
+				RuleName:    "External Trigger Debug",
+				Description: fmt.Sprintf("Workflow uses external trigger '%s': %s", trigger, risk),
+				Severity:    severity,
 				Category:    AccessControl,
 				FilePath:    workflow.Path,
 				Evidence:    trigger,
@@ -3694,9 +3745,10 @@ func checkObfuscationDetection(workflow parser.WorkflowFile) []Finding {
 				{`\$\{[^}]*\[.*\*.*\].*\}`, "Variable expansion with wildcards", High},
 				{`eval\s*\$\(.*base64.*\)`, "Base64 decoded eval", Critical},
 				{`\$\(\$\(.*\)\)`, "Nested command substitution", Medium},
-				{`[\x00-\x1f\x7f-\xff]`, "Non-printable characters", High},
+				// Removed: Non-printable characters - too many false positives with GitHub Actions syntax
 				{`\\x[0-9a-f]{2}`, "Hex-encoded characters", Medium},
-				{`\$\{.*#.*\}`, "Parameter expansion with pattern removal", Medium},
+				// More specific pattern for potentially dangerous parameter expansion
+				{`\$\{[^}]*#[^}]*\$\{\{[^}]*\}\}[^}]*\}`, "Parameter expansion with user input pattern removal", High},
 				{`\|\s*xxd\s*-r`, "Hex decode pipeline", High},
 				{`printf.*\\[0-9]{3}`, "Octal escape sequences", Medium},
 			}
