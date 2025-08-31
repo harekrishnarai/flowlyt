@@ -38,7 +38,7 @@ jobs:
         id: flowlyt-test
         uses: ./  # Use local action
         with:
-          repository: './test/sample-repo'
+          repository: '.'
           config-file: ${{ matrix.config-file }}
           output-format: 'sarif'
           output-file: 'test-results-${{ matrix.os }}-${{ matrix.config }}.sarif'
