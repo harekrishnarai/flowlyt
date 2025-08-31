@@ -14,7 +14,7 @@ inputs:
   token:
     description: 'GitHub token used to access repositories and create comments'
     required: false
-    default: ${{ github.token }}
+    default: ''
   config-file:
     description: 'Path to Flowlyt configuration file'
     required: false
