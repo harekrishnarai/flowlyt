@@ -141,17 +141,11 @@ MIT License - see [LICENSE](LICENSE) for details.
 - 🎯 [DEF CON 33 - AppSec Village](https://defcon.org) (Presented)
 - 🔥 [Black Hat Europe 2025](https://blackhat.com) (Upcoming)
 
-<a href="https://github.com/harekrishnarai/flowlyt/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=harekrishnarai/flowlyt" />
-</a>
-
 ## Contributors
 Thanks to all the people who already contributed!   
 [Hare Krishna Rai](https://www.linkedin.com/in/harekrishnarai/)  
 [Gaurav Joshi](https://www.linkedin.com/in/gauravjoshii/)  
 [Chanchal Kalnarayan](https://www.linkedin.com/in/ckalnarayan) 
-
-## Mentors
 [Prashant Venkatesh](https://www.linkedin.com/in/prashant-venkatesh-99018999/)    
 [Nandan Gupta](https://www.linkedin.com/in/nandan-gupta-698aa11b)  
 [Mohd. Arif](https://www.linkedin.com/in/mohd--arif/)  
