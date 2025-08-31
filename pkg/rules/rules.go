@@ -427,6 +427,116 @@ func StandardRules() []Rule {
 			Platform:    PlatformGitHub, // GitHub OIDC tokens
 			Check:       checkDebugOidcActions,
 		},
+		
+		// New critical security rules from zizmor analysis
+		{
+			ID:          "CACHE_POISONING",
+			Name:        "Cache Poisoning Vulnerability",
+			Description: "Detects cache poisoning attack vectors through actions/cache misuse",
+			Severity:    High,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkCachePoisoning,
+		},
+		{
+			ID:          "REF_CONFUSION",
+			Name:        "Git Reference Confusion",
+			Description: "Detects potential git reference confusion vulnerabilities",
+			Severity:    High,
+			Category:    SupplyChain,
+			Platform:    PlatformAll,
+			Check:       checkRefConfusion,
+		},
+		{
+			ID:          "IMPOSTOR_COMMIT",
+			Name:        "Impostor Commit Detection",
+			Description: "Detects commits that may be impersonating legitimate authors",
+			Severity:    Critical,
+			Category:    SupplyChain,
+			Platform:    PlatformAll,
+			Check:       checkImpostorCommit,
+		},
+		{
+			ID:          "STALE_ACTION_REFS",
+			Name:        "Stale Action References",
+			Description: "Detects actions referenced by outdated or non-existent versions",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformAll,
+			Check:       checkStaleActionRefs,
+		},
+		{
+			ID:          "SECRETS_INHERIT",
+			Name:        "Secret Inheritance Issues",
+			Description: "Detects insecure secret inheritance patterns in reusable workflows",
+			Severity:    High,
+			Category:    SecretsExposure,
+			Platform:    PlatformGitHub,
+			Check:       checkSecretsInherit,
+		},
+		{
+			ID:          "OVERPROVISIONED_SECRETS",
+			Name:        "Over-provisioned Secrets",
+			Description: "Detects workflows with excessive secret access beyond requirements",
+			Severity:    Medium,
+			Category:    SecretsExposure,
+			Platform:    PlatformAll,
+			Check:       checkOverprovisionedSecrets,
+		},
+		{
+			ID:          "UNREDACTED_SECRETS",
+			Name:        "Unredacted Secrets in Logs",
+			Description: "Detects secrets that may be logged in plaintext during execution",
+			Severity:    Critical,
+			Category:    SecretsExposure,
+			Platform:    PlatformAll,
+			Check:       checkUnredactedSecrets,
+		},
+		{
+			ID:          "UNSOUND_CONDITION",
+			Name:        "Unsound Condition Logic",
+			Description: "Detects logic vulnerabilities in workflow conditional statements",
+			Severity:    High,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll,
+			Check:       checkUnsoundCondition,
+		},
+		{
+			ID:          "UNSOUND_CONTAINS",
+			Name:        "Unsound Contains Logic",
+			Description: "Detects vulnerable contains() expressions that can be bypassed",
+			Severity:    High,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub,
+			Check:       checkUnsoundContains,
+		},
+		{
+			ID:          "USE_TRUSTED_PUBLISHING",
+			Name:        "Missing Trusted Publishing",
+			Description: "Detects PyPI publishing without trusted publishing (OIDC)",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkUseTrustedPublishing,
+		},
+		{
+			ID:          "OBFUSCATION_DETECTION",
+			Name:        "Code Obfuscation Detection",
+			Description: "Detects obfuscated code patterns that may hide malicious behavior",
+			Severity:    High,
+			Category:    ShellObfuscation,
+			Platform:    PlatformAll,
+			Check:       checkObfuscationDetection,
+		},
+		{
+			ID:          "ARTIPACKED_VULNERABILITY",
+			Name:        "Artifact Packing Vulnerability",
+			Description: "Detects vulnerabilities in artifact creation and packaging processes",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformAll,
+			Check:       checkArtipackedVulnerability,
+		},
 	}
 }
 
@@ -2792,4 +2902,971 @@ func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
 	}
 
 	return findings
+}
+
+// checkCachePoisoning detects cache poisoning attack vectors
+func checkCachePoisoning(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			if step.Uses == "" {
+				continue
+			}
+
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			// Check for actions/cache usage patterns that could enable cache poisoning
+			if strings.Contains(step.Uses, "actions/cache") {
+				// Check if cache key is predictable or based on user-controlled data
+				if step.With != nil {
+					if key, exists := step.With["key"]; exists {
+						keyStr := fmt.Sprintf("%v", key)
+						// Check for potentially dangerous cache key patterns
+						if strings.Contains(keyStr, "${{ github.event") ||
+							strings.Contains(keyStr, "${{ env") ||
+							strings.Contains(keyStr, "${{ matrix") {
+
+							pattern := linenum.FindPattern{
+								Key:   "key",
+								Value: keyStr,
+							}
+							lineResult := lineMapper.FindLineNumber(pattern)
+							lineNumber := 0
+							if lineResult != nil {
+								lineNumber = lineResult.LineNumber
+							}
+
+							findings = append(findings, Finding{
+								RuleID:      "CACHE_POISONING",
+								RuleName:    "Cache Poisoning Vulnerability",
+								Description: "Cache key uses user-controlled input that could enable cache poisoning attacks",
+								Severity:    High,
+								Category:    SupplyChain,
+								FilePath:    workflow.Path,
+								JobName:     jobName,
+								StepName:    stepName,
+								Evidence:    fmt.Sprintf("cache key: %s", keyStr),
+								Remediation: "Use secure, predictable cache keys not based on user input",
+								LineNumber:  lineNumber,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkRefConfusion detects git reference confusion vulnerabilities
+func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			if step.Uses == "" && step.Run == "" {
+				continue
+			}
+
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			// Check for actions using ambiguous refs
+			if step.Uses != "" {
+				actionParts := strings.Split(step.Uses, "@")
+				if len(actionParts) > 1 {
+					ref := actionParts[1]
+					// Check for potentially confusing refs
+					if ref == "master" || ref == "main" || ref == "develop" || 
+					   strings.HasPrefix(ref, "v") && len(ref) < 6 { // Short version tags
+
+						pattern := linenum.FindPattern{
+							Key:   "uses",
+							Value: step.Uses,
+						}
+						lineResult := lineMapper.FindLineNumber(pattern)
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						severity := Medium
+						if ref == "master" || ref == "main" {
+							severity = High
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "REF_CONFUSION",
+							RuleName:    "Git Reference Confusion",
+							Description: "Action uses ambiguous git reference that could be subject to confusion attacks",
+							Severity:    severity,
+							Category:    SupplyChain,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    stepName,
+							Evidence:    step.Uses,
+							Remediation: "Pin actions to specific commit SHA instead of branch or tag names",
+							LineNumber:  lineNumber,
+						})
+					}
+				}
+			}
+
+			// Check for git commands with potentially confusing refs in run steps
+			if step.Run != "" && strings.Contains(step.Run, "git") {
+				gitRefPatterns := []string{
+					`git\s+checkout\s+(master|main|develop)`,
+					`git\s+pull\s+origin\s+(master|main)`,
+					`git\s+fetch\s+.*\s+(master|main)`,
+				}
+
+				for _, pattern := range gitRefPatterns {
+					re := regexp.MustCompile(`(?i)` + pattern)
+					if re.MatchString(step.Run) {
+						linePattern := linenum.FindPattern{
+							Key:   "run",
+							Value: step.Run,
+						}
+						lineResult := lineMapper.FindLineNumber(linePattern)
+						lineNumber := 0
+						if lineResult != nil {
+							lineNumber = lineResult.LineNumber
+						}
+
+						findings = append(findings, Finding{
+							RuleID:      "REF_CONFUSION",
+							RuleName:    "Git Reference Confusion",
+							Description: "Git command uses ambiguous branch reference",
+							Severity:    Medium,
+							Category:    SupplyChain,
+							FilePath:    workflow.Path,
+							JobName:     jobName,
+							StepName:    stepName,
+							Evidence:    step.Run,
+							Remediation: "Use specific commit SHAs instead of branch names",
+							LineNumber:  lineNumber,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkImpostorCommit detects commits that may be impersonating legitimate authors
+func checkImpostorCommit(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			if step.Run == "" {
+				continue
+			}
+
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			// Check for git config commands that might impersonate others
+			gitConfigPatterns := []string{
+				`git\s+config\s+.*user\.name.*github-actions`,
+				`git\s+config\s+.*user\.email.*github-actions`,
+				`git\s+config\s+.*user\.name.*dependabot`,
+				`git\s+config\s+.*user\.email.*dependabot`,
+				`git\s+config\s+.*user\.name.*\$\{`,  // Variable-based user names
+				`git\s+config\s+.*user\.email.*\$\{`, // Variable-based emails
+			}
+
+			for _, pattern := range gitConfigPatterns {
+				re := regexp.MustCompile(`(?i)` + pattern)
+				if re.MatchString(step.Run) {
+					linePattern := linenum.FindPattern{
+						Key:   "run",
+						Value: step.Run,
+					}
+					lineResult := lineMapper.FindLineNumber(linePattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					severity := High
+					if strings.Contains(step.Run, "${") {
+						severity = Critical // Variable-based identity is more dangerous
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "IMPOSTOR_COMMIT",
+						RuleName:    "Impostor Commit Detection",
+						Description: "Git configuration may impersonate legitimate authors or services",
+						Severity:    severity,
+						Category:    SupplyChain,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.Run,
+						Remediation: "Use official actions for git operations or verify committer identity",
+						LineNumber:  lineNumber,
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkStaleActionRefs detects actions referenced by outdated or non-existent versions
+func checkStaleActionRefs(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			if step.Uses == "" {
+				continue
+			}
+
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			actionParts := strings.Split(step.Uses, "@")
+			if len(actionParts) > 1 {
+				actionName := actionParts[0]
+				version := actionParts[1]
+
+				// Check for known outdated versions of popular actions
+				staleVersions := map[string][]string{
+					"actions/checkout":          {"v1", "v2.0.0", "v2.1.0", "v2.2.0"},
+					"actions/setup-node":        {"v1", "v2.0.0", "v2.1.0"},
+					"actions/setup-python":      {"v1", "v2.0.0", "v2.1.0"},
+					"actions/cache":             {"v1", "v2.0.0", "v2.0.1"},
+					"actions/upload-artifact":   {"v1", "v2.0.0"},
+					"actions/download-artifact": {"v1", "v2.0.0"},
+				}
+
+				if staleList, exists := staleVersions[actionName]; exists {
+					for _, staleVersion := range staleList {
+						if version == staleVersion {
+							pattern := linenum.FindPattern{
+								Key:   "uses",
+								Value: step.Uses,
+							}
+							lineResult := lineMapper.FindLineNumber(pattern)
+							lineNumber := 0
+							if lineResult != nil {
+								lineNumber = lineResult.LineNumber
+							}
+
+							findings = append(findings, Finding{
+								RuleID:      "STALE_ACTION_REFS",
+								RuleName:    "Stale Action References",
+								Description: "Action uses an outdated version that may have security vulnerabilities",
+								Severity:    Medium,
+								Category:    SupplyChain,
+								FilePath:    workflow.Path,
+								JobName:     jobName,
+								StepName:    stepName,
+								Evidence:    step.Uses,
+								Remediation: fmt.Sprintf("Update %s to the latest version", actionName),
+								LineNumber:  lineNumber,
+							})
+						}
+					}
+				}
+
+				// Check for very old version patterns (v1.x, v0.x)
+				if strings.HasPrefix(version, "v1.") || strings.HasPrefix(version, "v0.") {
+					pattern := linenum.FindPattern{
+						Key:   "uses",
+						Value: step.Uses,
+					}
+					lineResult := lineMapper.FindLineNumber(pattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "STALE_ACTION_REFS",
+						RuleName:    "Stale Action References",
+						Description: "Action uses very old version that likely has security vulnerabilities",
+						Severity:    High,
+						Category:    SupplyChain,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.Uses,
+						Remediation: fmt.Sprintf("Update %s to a recent version", actionName),
+						LineNumber:  lineNumber,
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkSecretsInherit detects insecure secret inheritance patterns
+func checkSecretsInherit(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Check for workflow_call with secrets: inherit
+	if workflow.Workflow.On != nil {
+		if onMap, ok := workflow.Workflow.On.(map[string]interface{}); ok {
+			if workflowCall, exists := onMap["workflow_call"]; exists && workflowCall != nil {
+				// Check if secrets are inherited without restrictions
+				if workflowCallMap, ok := workflowCall.(map[string]interface{}); ok {
+					if secretsSection, exists := workflowCallMap["secrets"]; exists {
+						if secretsStr, ok := secretsSection.(string); ok && secretsStr == "inherit" {
+							pattern := linenum.FindPattern{
+								Key:   "secrets",
+								Value: "inherit",
+							}
+							lineResult := lineMapper.FindLineNumber(pattern)
+							lineNumber := 0
+							if lineResult != nil {
+								lineNumber = lineResult.LineNumber
+							}
+
+							findings = append(findings, Finding{
+								RuleID:      "SECRETS_INHERIT",
+								RuleName:    "Secret Inheritance Issues",
+								Description: "Reusable workflow inherits all secrets without restrictions",
+								Severity:    High,
+								Category:    SecretsExposure,
+								FilePath:    workflow.Path,
+								JobName:     "workflow",
+								StepName:    "workflow_call",
+								Evidence:    "secrets: inherit",
+								Remediation: "Explicitly define only required secrets instead of inheriting all",
+								LineNumber:  lineNumber,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Note: Job-level secrets inheritance would need to be checked in the job definition
+	// as the parser.Job struct doesn't currently include a Secrets field
+	// This could be implemented by checking raw YAML content for "secrets: inherit" patterns
+
+	return findings
+}
+
+// checkOverprovisionedSecrets detects workflows with excessive secret access
+func checkOverprovisionedSecrets(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		secretCount := 0
+		var secretNames []string
+
+		// Count environment variables that look like secrets
+		if job.Env != nil {
+			for key, value := range job.Env {
+				valueStr := fmt.Sprintf("%v", value)
+				if strings.Contains(valueStr, "secrets.") {
+					secretCount++
+					secretNames = append(secretNames, key)
+				}
+			}
+		}
+
+		// Check steps for secret usage
+		usedSecrets := make(map[string]bool)
+		for _, step := range job.Steps {
+			if step.Env != nil {
+				for _, value := range step.Env {
+					valueStr := fmt.Sprintf("%v", value)
+					if strings.Contains(valueStr, "secrets.") {
+						re := regexp.MustCompile(`secrets\.([A-Z_]+)`)
+						matches := re.FindAllStringSubmatch(valueStr, -1)
+						for _, match := range matches {
+							if len(match) > 1 {
+								usedSecrets[match[1]] = true
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// If job has access to many secrets but only uses a few
+		if secretCount > 5 && len(usedSecrets) < secretCount/2 {
+			pattern := linenum.FindPattern{
+				Key:   "env",
+				Value: "",
+			}
+			lineResult := lineMapper.FindLineNumber(pattern)
+			lineNumber := 0
+			if lineResult != nil {
+				lineNumber = lineResult.LineNumber
+			}
+
+			findings = append(findings, Finding{
+				RuleID:      "OVERPROVISIONED_SECRETS",
+				RuleName:    "Over-provisioned Secrets",
+				Description: fmt.Sprintf("Job has access to %d secrets but appears to use only %d", secretCount, len(usedSecrets)),
+				Severity:    Medium,
+				Category:    SecretsExposure,
+				FilePath:    workflow.Path,
+				JobName:     jobName,
+				StepName:    "job_configuration",
+				Evidence:    fmt.Sprintf("Available secrets: %v", secretNames),
+				Remediation: "Remove unused secret access to follow principle of least privilege",
+				LineNumber:  lineNumber,
+			})
+		}
+	}
+
+	return findings
+}
+
+// checkUnredactedSecrets detects secrets that may be logged in plaintext
+func checkUnredactedSecrets(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			if step.Run == "" {
+				continue
+			}
+
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			// Check for patterns that might log secrets
+			dangerousPatterns := []string{
+				`echo.*\$\{.*secrets\.`,
+				`printf.*\$\{.*secrets\.`,
+				`cat.*\$\{.*secrets\.`,
+				`curl.*-H.*\$\{.*secrets\.`,
+				`wget.*--header.*\$\{.*secrets\.`,
+				`env\s*\|.*grep`,
+				`printenv`,
+				`set\s*\|.*grep`,
+			}
+
+			for _, pattern := range dangerousPatterns {
+				re := regexp.MustCompile(`(?i)` + pattern)
+				if re.MatchString(step.Run) {
+					linePattern := linenum.FindPattern{
+						Key:   "run",
+						Value: step.Run,
+					}
+					lineResult := lineMapper.FindLineNumber(linePattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					severity := Critical
+					if strings.Contains(pattern, "env") || strings.Contains(pattern, "printenv") {
+						severity = High // Environment dumps are high but not critical
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "UNREDACTED_SECRETS",
+						RuleName:    "Unredacted Secrets in Logs",
+						Description: "Command may log secrets in plaintext to build logs",
+						Severity:    severity,
+						Category:    SecretsExposure,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.Run,
+						Remediation: "Avoid echoing or logging secret values; use intermediate files or redaction",
+						LineNumber:  lineNumber,
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkUnsoundCondition detects logic vulnerabilities in workflow conditions
+func checkUnsoundCondition(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		// Check job-level conditions
+		if job.If != "" {
+			if hasUnsoundLogic(job.If) {
+				pattern := linenum.FindPattern{
+					Key:   "if",
+					Value: job.If,
+				}
+				lineResult := lineMapper.FindLineNumber(pattern)
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+
+				findings = append(findings, Finding{
+					RuleID:      "UNSOUND_CONDITION",
+					RuleName:    "Unsound Condition Logic",
+					Description: "Job condition contains potentially vulnerable logic patterns",
+					Severity:    High,
+					Category:    InjectionAttack,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    "job_condition",
+					Evidence:    job.If,
+					Remediation: "Review condition logic for potential bypasses or injection vulnerabilities",
+					LineNumber:  lineNumber,
+				})
+			}
+		}
+
+		// Check step-level conditions
+		for stepIdx, step := range job.Steps {
+			if step.If != "" {
+				stepName := step.Name
+				if stepName == "" {
+					stepName = fmt.Sprintf("Step %d", stepIdx+1)
+				}
+
+				if hasUnsoundLogic(step.If) {
+					pattern := linenum.FindPattern{
+						Key:   "if",
+						Value: step.If,
+					}
+					lineResult := lineMapper.FindLineNumber(pattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "UNSOUND_CONDITION",
+						RuleName:    "Unsound Condition Logic",
+						Description: "Step condition contains potentially vulnerable logic patterns",
+						Severity:    High,
+						Category:    InjectionAttack,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.If,
+						Remediation: "Review condition logic for potential bypasses or injection vulnerabilities",
+						LineNumber:  lineNumber,
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkUnsoundContains detects vulnerable contains() expressions
+func checkUnsoundContains(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		// Check job-level conditions for contains()
+		if job.If != "" && strings.Contains(job.If, "contains(") {
+			if hasVulnerableContains(job.If) {
+				pattern := linenum.FindPattern{
+					Key:   "if",
+					Value: job.If,
+				}
+				lineResult := lineMapper.FindLineNumber(pattern)
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+
+				findings = append(findings, Finding{
+					RuleID:      "UNSOUND_CONTAINS",
+					RuleName:    "Unsound Contains Logic",
+					Description: "Job condition uses contains() in a way that can be bypassed",
+					Severity:    High,
+					Category:    InjectionAttack,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    "job_condition",
+					Evidence:    job.If,
+					Remediation: "Use exact string matching or startsWith() instead of contains() for security checks",
+					LineNumber:  lineNumber,
+				})
+			}
+		}
+
+		// Check step-level conditions for contains()
+		for stepIdx, step := range job.Steps {
+			if step.If != "" && strings.Contains(step.If, "contains(") {
+				stepName := step.Name
+				if stepName == "" {
+					stepName = fmt.Sprintf("Step %d", stepIdx+1)
+				}
+
+				if hasVulnerableContains(step.If) {
+					pattern := linenum.FindPattern{
+						Key:   "if",
+						Value: step.If,
+					}
+					lineResult := lineMapper.FindLineNumber(pattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "UNSOUND_CONTAINS",
+						RuleName:    "Unsound Contains Logic",
+						Description: "Step condition uses contains() in a way that can be bypassed",
+						Severity:    High,
+						Category:    InjectionAttack,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.If,
+						Remediation: "Use exact string matching or startsWith() instead of contains() for security checks",
+						LineNumber:  lineNumber,
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkUseTrustedPublishing detects PyPI publishing without trusted publishing
+func checkUseTrustedPublishing(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			// Check for PyPI publishing actions
+			if step.Uses != "" && (strings.Contains(step.Uses, "pypi") || 
+				strings.Contains(step.Uses, "twine") ||
+				strings.Contains(step.Uses, "pypa/gh-action-pypi-publish")) {
+				
+				usingOIDC := false
+				hasCredentials := false
+
+				// Check for OIDC token usage
+				if step.With != nil {
+					for key, value := range step.With {
+						keyLower := strings.ToLower(key)
+						valueStr := fmt.Sprintf("%v", value)
+						
+						if keyLower == "password" || keyLower == "token" {
+							hasCredentials = true
+						}
+						if keyLower == "use-trusted-publishing" || 
+						   strings.Contains(valueStr, "id-token") {
+							usingOIDC = true
+						}
+					}
+				}
+
+				// Check job permissions for id-token
+				if job.Permissions != nil {
+					if permMap, ok := job.Permissions.(map[string]interface{}); ok {
+						if idToken, exists := permMap["id-token"]; exists {
+							if idTokenStr, ok := idToken.(string); ok && idTokenStr == "write" {
+								usingOIDC = true
+							}
+						}
+					}
+				}
+
+				// Flag if using credentials without OIDC
+				if hasCredentials && !usingOIDC {
+					pattern := linenum.FindPattern{
+						Key:   "uses",
+						Value: step.Uses,
+					}
+					lineResult := lineMapper.FindLineNumber(pattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "USE_TRUSTED_PUBLISHING",
+						RuleName:    "Missing Trusted Publishing",
+						Description: "PyPI publishing uses credentials instead of OIDC trusted publishing",
+						Severity:    Medium,
+						Category:    SupplyChain,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.Uses,
+						Remediation: "Configure OIDC trusted publishing instead of using API tokens",
+						LineNumber:  lineNumber,
+					})
+				}
+			}
+
+			// Check for manual twine upload in run commands
+			if step.Run != "" && strings.Contains(step.Run, "twine upload") {
+				if !strings.Contains(step.Run, "--trusted-publishing") {
+					pattern := linenum.FindPattern{
+						Key:   "run",
+						Value: step.Run,
+					}
+					lineResult := lineMapper.FindLineNumber(pattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "USE_TRUSTED_PUBLISHING",
+						RuleName:    "Missing Trusted Publishing",
+						Description: "Manual twine upload without trusted publishing configuration",
+						Severity:    Medium,
+						Category:    SupplyChain,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.Run,
+						Remediation: "Use trusted publishing with --trusted-publishing flag",
+						LineNumber:  lineNumber,
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkObfuscationDetection detects obfuscated code patterns
+func checkObfuscationDetection(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			if step.Run == "" {
+				continue
+			}
+
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			// Check for various obfuscation patterns
+			obfuscationPatterns := []struct {
+				pattern     string
+				description string
+				severity    Severity
+			}{
+				{`\$\{[^}]*\[.*\*.*\].*\}`, "Variable expansion with wildcards", High},
+				{`eval\s*\$\(.*base64.*\)`, "Base64 decoded eval", Critical},
+				{`\$\(\$\(.*\)\)`, "Nested command substitution", Medium},
+				{`[\x00-\x1f\x7f-\xff]`, "Non-printable characters", High},
+				{`\\x[0-9a-f]{2}`, "Hex-encoded characters", Medium},
+				{`\$\{.*#.*\}`, "Parameter expansion with pattern removal", Medium},
+				{`\|\s*xxd\s*-r`, "Hex decode pipeline", High},
+				{`printf.*\\[0-9]{3}`, "Octal escape sequences", Medium},
+			}
+
+			for _, obfPattern := range obfuscationPatterns {
+				re := regexp.MustCompile(`(?i)` + obfPattern.pattern)
+				if re.MatchString(step.Run) {
+					pattern := linenum.FindPattern{
+						Key:   "run",
+						Value: step.Run,
+					}
+					lineResult := lineMapper.FindLineNumber(pattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "OBFUSCATION_DETECTION",
+						RuleName:    "Code Obfuscation Detection",
+						Description: fmt.Sprintf("Detected obfuscation pattern: %s", obfPattern.description),
+						Severity:    obfPattern.severity,
+						Category:    ShellObfuscation,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.Run,
+						Remediation: "Review obfuscated code for malicious intent; use clear, readable commands",
+						LineNumber:  lineNumber,
+					})
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkArtipackedVulnerability detects vulnerabilities in artifact processes
+func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			// Check for artifact upload/download actions
+			if step.Uses != "" && (strings.Contains(step.Uses, "upload-artifact") || 
+				strings.Contains(step.Uses, "download-artifact")) {
+				
+				if step.With != nil {
+					// Check for overly broad path patterns
+					if path, exists := step.With["path"]; exists {
+						pathStr := fmt.Sprintf("%v", path)
+						
+						// Dangerous patterns
+						if pathStr == "." || pathStr == "/*" || pathStr == "**" ||
+						   strings.Contains(pathStr, "../") ||
+						   strings.Contains(pathStr, "~") {
+							
+							pattern := linenum.FindPattern{
+								Key:   "path",
+								Value: pathStr,
+							}
+							lineResult := lineMapper.FindLineNumber(pattern)
+							lineNumber := 0
+							if lineResult != nil {
+								lineNumber = lineResult.LineNumber
+							}
+
+							severity := Medium
+							if strings.Contains(pathStr, "../") {
+								severity = High // Path traversal is more dangerous
+							}
+
+							findings = append(findings, Finding{
+								RuleID:      "ARTIPACKED_VULNERABILITY",
+								RuleName:    "Artifact Packing Vulnerability",
+								Description: "Artifact path pattern may include sensitive files or enable path traversal",
+								Severity:    severity,
+								Category:    SupplyChain,
+								FilePath:    workflow.Path,
+								JobName:     jobName,
+								StepName:    stepName,
+								Evidence:    fmt.Sprintf("path: %s", pathStr),
+								Remediation: "Use specific file paths instead of wildcards for artifact upload",
+								LineNumber:  lineNumber,
+							})
+						}
+					}
+
+					// Check for missing retention policies
+					if strings.Contains(step.Uses, "upload-artifact") {
+						if _, hasRetention := step.With["retention-days"]; !hasRetention {
+							pattern := linenum.FindPattern{
+								Key:   "uses",
+								Value: step.Uses,
+							}
+							lineResult := lineMapper.FindLineNumber(pattern)
+							lineNumber := 0
+							if lineResult != nil {
+								lineNumber = lineResult.LineNumber
+							}
+
+							findings = append(findings, Finding{
+								RuleID:      "ARTIPACKED_VULNERABILITY",
+								RuleName:    "Artifact Packing Vulnerability",
+								Description: "Artifact upload without explicit retention policy may store sensitive data indefinitely",
+								Severity:    Low,
+								Category:    SupplyChain,
+								FilePath:    workflow.Path,
+								JobName:     jobName,
+								StepName:    stepName,
+								Evidence:    step.Uses,
+								Remediation: "Set explicit retention-days to limit artifact storage time",
+								LineNumber:  lineNumber,
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// Helper functions for complex pattern detection
+
+func hasUnsoundLogic(condition string) bool {
+	// Check for potentially dangerous condition patterns
+	unsoundPatterns := []string{
+		`github\.event\..*==.*'.*'`,      // String comparison with user input
+		`contains\(.*github\.event`,      // Contains with event data
+		`startsWith\(.*github\.event`,    // StartsWith with event data
+		`github\.event\.pull_request\.head\.ref`, // Direct ref access
+		`github\.event\.issue\..*user`,   // Issue user data
+		`\|\|.*always\(\)`,               // OR with always()
+		`&&.*\!.*cancelled\(\)`,          // Complex negation patterns
+	}
+
+	for _, pattern := range unsoundPatterns {
+		re := regexp.MustCompile(`(?i)` + pattern)
+		if re.MatchString(condition) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasVulnerableContains(condition string) bool {
+	// Check for contains() patterns that can be bypassed
+	vulnerablePatterns := []string{
+		`contains\(.*github\.event.*,\s*'[^']*'\)`,     // Contains with event data and fixed string
+		`contains\(.*github\.actor.*,\s*'[^']*'\)`,     // Contains with actor and fixed string  
+		`contains\(.*github\.ref.*,\s*'[^']*'\)`,       // Contains with ref and fixed string
+		`contains\(.*steps\..*\.outputs.*,\s*'[^']*'\)`, // Contains with step outputs
+	}
+
+	for _, pattern := range vulnerablePatterns {
+		re := regexp.MustCompile(`(?i)` + pattern)
+		if re.MatchString(condition) {
+			return true
+		}
+	}
+
+	return false
 }

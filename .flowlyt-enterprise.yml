@@ -241,7 +241,7 @@ rules:
     global:
       patterns:
         - ".*example.*"
-        - ".*test.*"
+        # - ".*test.*"
         - ".*demo.*"
         - ".*/templates/.*"
       strings:

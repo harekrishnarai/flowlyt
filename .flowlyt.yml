@@ -54,7 +54,7 @@ rules:
     global:
       patterns:
         - ".*example.*"
-        - ".*test.*"
+        # - ".*test.*"
       strings:
         - "placeholder"
         - "dummy"
@@ -100,7 +100,7 @@ rules:
     
     # File patterns to ignore globally
     files:
-      - "test/**"
+      # - "test/**"
       - "tests/**"
       - "examples/**"
       - "docs/**"
@@ -110,11 +110,11 @@ rules:
     rules:
       HARDCODED_SECRET:
         patterns:
-          - ".*_test\\.yml$"
+          # - ".*_test\\.yml$"
         strings:
           - "fake-token"
         files:
-          - "test/**"
+          # - "test/**"
       UNPINNED_ACTION:
         actions:
           - "actions/checkout@v4"  # Allow specific version tags for trusted actions
