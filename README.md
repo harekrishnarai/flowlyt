@@ -1,22 +1,12 @@
 <img width="945" height="299" alt="flowlytgh" src="https://github.com/user-attachments/assets/a994d9b6-be4c-41d0-a3e8-adda9d72caaa" />
 
+<img width="945" height="299" alt="flowlytgh" src="https://github.com/user-attachments/assets/a994d9b6-be4c-41d0-a3e8-adda9d72caaa" />
+
 <div align="center">
   
-<!-- Security-focused funky tags -->
-![DevSecOps](https://img.shields.io/badge/DevSecOps-Ninja-ff6b6b?style=for-the-badge&logo=security&logoColor=white)
-![CI/CD](https://img.shields.io/badge/CI%2FCD-Security-4ecdc4?style=for-the-badge&logo=github-actions&logoColor=white)
 ![AST](https://img.shields.io/badge/AST-Powered-45b7d1?style=for-the-badge&logo=tree&logoColor=white)
-![Zero](https://img.shields.io/badge/Zero-Day%20Hunter-ff9ff3?style=for-the-badge&logo=target&logoColor=white)
-![SARIF](https://img.shields.io/badge/SARIF-Compatible-f9ca24?style=for-the-badge&logo=json&logoColor=black)
-
-<!-- Conference Recognition -->
 ![Black Hat Europe 2025](https://img.shields.io/badge/UPCOMING-Black%20Hat%20EU%202025-000000?style=for-the-badge&logo=blackhat&logoColor=white)
-![AppSec Defcon 33](https://img.shields.io/badge/PRESENTED-AppSec%20Village-6c5ce7?style=for-the-badge&logo=security&logoColor=white)
-
-<!-- Performance & Security Stats -->
-![Performance](https://img.shields.io/badge/Performance-62%25%20Faster-00d2d3?style=for-the-badge&logo=speedometer&logoColor=white)
-![Accuracy](https://img.shields.io/badge/Accuracy-85%25%20True%20Positives-2ed573?style=for-the-badge&logo=target&logoColor=white)
-![False Positives](https://img.shields.io/badge/False%20Positives-66%25%20Reduced-ff7675?style=for-the-badge&logo=filter&logoColor=white)
+![Performance](https://img.shields.io/badge/62%25-Faster-00d2d3?style=for-the-badge&logo=speedometer&logoColor=white)
 
   <strong>🔒 Secure your CI/CD pipelines with Flowlyt</strong>
   <br>
