@@ -14,7 +14,7 @@ inputs:
   token:
     description: 'GitHub token used to access repositories and create comments'
     required: false
-    default: ${{ github.token }}
+    default: ''
   config-file:
     description: 'Path to Flowlyt configuration file'
     required: false
@@ -233,7 +233,7 @@ runs:
         
         # Build scan command
         SCAN_CMD="$FLOWLYT_BINARY scan"
-        SCAN_CMD="$SCAN_CMD --repo ${{ inputs.repository }}"
+        SCAN_CMD="$SCAN_CMD --repo $(pwd)"
         SCAN_CMD="$SCAN_CMD --config ${{ inputs.config-file }}"
         SCAN_CMD="$SCAN_CMD --output ${{ inputs.output-format }}"
         SCAN_CMD="$SCAN_CMD --output-file ${{ inputs.output-file }}"
@@ -270,6 +270,20 @@ runs:
         fi
         
         echo "exit-code=$SCAN_EXIT_CODE" >> $GITHUB_OUTPUT
+        
+        # Debug: Check current directory and files
+        echo "📁 Current working directory: $(pwd)"
+        echo "📁 Listing current directory:"
+        ls -la
+        echo "📄 Checking for output file: ${{ inputs.output-file }}"
+        if [ -f "${{ inputs.output-file }}" ]; then
+          echo "✅ Output file exists: $(ls -la "${{ inputs.output-file }}")"
+        else
+          echo "❌ Output file not found: ${{ inputs.output-file }}"
+          echo "📄 Files matching pattern:"
+          ls -la *sarif* 2>/dev/null || echo "No SARIF files found"
+          ls -la test-* 2>/dev/null || echo "No test-* files found"
+        fi
         
         # Parse scan output for metrics
         if [ -f "${{ inputs.output-file }}" ]; then
