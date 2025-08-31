@@ -233,7 +233,7 @@ runs:
         
         # Build scan command
         SCAN_CMD="$FLOWLYT_BINARY scan"
-        SCAN_CMD="$SCAN_CMD --repo ${{ inputs.repository }}"
+        SCAN_CMD="$SCAN_CMD --repo $(pwd)"
         SCAN_CMD="$SCAN_CMD --config ${{ inputs.config-file }}"
         SCAN_CMD="$SCAN_CMD --output ${{ inputs.output-format }}"
         SCAN_CMD="$SCAN_CMD --output-file ${{ inputs.output-file }}"
