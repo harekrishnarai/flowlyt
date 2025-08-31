@@ -49,6 +49,9 @@ const (
 	CategorySecretExposure   = "SecretExposure"
 	CategorySupplyChain      = "SupplyChain"
 	CategoryDataExfiltration = "DataExfiltration"
+	CategoryReachability     = "Reachability"
+	CategoryDataFlow         = "DataFlow"
+	CategoryCallGraph        = "CallGraph"
 
 	// Common paths and patterns
 	GitHubWorkflowsPath = ".github/workflows"

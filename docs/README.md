@@ -26,6 +26,8 @@ Welcome to the comprehensive documentation for Flowlyt - Multi-Platform CI/CD Se
 - [**CI/CD Integration**](cicd-integration.md) - GitHub Actions, GitLab CI, and other platforms
 
 ### Advanced Topics
+- [**AST Analysis**](ast-analysis.md) - Abstract Syntax Tree analysis for workflows
+- [**Advanced AST Features**](advanced-ast-features.md) - Metrics, caching, and extensibility
 - [**Architecture Overview**](architecture.md) - Understanding Flowlyt's design
 - [**Plugin Development**](plugin-development.md) - Extending Flowlyt with custom plugins
 - [**Troubleshooting**](troubleshooting.md) - Common issues and solutions
