@@ -22,6 +22,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         config: [basic, enterprise]
+        include:
+          - config: basic
+            config-file: '.flowlyt.yml'
+          - config: enterprise  
+            config-file: '.flowlyt-enterprise.yml'
     
     runs-on: ${{ matrix.os }}
     
@@ -34,13 +39,13 @@ jobs:
         uses: ./  # Use local action
         with:
           repository: './test/sample-repo'
-          config-file: '.flowlyt${{ matrix.config == "enterprise" && "-enterprise" || "" }}.yml'
+          config-file: ${{ matrix.config-file }}
           output-format: 'sarif'
           output-file: 'test-results-${{ matrix.os }}-${{ matrix.config }}.sarif'
           min-severity: 'MEDIUM'
           fail-on-severity: 'CRITICAL'
-          enable-policy-enforcement: ${{ matrix.config == 'enterprise' && 'true' || 'false' }}
-          enable-vuln-intel: ${{ matrix.config == 'enterprise' && 'true' || 'false' }}
+          enable-policy-enforcement: ${{ matrix.config == 'enterprise' }}
+          enable-vuln-intel: ${{ matrix.config == 'enterprise' }}
           upload-sarif: 'false'  # Don't upload in test
           comment-on-pr: 'false'  # Don't comment in test
           verbose: 'true'
