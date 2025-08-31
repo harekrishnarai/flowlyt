@@ -81,7 +81,7 @@ docker run --rm -v $(pwd):/repo harekrishnarai/flowlyt --repo /repo
 **Issue**: `go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest` may install an incorrect version (v1.0.0) due to a Go module proxy cache issue.
 
 **Symptoms**:
-- Installing with `@latest` downloads v1.0.0 instead of the actual latest version (v0.0.3)
+- Installing with `@latest` downloads v1.0.0 instead of the actual latest version (v0.0.4)
 - Tool may not function correctly or detect security issues properly
 
 **Workaround**: Use the `GOPRIVATE` environment variable to bypass the proxy cache:
@@ -100,7 +100,7 @@ go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v0.0.3
 **Verification**: Check that you have the correct version:
 ```bash
 flowlyt --version
-# Should output: flowlyt version 0.0.3
+# Should output: flowlyt version 0.0.4
 ```
 
 This issue has been reported to GitHub support and should be resolved server-side in the future.
