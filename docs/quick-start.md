@@ -42,7 +42,7 @@ flowlyt analyze .github/workflows/ci.yml --enable-ast-analysis
 flowlyt scan ./my-repo
 
 # GitHub repository analysis
-flowlyt github --org myorg --repo myrepo --token $GITHUB_TOKEN
+flowlyt analyze-org --organization myorg --token $GITHUB_TOKEN
 
 # GitLab repository analysis  
 flowlyt gitlab --project mygroup/myproject --token $GITLAB_TOKEN

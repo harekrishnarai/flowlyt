@@ -23,6 +23,43 @@ type Client struct {
 	ctx    context.Context
 }
 
+// getGitHubToken attempts to get a GitHub token from multiple sources
+func getGitHubToken(providedToken string) (string, string) {
+	// 1. Use provided token (highest priority)
+	if providedToken != "" {
+		return providedToken, "provided token"
+	}
+
+	// 2. Check GITHUB_TOKEN environment variable
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		return token, "GITHUB_TOKEN environment variable"
+	}
+
+	// 3. Try to get token from GitHub CLI
+	if token := getGHCLIToken(); token != "" {
+		return token, "GitHub CLI (gh auth)"
+	}
+
+	return "", "no authentication found"
+}
+
+// getGHCLIToken attempts to get the GitHub CLI token
+func getGHCLIToken() string {
+	// Check if gh CLI is available and authenticated
+	cmd := exec.Command("gh", "auth", "token")
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	token := strings.TrimSpace(string(output))
+	if token != "" && token != "no authentication found" {
+		return token
+	}
+
+	return ""
+}
+
 // NewClient creates a new GitHub API client
 func NewClient() *Client {
 	ctx := context.Background()
@@ -30,6 +67,54 @@ func NewClient() *Client {
 
 	// Check if GitHub token is available
 	token := os.Getenv("GITHUB_TOKEN")
+	if token != "" {
+		// Create authenticated client
+		ts := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: token},
+		)
+		tc := oauth2.NewClient(ctx, ts)
+		client = github.NewClient(tc)
+	} else {
+		// Create unauthenticated client (rate limited)
+		client = github.NewClient(nil)
+	}
+
+	return &Client{
+		client: client,
+		ctx:    ctx,
+	}
+}
+
+// NewClientWithSmartAuth creates a GitHub client with intelligent authentication
+func NewClientWithSmartAuth(providedToken string) (*Client, string) {
+	ctx := context.Background()
+	var client *github.Client
+
+	token, source := getGitHubToken(providedToken)
+
+	if token != "" {
+		// Create authenticated client
+		ts := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: token},
+		)
+		tc := oauth2.NewClient(ctx, ts)
+		client = github.NewClient(tc)
+	} else {
+		// Create unauthenticated client (rate limited)
+		client = github.NewClient(nil)
+	}
+
+	return &Client{
+		client: client,
+		ctx:    ctx,
+	}, source
+}
+
+// NewClientWithToken creates a new GitHub API client with the provided token
+func NewClientWithToken(token string) *Client {
+	ctx := context.Background()
+	var client *github.Client
+
 	if token != "" {
 		// Create authenticated client
 		ts := oauth2.StaticTokenSource(
@@ -366,8 +451,34 @@ func IsGitHubRepository(repoURL string) bool {
 	return strings.Contains(repoURL, "github.com")
 }
 
+// RepositoryFilter defines criteria for filtering repositories during organization analysis
+type RepositoryFilter struct {
+	IncludeForks    bool   // Include forked repositories
+	IncludeArchived bool   // Include archived repositories
+	IncludePrivate  bool   // Include private repositories
+	IncludePublic   bool   // Include public repositories
+	MaxRepos        int    // Maximum number of repositories to analyze (0 = no limit)
+	NameFilter      string // Regular expression to filter repository names
+}
+
 // DiscoverOrganizationRepositories discovers all repositories in a GitHub organization
 func (c *Client) DiscoverOrganizationRepositories(orgName string, filter interface{}) ([]RepositoryInfo, error) {
+	// Convert interface{} to RepositoryFilter
+	var repoFilter RepositoryFilter
+	if f, ok := filter.(RepositoryFilter); ok {
+		repoFilter = f
+	} else {
+		// Default filter if conversion fails
+		repoFilter = RepositoryFilter{
+			IncludeForks:    true,
+			IncludeArchived: true,
+			IncludePrivate:  true,
+			IncludePublic:   true,
+			MaxRepos:        0,
+			NameFilter:      "",
+		}
+	}
+
 	// Get repositories for the organization
 	opt := &github.RepositoryListByOrgOptions{
 		Type: "all", // public, private, forks, sources, member, all
@@ -378,14 +489,47 @@ func (c *Client) DiscoverOrganizationRepositories(orgName string, filter interfa
 
 	var allRepos []RepositoryInfo
 
+	// Compile name filter regex if provided
+	var nameRegex *regexp.Regexp
+	if repoFilter.NameFilter != "" {
+		var err error
+		nameRegex, err = regexp.Compile(repoFilter.NameFilter)
+		if err != nil {
+			return nil, fmt.Errorf("invalid name filter regex: %w", err)
+		}
+	}
+
 	for {
 		repos, resp, err := c.client.Repositories.ListByOrg(c.ctx, orgName, opt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list organization repositories: %w", err)
 		}
 
-		// Convert GitHub repositories to our format
+		// Convert GitHub repositories to our format and apply filters
 		for _, repo := range repos {
+			// Apply visibility filters
+			if repo.GetPrivate() && !repoFilter.IncludePrivate {
+				continue
+			}
+			if !repo.GetPrivate() && !repoFilter.IncludePublic {
+				continue
+			}
+
+			// Apply fork filter
+			if repo.GetFork() && !repoFilter.IncludeForks {
+				continue
+			}
+
+			// Apply archived filter
+			if repo.GetArchived() && !repoFilter.IncludeArchived {
+				continue
+			}
+
+			// Apply name filter
+			if nameRegex != nil && !nameRegex.MatchString(repo.GetName()) {
+				continue
+			}
+
 			repoInfo := RepositoryInfo{
 				Name:        repo.GetName(),
 				FullName:    repo.GetFullName(),
@@ -400,6 +544,11 @@ func (c *Client) DiscoverOrganizationRepositories(orgName string, filter interfa
 			}
 
 			allRepos = append(allRepos, repoInfo)
+
+			// Apply max repos limit
+			if repoFilter.MaxRepos > 0 && len(allRepos) >= repoFilter.MaxRepos {
+				return allRepos, nil
+			}
 		}
 
 		if resp.NextPage == 0 {

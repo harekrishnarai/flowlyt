@@ -12,15 +12,8 @@ import (
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
 )
 
-// RepositoryFilter defines criteria for filtering repositories during organization analysis
-type RepositoryFilter struct {
-	IncludeForks    bool   // Include forked repositories
-	IncludeArchived bool   // Include archived repositories
-	IncludePrivate  bool   // Include private repositories
-	IncludePublic   bool   // Include public repositories
-	MaxRepos        int    // Maximum number of repositories to analyze (0 = no limit)
-	NameFilter      string // Regular expression to filter repository names
-}
+// RepositoryFilter is now defined in the github package
+type RepositoryFilter = github.RepositoryFilter
 
 // RepositoryResult represents the analysis result for a single repository
 type RepositoryResult struct {

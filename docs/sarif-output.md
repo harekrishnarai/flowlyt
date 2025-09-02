@@ -34,7 +34,7 @@ flowlyt scan --url https://github.com/owner/repo --output sarif --output-file se
 flowlyt analyze-org --organization myorg --output-format sarif --output-file org-security.sarif
 
 # Filter and save organization SARIF
-flowlyt analyze-org --org mycompany --include-private --max-repos 50 --output-format sarif -o company-audit.sarif
+flowlyt analyze-org --organization mycompany --include-private --max-repos 50 --output-format sarif -o company-audit.sarif
 ```
 
 ### Severity Filtering
@@ -263,7 +263,7 @@ If SARIF files become too large for GitHub (10MB limit):
 flowlyt scan --repo . --output sarif --min-severity HIGH --output-file filtered.sarif
 
 # Limit organization scope
-flowlyt analyze-org --org company --max-repos 20 --output-format sarif -o limited.sarif
+flowlyt analyze-org --organization company --max-repos 20 --output-format sarif -o limited.sarif
 ```
 
 ### Schema Validation

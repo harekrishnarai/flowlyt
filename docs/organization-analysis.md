@@ -32,22 +32,22 @@ Flowlyt now supports organization-wide security analysis, allowing you to scan a
 flowlyt analyze-org --organization microsoft
 
 # Analyze with GitHub token for private repositories
-GITHUB_TOKEN=your_token flowlyt analyze-org --org kubernetes
+GITHUB_TOKEN=your_token flowlyt analyze-org --organization kubernetes
 ```
 
 ### Advanced Filtering
 ```bash
 # Include only public repositories
-flowlyt analyze-org --org mycompany --include-private=false
+flowlyt analyze-org --organization mycompany --include-private=false
 
 # Include forks and archived repositories
-flowlyt analyze-org --org mycompany --include-forks --include-archived
+flowlyt analyze-org --organization mycompany --include-forks --include-archived
 
 # Filter repositories by name pattern
-flowlyt analyze-org --org mycompany --repo-filter "^api-.*"
+flowlyt analyze-org --organization mycompany --repo-filter "^api-.*"
 
 # Limit number of repositories analyzed
-flowlyt analyze-org --org mycompany --max-repos 50
+flowlyt analyze-org --organization mycompany --max-repos 50
 ```
 
 ### Output Configuration
@@ -78,7 +78,7 @@ flowlyt analyze-org --org mycompany --no-progress
 | `--organization` | `--org`, `-o` | GitHub organization name (required) | - |
 | `--output-format` | `-f` | Output format: cli, json, markdown | cli |
 | `--output-file` | `-o` | Output file path | stdout |
-| `--config` | `-c` | Configuration file path | - |
+| `--config` | `--cfg` | Configuration file path | - |
 | `--min-severity` | - | Minimum severity: INFO, LOW, MEDIUM, HIGH, CRITICAL | LOW |
 | `--max-repos` | - | Maximum repositories to analyze (0 = no limit) | 100 |
 | `--repo-filter` | - | Regular expression for repository names | - |
@@ -92,15 +92,30 @@ flowlyt analyze-org --org mycompany --no-progress
 
 ## Authentication
 
-### GitHub Token
-For access to private repositories and higher API rate limits:
+Flowlyt supports multiple authentication methods and will automatically detect the best available option:
+
+### Smart Authentication (Recommended)
+Flowlyt automatically detects authentication in this order:
+1. **GitHub CLI**: If you're logged in with `gh auth login`
+2. **Environment Variable**: `GITHUB_TOKEN`
+3. **Command Line Flag**: `--token` or `-t`
 
 ```bash
-# Set environment variable
-export GITHUB_TOKEN=your_personal_access_token
+# No token needed if GitHub CLI is authenticated
+flowlyt analyze-org --organization mycompany
 
-# Or pass inline
-GITHUB_TOKEN=your_token flowlyt analyze-org --org mycompany
+# Using environment variable
+export GITHUB_TOKEN=your_personal_access_token
+flowlyt analyze-org --organization mycompany
+
+# Using command line flag
+flowlyt analyze-org --organization mycompany --token your_token
+```
+
+### Authentication Status
+Flowlyt will show which authentication method is being used:
+```
+🔑 Authentication: Using GitHub CLI (gh auth)
 ```
 
 ### Required Permissions

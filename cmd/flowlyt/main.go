@@ -25,6 +25,22 @@ import (
 var version = constants.AppVersion
 
 func main() {
+	// Catch panics during CLI setup and provide user-friendly error messages
+	defer func() {
+		if r := recover(); r != nil {
+			if strings.Contains(fmt.Sprintf("%v", r), "flag redefined") {
+				fmt.Fprintf(os.Stderr, "❌ CLI Configuration Error: Duplicate flag definition detected.\n")
+				fmt.Fprintf(os.Stderr, "This is a bug in Flowlyt. Please report this issue at:\n")
+				fmt.Fprintf(os.Stderr, "https://github.com/harekrishnarai/flowlyt/issues\n\n")
+				fmt.Fprintf(os.Stderr, "Error details: %v\n", r)
+			} else {
+				fmt.Fprintf(os.Stderr, "❌ Unexpected error: %v\n", r)
+				fmt.Fprintf(os.Stderr, "Please report this issue at: https://github.com/harekrishnarai/flowlyt/issues\n")
+			}
+			os.Exit(1)
+		}
+	}()
+
 	app := &cli.App{
 		Name:    constants.AppName,
 		Version: version,
@@ -157,9 +173,15 @@ func main() {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:     "organization",
-						Aliases:  []string{"org", "o"},
+						Aliases:  []string{"o"},
 						Usage:    "GitHub organization name to analyze",
 						Required: true,
+					},
+					&cli.StringFlag{
+						Name:    "token",
+						Aliases: []string{"t"},
+						Usage:   "GitHub personal access token (optional - will auto-detect from gh CLI or GITHUB_TOKEN)",
+						EnvVars: []string{"GITHUB_TOKEN"},
 					},
 					&cli.StringFlag{
 						Name:    "output-format",
@@ -169,12 +191,12 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:    "output-file",
-						Aliases: []string{"o"},
+						Aliases: []string{"out"},
 						Usage:   "Output file path (default: stdout)",
 					},
 					&cli.StringFlag{
 						Name:    "config",
-						Aliases: []string{"c"},
+						Aliases: []string{"cfg"},
 						Usage:   "Configuration file path",
 					},
 					&cli.StringFlag{
@@ -753,8 +775,24 @@ func analyzeOrganization(c *cli.Context, outputFormat, outputFile string) error 
 		return err
 	}
 
-	// Initialize GitHub client
-	client := github.NewClient()
+	// Initialize GitHub client with smart authentication
+	token := c.String("token")
+	client, authSource := github.NewClientWithSmartAuth(token)
+
+	// Provide feedback about authentication method
+	if authSource != "no authentication found" {
+		if !c.Bool("no-progress") {
+			fmt.Printf("🔑 Authentication: Using %s\n", authSource)
+		}
+	} else {
+		if !c.Bool("no-progress") {
+			fmt.Printf("⚠️  Warning: No GitHub authentication found. Using unauthenticated access (rate limited).\n")
+			fmt.Printf("   For better performance and private repo access, consider:\n")
+			fmt.Printf("   - Running 'gh auth login' to authenticate GitHub CLI\n")
+			fmt.Printf("   - Or setting GITHUB_TOKEN environment variable\n")
+			fmt.Printf("   - Or using --token flag\n\n")
+		}
+	}
 
 	// Create organization analyzer
 	analyzer := organization.NewAnalyzer(
@@ -778,6 +816,43 @@ func analyzeOrganization(c *cli.Context, outputFormat, outputFile string) error 
 	ctx := context.Background()
 	orgResult, err := analyzer.AnalyzeOrganization(ctx, orgName, repoFilter)
 	if err != nil {
+		// Provide helpful error messages for common authentication issues
+		if strings.Contains(err.Error(), "404 Not Found") {
+			return fmt.Errorf(`failed to analyze organization '%s': organization not found or access denied
+
+Possible solutions:
+1. Verify the organization name is correct
+2. Check if the organization is private and you have access
+3. Provide a GitHub token with appropriate permissions:
+   - Use flag: --token YOUR_TOKEN
+   - Or set environment variable: export GITHUB_TOKEN=YOUR_TOKEN
+   
+To create a GitHub token:
+   1. Go to https://github.com/settings/tokens
+   2. Click "Generate new token" -> "Generate new token (classic)"
+   3. Select scopes: 'repo' (for private repos) or 'public_repo' (for public repos)
+   4. Copy the token and use it with --token flag
+
+Original error: %s`, orgName, err.Error())
+		}
+		if strings.Contains(err.Error(), "401 Unauthorized") {
+			return fmt.Errorf(`authentication failed: invalid or expired GitHub token
+
+Please check your token and ensure it has the correct permissions:
+   - For public repositories: 'public_repo' scope
+   - For private repositories: 'repo' scope
+
+Original error: %s`, err.Error())
+		}
+		if strings.Contains(err.Error(), "403 Forbidden") {
+			return fmt.Errorf(`access forbidden: token lacks required permissions
+
+Your GitHub token needs additional permissions:
+   - For organization access: 'read:org' scope
+   - For private repositories: 'repo' scope
+
+Original error: %s`, err.Error())
+		}
 		return fmt.Errorf("failed to analyze organization: %w", err)
 	}
 
@@ -816,21 +891,75 @@ func generateOrganizationReport(result *organization.OrganizationResult, outputF
 		}
 	}
 
-	// Show individual repository results if not summary-only
-	if !summaryOnly && len(result.RepositoryResults) > 0 {
-		fmt.Printf("\n📋 Repository Details:\n")
+	// Show basic repository list even in summary mode
+	if len(result.RepositoryResults) > 0 {
+		fmt.Printf("\n� Analyzed Repositories:\n")
 		for _, repoResult := range result.RepositoryResults {
 			if repoResult.Error != nil {
 				fmt.Printf("  ❌ %s: %v\n", repoResult.Repository.FullName, repoResult.Error)
 			} else {
-				fmt.Printf("  ✅ %s: %d findings (%v)\n",
-					repoResult.Repository.FullName,
-					len(repoResult.Findings),
-					repoResult.Duration)
+				findingsCount := len(repoResult.Findings)
+				if findingsCount == 0 {
+					fmt.Printf("  ✅ %s: CLEAN (%v)\n", repoResult.Repository.FullName, repoResult.Duration)
+				} else {
+					fmt.Printf("  🔍 %s: %d findings (%v)\n", repoResult.Repository.FullName, findingsCount, repoResult.Duration)
+				}
+			}
+		}
+	}
+
+	// Show detailed repository results if not summary-only
+	if !summaryOnly && len(result.RepositoryResults) > 0 {
+		fmt.Printf("\n📋 Detailed Findings:\n")
+		for _, repoResult := range result.RepositoryResults {
+			if repoResult.Error != nil {
+				continue // Already shown above
+			} else if len(repoResult.Findings) > 0 {
+				fmt.Printf("\n  🔍 %s:\n", repoResult.Repository.FullName)
+
+				// Show detailed findings for this repository
+				for i, finding := range repoResult.Findings {
+					severityIcon := getSeverityIcon(finding.Severity)
+					fmt.Printf("    %s [%d] %s (%s)\n", severityIcon, i+1, finding.RuleName, string(finding.Severity))
+					fmt.Printf("      📁 File: %s", finding.FilePath)
+					if finding.LineNumber > 0 {
+						fmt.Printf(":%d", finding.LineNumber)
+					}
+					fmt.Printf("\n")
+					if finding.JobName != "" {
+						fmt.Printf("      💼 Job: %s\n", finding.JobName)
+					}
+					if finding.StepName != "" {
+						fmt.Printf("      📝 Step: %s\n", finding.StepName)
+					}
+					fmt.Printf("      📋 Description: %s\n", finding.Description)
+					if finding.GitHubURL != "" {
+						fmt.Printf("      🔗 GitHub: %s\n", finding.GitHubURL)
+					}
+					fmt.Println()
+				}
 			}
 		}
 	}
 
 	fmt.Printf("\n✨ Organization analysis complete!\n")
 	return nil
+}
+
+// getSeverityIcon returns an appropriate icon for the severity level
+func getSeverityIcon(severity rules.Severity) string {
+	switch severity {
+	case rules.Critical:
+		return "🔴"
+	case rules.High:
+		return "🟠"
+	case rules.Medium:
+		return "🟡"
+	case rules.Low:
+		return "🔵"
+	case rules.Info:
+		return "ℹ️"
+	default:
+		return "❓"
+	}
 }

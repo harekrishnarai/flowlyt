@@ -1,33 +1,69 @@
 # Command Line Interface Reference
 
-Complete reference for Flowlyt's command-line interface, including all flags, options, and usage examples.
+Complete reference for Flowlyt's command-line interface, including all commands, flags, and usage examples.
 
-## Basic Usage
+## Commands Overview
 
+| Command | Description | Example |
+|---------|-------------|---------|
+| `scan` | Scan repository or workflow files | `flowlyt scan ./my-repo` |
+| `analyze-org` | Analyze all repositories in an organization | `flowlyt analyze-org --organization mycompany` |
+
+## analyze-org Command
+
+Analyze all repositories in a GitHub organization for security issues.
+
+### Usage
 ```bash
-flowlyt [global options] [command] [command options]
+flowlyt analyze-org --organization ORGNAME [options]
 ```
 
-## Global Options
+### Required Flags
+- `--organization`, `-o` - GitHub organization name to analyze
 
-### Repository/Target Options
+### Optional Flags
+- `--token`, `-t` - GitHub personal access token (optional - will auto-detect from gh CLI or GITHUB_TOKEN)
+- `--output-format`, `-f` - Output format: cli, json, markdown (default: "cli")
+- `--output-file`, `--out` - Output file path (default: stdout)
+- `--config`, `--cfg` - Configuration file path
+- `--min-severity` - Minimum severity level: INFO, LOW, MEDIUM, HIGH, CRITICAL (default: "LOW")
+- `--max-repos` - Maximum number of repositories to analyze (default: 100)
+- `--repo-filter` - Regular expression to filter repository names
+- `--include-forks` - Include forked repositories (default: false)
+- `--include-archived` - Include archived repositories (default: false)
+- `--include-private` - Include private repositories (default: true)
+- `--include-public` - Include public repositories (default: true)
+- `--max-workers` - Maximum concurrent workers (default: CPU count)
+- `--no-progress` - Disable progress reporting
+- `--summary-only` - Show only organization summary
 
-#### `--repo`, `-r`
-Specify a local repository path to scan.
+### Examples
 
 ```bash
-# Scan current directory
-flowlyt --repo .
+# Basic organization analysis
+flowlyt analyze-org --organization mycompany
 
-# Scan specific directory
-flowlyt --repo /path/to/repository
+# Analysis with custom filtering
+flowlyt analyze-org --organization mycompany --repo-filter "^api-.*" --include-forks
 
-# Scan with relative path
-flowlyt --repo ./my-project
+# Output to SARIF file
+flowlyt analyze-org --organization mycompany --output-format sarif --output-file results.sarif
+
+# High severity findings only
+flowlyt analyze-org --organization mycompany --min-severity HIGH --summary-only
+
+# Using short flags
+flowlyt analyze-org -o mycompany -f json
+
+# With explicit token (optional if gh CLI is authenticated)
+flowlyt analyze-org -o mycompany --token YOUR_GITHUB_TOKEN
 ```
 
-#### `--url`, `-u`
-Scan a remote repository by URL (GitHub or GitLab).
+## scan Command
+
+Scan repository or workflow files for security issues.
+
+### Usage
 
 ```bash
 # GitHub repository
@@ -119,7 +155,7 @@ flowlyt --output json --repo .
 
 ### Configuration Options
 
-#### `--config`, `-c`
+#### `--config`, `--cfg`
 Specify path to configuration file (default: `.flowlyt.yml`).
 
 ```bash

@@ -2,6 +2,52 @@
 
 This guide helps you diagnose and resolve common issues when using Flowlyt for CI/CD security analysis.
 
+## CLI Issues
+
+### 1. Flag Conflict Errors
+
+#### Issue: "analyze-org flag redefined: o" panic
+
+**Symptoms:**
+```bash
+$ flowlyt analyze-org myorg
+analyze-org flag redefined: o
+panic: analyze-org flag redefined: o
+```
+
+**Cause:** This was caused by duplicate flag aliases in earlier versions.
+
+**Solution:**
+Update to the latest version of Flowlyt:
+```bash
+# Update to latest version
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+
+# Verify the fix
+flowlyt analyze-org --help
+```
+
+**Fixed in:** v0.0.5+
+
+#### Issue: "Unexpected CLI errors or panics"
+
+**Symptoms:**
+- CLI commands crash unexpectedly
+- Panic messages with stack traces
+- Commands that worked before suddenly fail
+
+**Solution:**
+```bash
+# Check version
+flowlyt --version
+
+# Update to latest
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+
+# If still experiencing issues, report at:
+# https://github.com/harekrishnarai/flowlyt/issues
+```
+
 ## Common Issues
 
 ### 1. Installation Problems
@@ -28,6 +74,7 @@ source ~/.zshrc  # or ~/.bashrc
 # Verify installation
 which flowlyt
 flowlyt --version
+```
 ```
 
 #### Issue: "permission denied" during installation
