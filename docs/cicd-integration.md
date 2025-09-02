@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
       
       - name: Run security scan
         run: |
@@ -65,10 +65,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.24.6'
       
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
       
       - name: Run environment-specific scan
         run: |
@@ -178,7 +178,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
       
       - name: Security scan
         id: scan
@@ -247,9 +247,9 @@ stages:
 
 security_scan:
   stage: security
-  image: golang:1.21
+  image: golang:1.24.6
   script:
-    - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
     - flowlyt --platform gitlab --repo . --output json --output-file security-report.json
   artifacts:
     reports:
@@ -277,7 +277,7 @@ stages:
   - deploy
 
 .security_template: &security_template
-  image: golang:1.21
+  image: golang:1.24.6
   before_script:
     - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@$FLOWLYT_VERSION
   artifacts:
@@ -392,9 +392,9 @@ deploy:
 # Integration with GitLab Security Dashboard
 security_scan_sast:
   stage: security
-  image: golang:1.21
+  image: golang:1.24.6
   script:
-    - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
     - |
       # Convert Flowlyt output to GitLab Security format
       flowlyt --platform gitlab --repo . --output json > flowlyt-report.json
@@ -432,13 +432,13 @@ pipeline {
                     sh '''
                         # Install Go if not available
                         if ! command -v go &> /dev/null; then
-                            wget -q https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-                            sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+                            wget -q https://go.dev/dl/go1.24.6.linux-amd64.tar.gz
+                            sudo tar -C /usr/local -xzf go1.24.6.linux-amd64.tar.gz
                             export PATH=$PATH:/usr/local/go/bin
                         fi
                         
                         # Install Flowlyt
-                        go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+                        GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
                     '''
                 }
             }
@@ -573,9 +573,9 @@ stages:
     - checkout: self
     
     - task: GoTool@0
-      displayName: 'Use Go 1.21'
+      displayName: 'Use Go 1.24.6'
       inputs:
-        version: '1.21'
+        version: '1.24.6'
     
     - script: |
         go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@$(flowlytVersion)
@@ -679,7 +679,7 @@ echo "🔍 Running Flowlyt security scan..."
 # Check if Flowlyt is installed
 if ! command -v flowlyt &> /dev/null; then
     echo "❌ Flowlyt not found. Please install it:"
-    echo "  go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest"
+    echo "  GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest"
     exit 1
 fi
 
@@ -737,10 +737,10 @@ rm -f "$OUTPUT_FILE"
 
 ```dockerfile
 # Dockerfile.flowlyt
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24.6-alpine AS builder
 
 WORKDIR /app
-RUN go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+RUN GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates git

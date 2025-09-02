@@ -49,7 +49,7 @@ GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai
 **Alternative**: Install specific version directly:
 ```bash
 # Install specific latest version
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v0.0.3
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v0.0.5
 ```
 
 **Verification**: Check that you have the correct version:
@@ -62,8 +62,8 @@ This issue has been reported to GitHub support and should be resolved server-sid
 
 
 ```bash
-# Install
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+# Install (recommended method to avoid proxy cache issues)
+GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 
 # Analyze a workflow
 flowlyt analyze .github/workflows/ci.yml --enable-ast-analysis

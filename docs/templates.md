@@ -485,7 +485,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
       - name: Validate Templates
         run: |
           for workflow in .github/workflows/*.yml; do
@@ -601,7 +601,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
       - name: Test Secure Templates
         run: |
           for template in templates/secure/*.yml; do

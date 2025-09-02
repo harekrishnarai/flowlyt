@@ -17,9 +17,14 @@ sudo mv flowlyt /usr/local/bin/
 
 ### Option 2: Using Go Package Manager
 
+> **⚠️ Important**: Due to Go module proxy cache issues, using `go install @latest` may install an incorrect version (v1.0.0) instead of the actual latest version. Use the workaround below:
+
 ```bash
-# Install directly using Go
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+# Recommended method (bypasses proxy cache issues)
+GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+
+# Alternative: install specific version
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v0.0.5
 ```
 
 This installs the `flowlyt` binary to your `$GOPATH/bin` directory. Ensure `$GOPATH/bin` is in your system's `PATH`.
