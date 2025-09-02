@@ -420,7 +420,7 @@ jobs:
           go-version: '1.21'
           
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
         
       - name: Run security analysis
         run: |

@@ -454,7 +454,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
       - name: Run Custom Security Rules
         run: |
           flowlyt --config .flowlyt.custom.yml \
@@ -479,7 +479,7 @@ custom_security_scan:
   stage: test
   image: golang:latest
   script:
-    - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
     - flowlyt --config .flowlyt.custom.yml --platform gitlab --repo . --output json --output-file custom-report.json
   artifacts:
     reports:

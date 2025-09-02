@@ -520,7 +520,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
       - name: Security Scan (Development)
         if: github.ref != 'refs/heads/main'
         run: flowlyt --config .flowlyt.dev.yml --repo .

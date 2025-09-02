@@ -496,7 +496,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Install Flowlyt
-        run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
       
       - name: Generate Weekly Report
         run: |

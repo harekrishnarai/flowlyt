@@ -21,7 +21,7 @@ panic: analyze-org flag redefined: o
 Update to the latest version of Flowlyt:
 ```bash
 # Update to latest version
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 
 # Verify the fix
 flowlyt analyze-org --help
@@ -42,7 +42,7 @@ flowlyt analyze-org --help
 flowlyt --version
 
 # Update to latest
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 
 # If still experiencing issues, report at:
 # https://github.com/harekrishnarai/flowlyt/issues
@@ -81,7 +81,7 @@ flowlyt --version
 
 **Symptoms:**
 ```bash
-$ go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+$ GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 go: permission denied
 ```
 
@@ -96,14 +96,14 @@ export GOPATH=$HOME/go
 mkdir -p $GOPATH/bin
 
 # Reinstall
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 ```
 
 #### Issue: Network/proxy problems during installation
 
 **Symptoms:**
 ```bash
-$ go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+$ GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 go: github.com/harekrishnarai/flowlyt@latest: Get "https://proxy.golang.org/...": dial tcp: i/o timeout
 ```
 
@@ -562,7 +562,7 @@ steps:
       go-version: '1.21'
       
   - name: Install Flowlyt
-    run: go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+    run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
     
   - name: Security Analysis
     run: flowlyt --repo . --output json --output-file security-report.json
@@ -591,7 +591,7 @@ security_scan:
 security_scan:
   image: golang:1.21-alpine
   before_script:
-    - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
     - export PATH=$PATH:$(go env GOPATH)/bin
   script:
     - flowlyt --repo . --output json --output-file security-report.json
@@ -622,7 +622,7 @@ docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace flowlyt/flowlyt --repo
 # Build custom image if needed
 cat > Dockerfile << 'EOF'
 FROM golang:1.21-alpine
-RUN go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+RUN GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 WORKDIR /workspace
 ENTRYPOINT ["flowlyt"]
 EOF
