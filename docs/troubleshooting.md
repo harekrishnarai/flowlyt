@@ -559,7 +559,7 @@ steps:
   - name: Setup Go
     uses: actions/setup-go@v4
     with:
-      go-version: '1.21'
+      go-version: '1.24.6'
       
   - name: Install Flowlyt
     run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
@@ -589,7 +589,7 @@ security_scan:
 ```yaml
 # .gitlab-ci.yml
 security_scan:
-  image: golang:1.21-alpine
+  image: golang:1.24.6-alpine
   before_script:
     - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
     - export PATH=$PATH:$(go env GOPATH)/bin
@@ -621,7 +621,7 @@ docker run --rm -u $(id -u):$(id -g) -v $(pwd):/workspace flowlyt/flowlyt --repo
 
 # Build custom image if needed
 cat > Dockerfile << 'EOF'
-FROM golang:1.21-alpine
+FROM golang:1.24.6-alpine
 RUN GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 WORKDIR /workspace
 ENTRYPOINT ["flowlyt"]

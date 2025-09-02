@@ -417,7 +417,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.24.6'
           
       - name: Install Flowlyt
         run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
@@ -498,7 +498,7 @@ variables:
 
 security_scan:
   stage: security
-  image: golang:1.21-alpine
+  image: golang:1.24.6-alpine
   before_script:
     - apk add --no-cache git
     - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@${FLOWLYT_VERSION}
@@ -593,8 +593,8 @@ pipeline {
                     sh '''
                         if ! command -v go &> /dev/null; then
                             echo "Installing Go..."
-                            wget -q https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-                            sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+                            wget -q https://go.dev/dl/go1.24.6.linux-amd64.tar.gz
+                            sudo tar -C /usr/local -xzf go1.24.6.linux-amd64.tar.gz
                             export PATH=$PATH:/usr/local/go/bin
                         fi
                         

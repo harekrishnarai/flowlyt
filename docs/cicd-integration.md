@@ -65,7 +65,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.24.6'
       
       - name: Install Flowlyt
         run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
@@ -247,7 +247,7 @@ stages:
 
 security_scan:
   stage: security
-  image: golang:1.21
+  image: golang:1.24.6
   script:
     - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
     - flowlyt --platform gitlab --repo . --output json --output-file security-report.json
@@ -277,7 +277,7 @@ stages:
   - deploy
 
 .security_template: &security_template
-  image: golang:1.21
+  image: golang:1.24.6
   before_script:
     - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@$FLOWLYT_VERSION
   artifacts:
@@ -392,7 +392,7 @@ deploy:
 # Integration with GitLab Security Dashboard
 security_scan_sast:
   stage: security
-  image: golang:1.21
+  image: golang:1.24.6
   script:
     - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
     - |
@@ -432,8 +432,8 @@ pipeline {
                     sh '''
                         # Install Go if not available
                         if ! command -v go &> /dev/null; then
-                            wget -q https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-                            sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+                            wget -q https://go.dev/dl/go1.24.6.linux-amd64.tar.gz
+                            sudo tar -C /usr/local -xzf go1.24.6.linux-amd64.tar.gz
                             export PATH=$PATH:/usr/local/go/bin
                         fi
                         
@@ -573,9 +573,9 @@ stages:
     - checkout: self
     
     - task: GoTool@0
-      displayName: 'Use Go 1.21'
+      displayName: 'Use Go 1.24.6'
       inputs:
-        version: '1.21'
+        version: '1.24.6'
     
     - script: |
         go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@$(flowlytVersion)
@@ -737,7 +737,7 @@ rm -f "$OUTPUT_FILE"
 
 ```dockerfile
 # Dockerfile.flowlyt
-FROM golang:1.21-alpine AS builder
+FROM golang:1.24.6-alpine AS builder
 
 WORKDIR /app
 RUN GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
