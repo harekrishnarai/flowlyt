@@ -579,9 +579,11 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 
 // validateInputs validates all user inputs before processing
 func validateInputs(c *cli.Context, validator *validation.Validator, outputFormat, outputFile string) error {
-	// Validate configuration path
-	if err := validator.ValidateConfig(c.String("config")); err != nil {
-		return err
+	// Validate configuration path only if explicitly provided by user
+	if c.IsSet("config") {
+		if err := validator.ValidateConfig(c.String("config")); err != nil {
+			return err
+		}
 	}
 
 	// Validate platform
