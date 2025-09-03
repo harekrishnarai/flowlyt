@@ -32,26 +32,26 @@ go build -o flowlyt cmd/flowlyt/main.go
 
 ### Analyze a Single Workflow
 ```bash
-# Analyze a single workflow file
-flowlyt analyze .github/workflows/ci.yml
+# Analyze a single workflow file (no config required)
+flowlyt scan --workflow .github/workflows/ci.yml
 
-# With custom configuration
-flowlyt analyze .github/workflows/ci.yml --config .flowlyt.yml
+# If .flowlyt.yml exists in the directory, it will be automatically used
+# Configuration is completely optional
 
-# Enable AST analysis
-flowlyt analyze .github/workflows/ci.yml --enable-ast-analysis
+# Enable vulnerability intelligence
+flowlyt scan --workflow .github/workflows/ci.yml --enable-vuln-intel
 ```
 
 ### Analyze Entire Repository
 ```bash
-# Scan all workflows in repository
-flowlyt scan ./my-repo
+# Scan all workflows in repository (no config required)
+flowlyt scan --repo ./my-repo
 
 # GitHub repository analysis
 flowlyt analyze-org --organization myorg --token $GITHUB_TOKEN
 
 # GitLab repository analysis  
-flowlyt gitlab --project mygroup/myproject --token $GITLAB_TOKEN
+flowlyt scan --platform gitlab --repo ./my-repo
 ```
 
 ### Output Formats
@@ -93,28 +93,35 @@ jobs:
           sarif_file: flowlyt-results.sarif
 ```
 
-## Configuration
+## Configuration (Optional)
 
-Create `.flowlyt.yml` in your repository root:
+Flowlyt works out-of-the-box without any configuration. However, you can optionally create a `.flowlyt.yml` file in your repository root for advanced customization:
 
 ```yaml
-# Basic configuration
+# Basic configuration (all settings are optional)
+version: "1"
+
 rules:
-  enable_all: true
-  severity_filter: "medium"
+  # Disable specific rules
+  disabled: ["UNPINNED_ACTION"]
   
-# AST Analysis (Advanced)
-ast_analysis:
-  enable_reachability_analysis: true
-  enable_call_graph_analysis: true
-  enable_data_flow_analysis: true
-  filter_unreachable_findings: true
+  # Enable only specific rules (if omitted, all rules are enabled)
+  enabled: ["HARDCODED_SECRET", "DANGEROUS_COMMAND"]
 
 # Output settings
 output:
-  format: "cli"
+  format: "cli"               # cli, json, sarif, markdown
+  min_severity: "MEDIUM"      # CRITICAL, HIGH, MEDIUM, LOW, INFO
   include_line_numbers: true
   show_rule_description: true
+
+# False positive management
+ignore:
+  files:
+    - "test/**/*"
+    - "docs/**/*"
+  global:
+    strings: ["example", "test"]
 
 # Platform-specific settings
 platforms:
@@ -125,6 +132,8 @@ platforms:
     enforce_image_pinning: true
     check_script_injection: true
 ```
+
+> **Note**: Configuration files are completely optional. Flowlyt provides sensible defaults and works immediately without any setup.
 
 ## Next Steps
 

@@ -78,12 +78,6 @@ func main() {
 						Usage:   "Specific workflow file to scan",
 					},
 					&cli.StringFlag{
-						Name:    "config",
-						Aliases: []string{"c"},
-						Usage:   "Configuration file path",
-						Value:   constants.DefaultConfigFile,
-					},
-					&cli.StringFlag{
 						Name:    "output",
 						Aliases: []string{"o"},
 						Usage:   "Output format (json, yaml, table, sarif)",
@@ -272,13 +266,12 @@ func analyzeOrgAction(c *cli.Context) error {
 
 // loadAndOverrideConfig loads configuration and applies CLI flag overrides
 func loadAndOverrideConfig(c *cli.Context, outputFormat, outputFile string) (*config.Config, error) {
-	// Load configuration
-	configPath := c.String("config")
-	cfg, err := config.LoadConfig(configPath)
+	// Load configuration from .flowlyt.yml if it exists, otherwise use defaults
+	cfg, err := config.LoadConfig("")
 	if err != nil {
 		return nil, errors.NewConfigError("Failed to load configuration", err,
-			"Check the configuration file path and syntax",
-			"Use 'flowlyt --help' to see configuration options",
+			"Check the .flowlyt.yml file syntax if it exists",
+			"Configuration file is optional - remove it if there are syntax errors",
 		)
 	}
 
@@ -579,13 +572,6 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 
 // validateInputs validates all user inputs before processing
 func validateInputs(c *cli.Context, validator *validation.Validator, outputFormat, outputFile string) error {
-	// Validate configuration path only if explicitly provided by user
-	if c.IsSet("config") {
-		if err := validator.ValidateConfig(c.String("config")); err != nil {
-			return err
-		}
-	}
-
 	// Validate platform
 	if err := validator.ValidatePlatform(c.String("platform")); err != nil {
 		return err

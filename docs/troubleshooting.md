@@ -124,30 +124,30 @@ export GOSUMDB=off
 
 ### 2. Configuration Issues
 
-#### Issue: Configuration file not found
+#### Issue: Configuration file not found (DEPRECATED)
 
-**Symptoms:**
+**Note:** As of v0.0.6+, the `--config` flag has been removed. Flowlyt now automatically looks for `.flowlyt.yml` in the current directory.
+
+**Previous Symptoms (no longer applicable):**
 ```bash
-$ flowlyt --config .flowlyt.yml --repo .
-Error: configuration file '.flowlyt.yml' not found
+$ flowlyt --config custom-config.yml --repo .
+❌ Configuration file not found: custom-config.yml
 ```
 
-**Diagnosis:**
-```bash
-# Check if file exists and is readable
-ls -la .flowlyt.yml
-file .flowlyt.yml
+**Current Behavior:**
+- Flowlyt automatically uses `.flowlyt.yml` if it exists in the current directory
+- If `.flowlyt.yml` doesn't exist, default configuration is used
+- No configuration file is required
 
-# Check current directory
-pwd
-find . -name "*.flowlyt*" -o -name "*flowlyt*"
-```
-
-**Solution:**
+**Solutions:**
 ```bash
-# Create basic configuration file
+# Option 1: Just run without any config (uses sensible defaults)
+flowlyt --repo .
+
+# Option 2: Create .flowlyt.yml in your repository root
 cat > .flowlyt.yml << 'EOF'
 # Flowlyt configuration
+version: "1"
 output:
   format: "cli"
   min_severity: "MEDIUM"
@@ -163,10 +163,9 @@ ignore:
     - "test/**/*"
     - "docs/**/*"
 EOF
-
-# Validate configuration
-flowlyt validate-config .flowlyt.yml
 ```
+
+**Note:** Since v0.0.6+, configuration files are completely optional. Flowlyt works out-of-the-box without any configuration file.
 
 #### Issue: Invalid YAML configuration
 
