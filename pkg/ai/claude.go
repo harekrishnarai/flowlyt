@@ -153,7 +153,12 @@ func (c *ClaudeClient) VerifyFinding(ctx context.Context, finding rules.Finding)
 
 // buildPrompt creates the analysis prompt for the AI
 func (c *ClaudeClient) buildPrompt(finding rules.Finding) string {
-	return fmt.Sprintf(`You are a cybersecurity expert analyzing CI/CD security findings. Your task is to determine if a security finding is a false positive or a true positive.
+	return fmt.Sprintf(`You are a cybersecurity expert specializing in CI/CD security, GitHub Actions hardening, and software supply chain security. Analyze this finding and determine if it's a false positive or true positive.
+
+IMPORTANT CONTEXT:
+- This analysis is performed on a repository that was temporarily cloned to a /tmp/ directory for scanning
+- File paths containing /tmp/ are normal and expected - they do not indicate the actual repository location
+- Focus on the security implications of the CI/CD configuration, not the temporary file location
 
 Finding Details:
 - Rule: %s (%s)
@@ -173,13 +178,41 @@ Please analyze this finding and respond with JSON in this exact format:
   "suggested_severity": "CRITICAL|HIGH|MEDIUM|LOW|INFO (only if you suggest a different severity)"
 }
 
-Consider these factors in your analysis:
-1. Is the evidence actually indicative of a security risk?
-2. Could this be legitimate usage in a CI/CD context?
-3. Is the severity appropriate for the risk level?
-4. Are there any context clues that suggest this is intentional/safe?
+Analyze from these critical security perspectives:
 
-Be conservative - prefer false positive over missing real threats.`,
+1. GITHUB ACTIONS HARDENING:
+   - Are actions pinned to specific SHA commits to prevent supply chain attacks?
+   - Are dangerous permissions (write, admin) properly scoped?
+   - Are secrets handled securely and not exposed in logs?
+   - Are workflow triggers properly restricted to prevent abuse?
+
+2. SOFTWARE SUPPLY CHAIN SECURITY:
+   - Can this configuration lead to dependency confusion attacks?
+   - Are third-party actions from trusted publishers or properly vetted?
+   - Could malicious code be injected through compromised dependencies?
+   - Are build artifacts properly signed and verified?
+
+3. RUNNER COMPROMISE & ATTACK VECTORS:
+   - Could this configuration allow lateral movement if a runner is compromised?
+   - Are self-hosted runners properly isolated and secured?
+   - Can attackers persist in the environment or access other repositories?
+   - Could this lead to credential theft or privilege escalation?
+
+4. CI/CD PIPELINE SECURITY:
+   - Is the evidence actually indicative of a security risk in the CI/CD pipeline?
+   - Could this be legitimate usage in a CI/CD context?
+   - Is the severity appropriate for the actual risk level?
+   - Are there any context clues that suggest this is intentional/safe?
+   - Does the /tmp/ path indicate a temporary scanning location rather than a security issue?
+
+SEVERITY GUIDELINES:
+- CRITICAL: Direct code execution, credential exposure, or full environment compromise
+- HIGH: Supply chain compromise, privilege escalation, or significant attack surface
+- MEDIUM: Configuration weaknesses that could facilitate attacks
+- LOW: Minor security hygiene issues or potential information disclosure
+- INFO: Best practice violations with minimal security impact
+
+Be conservative - prefer false positive over missing real threats, especially for supply chain risks.`,
 		finding.RuleName,
 		finding.RuleID,
 		finding.Description,
