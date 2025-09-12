@@ -103,6 +103,43 @@ func (g *Generator) generateCLIReport() error {
 	infoStyle.Printf("%-20s ", "Rules Applied:")
 	fmt.Println(g.Result.RulesCount)
 
+	// Add AI analysis summary if any findings were AI verified
+	aiVerifiedCount := 0
+	aiFalsePositives := 0
+	aiTruePositives := 0
+	aiErrors := 0
+	for _, finding := range g.Result.Findings {
+		if finding.AIVerified {
+			aiVerifiedCount++
+			if finding.AIError != "" {
+				aiErrors++
+			} else if finding.AILikelyFalsePositive != nil {
+				if *finding.AILikelyFalsePositive {
+					aiFalsePositives++
+				} else {
+					aiTruePositives++
+				}
+			}
+		}
+	}
+
+	if aiVerifiedCount > 0 {
+		infoStyle.Printf("%-20s ", "AI Analysis:")
+		fmt.Printf("%d findings analyzed\n", aiVerifiedCount)
+		if aiFalsePositives > 0 {
+			infoStyle.Printf("%-20s ", "AI False Positives:")
+			fmt.Printf("%d findings\n", aiFalsePositives)
+		}
+		if aiTruePositives > 0 {
+			infoStyle.Printf("%-20s ", "AI True Positives:")
+			fmt.Printf("%d findings\n", aiTruePositives)
+		}
+		if aiErrors > 0 {
+			infoStyle.Printf("%-20s ", "AI Errors:")
+			fmt.Printf("%d findings\n", aiErrors)
+		}
+	}
+
 	// Summary section with table
 	fmt.Println()
 	subtitleStyle.Println("► SUMMARY")
@@ -256,6 +293,36 @@ func (g *Generator) generateCLIReport() error {
 
 				infoStyle.Printf("  %-12s ", "Description:")
 				fmt.Println(finding.Description)
+
+				// Add AI verification information if available
+				if finding.AIVerified {
+					fmt.Println()
+					aiStyle := color.New(color.FgMagenta, color.Bold)
+					aiStyle.Printf("  %-12s ", "🤖 AI Analysis:")
+					
+					if finding.AIError != "" {
+						errorStyle := color.New(color.FgRed)
+						errorStyle.Printf("Failed - %s\n", finding.AIError)
+					} else if finding.AILikelyFalsePositive != nil {
+						if *finding.AILikelyFalsePositive {
+							warningStyle := color.New(color.FgYellow, color.Bold)
+							warningStyle.Printf("Likely FALSE POSITIVE (%.0f%% confidence)\n", finding.AIConfidence*100)
+						} else {
+							alertStyle := color.New(color.FgRed, color.Bold)
+							alertStyle.Printf("Likely TRUE POSITIVE (%.0f%% confidence)\n", finding.AIConfidence*100)
+						}
+						
+						if finding.AIReasoning != "" {
+							infoStyle.Printf("  %-12s ", "AI Reasoning:")
+							fmt.Println(finding.AIReasoning)
+						}
+						
+						if finding.AISuggestedSeverity != "" && finding.AISuggestedSeverity != string(finding.Severity) {
+							infoStyle.Printf("  %-12s ", "AI Suggests:")
+							fmt.Printf("%s severity (current: %s)\n", finding.AISuggestedSeverity, string(finding.Severity))
+						}
+					}
+				}
 
 				if g.Verbose {
 					fmt.Println()
