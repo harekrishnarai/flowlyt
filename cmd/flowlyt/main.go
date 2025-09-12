@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/harekrishnarai/flowlyt/pkg/ai"
 	"github.com/harekrishnarai/flowlyt/pkg/concurrent"
 	"github.com/harekrishnarai/flowlyt/pkg/config"
 	"github.com/harekrishnarai/flowlyt/pkg/constants"
@@ -156,6 +157,33 @@ func main() {
 					&cli.BoolFlag{
 						Name:  "policy-report",
 						Usage: "Generate detailed policy compliance report",
+					},
+					&cli.StringFlag{
+						Name:  "ai",
+						Usage: "AI provider for finding verification (openai, gemini, claude, grok)",
+					},
+					&cli.StringFlag{
+						Name:    "ai-key",
+						Usage:   "API key for AI provider (or use AI_API_KEY environment variable)",
+						EnvVars: []string{"AI_API_KEY"},
+					},
+					&cli.StringFlag{
+						Name:  "ai-model",
+						Usage: "Specific AI model to use (optional, uses provider default)",
+					},
+					&cli.StringFlag{
+						Name:  "ai-base-url",
+						Usage: "Custom base URL for AI provider (for self-hosted models)",
+					},
+					&cli.IntFlag{
+						Name:  "ai-timeout",
+						Usage: "Timeout for AI analysis in seconds",
+						Value: 30,
+					},
+					&cli.IntFlag{
+						Name:  "ai-workers",
+						Usage: "Number of concurrent AI analysis workers",
+						Value: 5,
 					},
 				},
 				Action: scanAction,
@@ -487,6 +515,89 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 	return findings, nil
 }
 
+// enhanceFindingsWithAI performs AI analysis on findings if AI is enabled
+func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Finding, error) {
+	aiProvider := c.String("ai")
+	if aiProvider == "" {
+		return findings, nil // No AI analysis requested
+	}
+
+	apiKey := c.String("ai-key")
+	if apiKey == "" {
+		return nil, fmt.Errorf("AI provider specified but no API key provided. Use --ai-key flag or set AI_API_KEY environment variable")
+	}
+
+	// Validate AI provider
+	if err := ai.ValidateProvider(aiProvider); err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("🤖 Initializing AI analysis with %s...\n", aiProvider)
+
+	// Create AI configuration
+	aiConfig := ai.Config{
+		Provider:    ai.Provider(aiProvider),
+		APIKey:      apiKey,
+		Model:       c.String("ai-model"),
+		BaseURL:     c.String("ai-base-url"),
+		Timeout:     c.Int("ai-timeout"),
+		MaxTokens:   1000,
+		Temperature: 0.3,
+	}
+
+	// Create AI client
+	client, err := ai.NewClient(aiConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AI client: %w", err)
+	}
+	defer client.Close()
+
+	// Create AI analyzer
+	analyzer := ai.NewAnalyzer(client, c.Int("ai-workers"), time.Duration(c.Int("ai-timeout"))*time.Second)
+	defer analyzer.Close()
+
+	fmt.Printf("🔍 Analyzing %d findings with AI...\n", len(findings))
+
+	// Analyze findings
+	ctx := context.Background()
+	enhancedFindings, err := analyzer.AnalyzeFindings(ctx, findings)
+	if err != nil {
+		return nil, fmt.Errorf("AI analysis failed: %w", err)
+	}
+
+	// Convert enhanced findings back to regular findings with AI fields populated
+	var resultFindings []rules.Finding
+	for _, enhanced := range enhancedFindings {
+		finding := enhanced.Finding
+		finding.AIVerified = true
+
+		if enhanced.AIError != "" {
+			finding.AIError = enhanced.AIError
+		} else if enhanced.AIVerification != nil {
+			finding.AILikelyFalsePositive = &enhanced.AIVerification.IsLikelyFalsePositive
+			finding.AIConfidence = enhanced.AIVerification.Confidence
+			finding.AIReasoning = enhanced.AIVerification.Reasoning
+			finding.AISuggestedSeverity = enhanced.AIVerification.Severity
+		}
+
+		resultFindings = append(resultFindings, finding)
+	}
+
+	// Print AI analysis summary
+	summary := ai.GetSummary(enhancedFindings)
+	fmt.Printf("✅ AI Analysis Complete:\n")
+	fmt.Printf("  - Successfully analyzed: %d/%d findings\n", summary.SuccessfullyAnalyzed, summary.TotalAnalyzed)
+	if summary.AnalysisErrors > 0 {
+		fmt.Printf("  - Analysis errors: %d\n", summary.AnalysisErrors)
+	}
+	fmt.Printf("  - Likely false positives: %d\n", summary.LikelyFalsePositives)
+	fmt.Printf("  - Likely true positives: %d\n", summary.LikelyTruePositives)
+	fmt.Printf("  - High confidence: %d, Medium: %d, Low: %d\n", 
+		summary.HighConfidence, summary.MediumConfidence, summary.LowConfidence)
+
+	return resultFindings, nil
+}
+
 // processAndGenerateReport filters findings, generates reports, and prints summary
 func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, outputFormat, outputFile string, startTime time.Time, workflowsCount, rulesCount int, repoLocalPath string, enableVulnIntel bool) error {
 	// Filter findings based on configuration
@@ -714,6 +825,12 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 
 	// Run analysis on all workflows
 	allFindings, err = runAnalysis(c, workflowFiles, standardRules, policyEngine, cfg, repoURL)
+	if err != nil {
+		return err
+	}
+
+	// Enhance findings with AI analysis if requested
+	allFindings, err = enhanceFindingsWithAI(c, allFindings)
 	if err != nil {
 		return err
 	}

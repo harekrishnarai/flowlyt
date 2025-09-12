@@ -116,6 +116,14 @@ type Finding struct {
 	LineNumber  int    // Line number where the issue was found
 	GitHubURL   string // Direct GitHub URL to the line (for remote repositories)
 	GitLabURL   string // Direct GitLab URL to the line (for remote repositories)
+	
+	// AI verification fields
+	AIVerified            bool    `json:"ai_verified,omitempty"`              // Whether AI analysis was performed
+	AILikelyFalsePositive *bool   `json:"ai_likely_false_positive,omitempty"` // AI assessment (nil if not analyzed)
+	AIConfidence          float64 `json:"ai_confidence,omitempty"`            // AI confidence level (0.0 to 1.0)
+	AIReasoning           string  `json:"ai_reasoning,omitempty"`             // AI explanation
+	AISuggestedSeverity   string  `json:"ai_suggested_severity,omitempty"`    // AI suggested severity if different
+	AIError               string  `json:"ai_error,omitempty"`                 // AI analysis error if any
 }
 
 // StandardRules returns the list of built-in security rules
