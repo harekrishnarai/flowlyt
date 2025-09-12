@@ -262,6 +262,92 @@ flowlyt --entropy-threshold 6.0 --repo .
 flowlyt --entropy-threshold 4.5 --repo .
 ```
 
+### AI Integration Options
+
+Flowlyt can integrate with AI providers to analyze security findings and help distinguish between false positives and true positives.
+
+#### `--ai`
+Specify AI provider for finding verification.
+
+**Supported providers:** `openai`, `gemini`, `claude`, `grok`
+
+```bash
+# Use OpenAI for analysis
+flowlyt --ai openai --ai-key your-openai-key --repo .
+
+# Use Google Gemini
+flowlyt --ai gemini --ai-key your-gemini-key --repo .
+
+# Use Anthropic Claude
+flowlyt --ai claude --ai-key your-claude-key --repo .
+
+# Use xAI Grok
+flowlyt --ai grok --ai-key your-grok-key --repo .
+```
+
+#### `--ai-key`
+API key for the AI provider. Can also be set via `AI_API_KEY` environment variable.
+
+```bash
+# Using CLI flag
+flowlyt --ai openai --ai-key sk-1234567890abcdef --repo .
+
+# Using environment variable
+export AI_API_KEY=sk-1234567890abcdef
+flowlyt --ai openai --repo .
+```
+
+#### `--ai-model`
+Specify a specific AI model to use (optional, uses provider default).
+
+```bash
+# OpenAI specific model
+flowlyt --ai openai --ai-key your-key --ai-model gpt-4 --repo .
+
+# Gemini specific model
+flowlyt --ai gemini --ai-key your-key --ai-model gemini-1.5-pro --repo .
+
+# Claude specific model
+flowlyt --ai claude --ai-key your-key --ai-model claude-3-opus-20240229 --repo .
+```
+
+#### `--ai-base-url`
+Custom base URL for AI provider (useful for self-hosted models).
+
+```bash
+# Self-hosted OpenAI-compatible endpoint
+flowlyt --ai openai --ai-key your-key \
+        --ai-base-url https://your-server.com/v1 \
+        --repo .
+
+# Azure OpenAI endpoint
+flowlyt --ai openai --ai-key your-key \
+        --ai-base-url https://your-resource.openai.azure.com/openai/deployments/your-deployment \
+        --repo .
+```
+
+#### `--ai-timeout`
+Timeout for AI analysis in seconds (default: 30).
+
+```bash
+# Faster timeout for quick analysis
+flowlyt --ai openai --ai-key your-key --ai-timeout 10 --repo .
+
+# Longer timeout for complex analysis
+flowlyt --ai openai --ai-key your-key --ai-timeout 60 --repo .
+```
+
+#### `--ai-workers`
+Number of concurrent AI analysis workers (default: 5).
+
+```bash
+# More concurrent workers for faster analysis
+flowlyt --ai openai --ai-key your-key --ai-workers 10 --repo .
+
+# Fewer workers to respect rate limits
+flowlyt --ai openai --ai-key your-key --ai-workers 2 --repo .
+```
+
 ### Utility Options
 
 #### `--temp-dir`
@@ -427,6 +513,53 @@ flowlyt --config .flowlyt.dev.yml \
         --min-severity MEDIUM \
         --disable-rules UNPINNED_ACTION \
         --repo .
+```
+
+### AI-Enhanced Analysis
+
+```bash
+# Basic AI analysis with OpenAI
+flowlyt --repo . --ai openai --ai-key your-openai-key
+
+# AI analysis with custom model
+flowlyt --repo . \
+        --ai openai \
+        --ai-key your-key \
+        --ai-model gpt-4
+
+# AI analysis with Google Gemini
+flowlyt --repo . --ai gemini --ai-key your-gemini-key
+
+# High-performance AI analysis
+flowlyt --repo . \
+        --ai openai \
+        --ai-key your-key \
+        --ai-workers 10 \
+        --ai-timeout 60
+
+# AI analysis with JSON output for automation
+flowlyt --repo . \
+        --ai claude \
+        --ai-key your-claude-key \
+        --output json \
+        --output-file scan-with-ai.json
+
+# AI analysis using environment variable for API key
+export AI_API_KEY=your-openai-key
+flowlyt --repo . --ai openai
+
+# Self-hosted AI model
+flowlyt --repo . \
+        --ai openai \
+        --ai-key your-key \
+        --ai-base-url https://your-llm-server.com/v1
+
+# Focus on high-severity findings with AI verification
+flowlyt --repo . \
+        --min-severity HIGH \
+        --ai gemini \
+        --ai-key your-key \
+        --ai-workers 3
 ```
 
 ## Exit Codes
