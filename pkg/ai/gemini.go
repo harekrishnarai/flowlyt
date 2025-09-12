@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
@@ -203,17 +204,23 @@ Be conservative - prefer false positive over missing real threats.`,
 // parseResponse parses the AI response into a VerificationResult
 func (c *GeminiClient) parseResponse(content string) (*VerificationResult, error) {
 	var result VerificationResult
+
+	// First, try direct JSON parsing
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
 		// Try to extract JSON from the response if it's wrapped in markdown or other text
 		start := bytes.Index([]byte(content), []byte("{"))
 		end := bytes.LastIndex([]byte(content), []byte("}"))
 		if start != -1 && end != -1 && end > start {
 			jsonContent := content[start : end+1]
+
+			// Clean up common escape sequence issues that cause JSON parsing to fail
+			jsonContent = c.cleanJSONContent(jsonContent)
+
 			if err := json.Unmarshal([]byte(jsonContent), &result); err != nil {
-				return nil, fmt.Errorf("failed to parse AI response as JSON: %w", err)
+				return nil, fmt.Errorf("failed to parse AI response as JSON: %w. Content: %s", err, jsonContent)
 			}
 		} else {
-			return nil, fmt.Errorf("failed to parse AI response: %w", err)
+			return nil, fmt.Errorf("failed to parse AI response: %w. Content: %s", err, content)
 		}
 	}
 
@@ -226,6 +233,24 @@ func (c *GeminiClient) parseResponse(content string) (*VerificationResult, error
 	}
 
 	return &result, nil
+}
+
+// cleanJSONContent cleans up common issues in JSON content that cause parsing errors
+func (c *GeminiClient) cleanJSONContent(content string) string {
+	// Handle unescaped dollar signs and other escape sequence issues
+
+	// First, look for obvious JSON structure
+	content = strings.TrimSpace(content)
+
+	// Fix common escape sequence issues that cause JSON parsing to fail
+	// Replace sequences like \$ that aren't valid JSON escape sequences
+	content = strings.ReplaceAll(content, "\\$", "$")
+
+	// Fix other problematic sequences
+	content = strings.ReplaceAll(content, "\\'", "'")
+	content = strings.ReplaceAll(content, "\\`", "`")
+
+	return content
 }
 
 // Close cleans up resources
