@@ -160,7 +160,7 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:  "ai",
-						Usage: "AI provider for finding verification (openai, gemini, claude, grok)",
+						Usage: "AI provider for finding verification (openai, gemini, claude, grok, perplexity)",
 					},
 					&cli.StringFlag{
 						Name:    "ai-key",
@@ -592,7 +592,7 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 	}
 	fmt.Printf("  - Likely false positives: %d\n", summary.LikelyFalsePositives)
 	fmt.Printf("  - Likely true positives: %d\n", summary.LikelyTruePositives)
-	fmt.Printf("  - High confidence: %d, Medium: %d, Low: %d\n", 
+	fmt.Printf("  - High confidence: %d, Medium: %d, Low: %d\n",
 		summary.HighConfidence, summary.MediumConfidence, summary.LowConfidence)
 
 	return resultFindings, nil

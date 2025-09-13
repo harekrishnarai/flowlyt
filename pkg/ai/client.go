@@ -11,10 +11,11 @@ import (
 type Provider string
 
 const (
-	ProviderOpenAI Provider = "openai"
-	ProviderGemini Provider = "gemini" 
-	ProviderClaude Provider = "claude"
-	ProviderGrok   Provider = "grok"
+	ProviderOpenAI     Provider = "openai"
+	ProviderGemini     Provider = "gemini"
+	ProviderClaude     Provider = "claude"
+	ProviderGrok       Provider = "grok"
+	ProviderPerplexity Provider = "perplexity"
 )
 
 // VerificationResult represents the AI's assessment of a finding
@@ -29,10 +30,10 @@ type VerificationResult struct {
 type Client interface {
 	// VerifyFinding analyzes a security finding and determines if it's likely a false positive
 	VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error)
-	
+
 	// GetProvider returns the provider name
 	GetProvider() Provider
-	
+
 	// Close cleans up any resources
 	Close() error
 }
@@ -41,9 +42,9 @@ type Client interface {
 type Config struct {
 	Provider Provider `yaml:"provider"`
 	APIKey   string   `yaml:"api_key"`
-	BaseURL  string   `yaml:"base_url,omitempty"`  // Custom endpoint for self-hosted models
-	Model    string   `yaml:"model,omitempty"`     // Specific model to use
-	
+	BaseURL  string   `yaml:"base_url,omitempty"` // Custom endpoint for self-hosted models
+	Model    string   `yaml:"model,omitempty"`    // Specific model to use
+
 	// Request configuration
 	MaxTokens   int     `yaml:"max_tokens,omitempty"`
 	Temperature float64 `yaml:"temperature,omitempty"`
@@ -61,6 +62,8 @@ func NewClient(config Config) (Client, error) {
 		return NewClaudeClient(config)
 	case ProviderGrok:
 		return NewGrokClient(config)
+	case ProviderPerplexity:
+		return NewPerplexityClient(config)
 	default:
 		return nil, fmt.Errorf("unsupported AI provider: %s", config.Provider)
 	}
@@ -69,10 +72,10 @@ func NewClient(config Config) (Client, error) {
 // ValidateProvider checks if the provider is supported
 func ValidateProvider(provider string) error {
 	switch Provider(provider) {
-	case ProviderOpenAI, ProviderGemini, ProviderClaude, ProviderGrok:
+	case ProviderOpenAI, ProviderGemini, ProviderClaude, ProviderGrok, ProviderPerplexity:
 		return nil
 	default:
-		return fmt.Errorf("unsupported AI provider: %s. Supported providers: openai, gemini, claude, grok", provider)
+		return fmt.Errorf("unsupported AI provider: %s. Supported providers: openai, gemini, claude, grok, perplexity", provider)
 	}
 }
 
@@ -83,5 +86,62 @@ func GetSupportedProviders() []string {
 		string(ProviderGemini),
 		string(ProviderClaude),
 		string(ProviderGrok),
+		string(ProviderPerplexity),
+	}
+}
+
+// GetDefaultModel returns the default model for a given provider
+func GetDefaultModel(provider Provider) string {
+	switch provider {
+	case ProviderOpenAI:
+		return "gpt-4o-mini"
+	case ProviderGemini:
+		return "gemini-1.5-flash"
+	case ProviderClaude:
+		return "claude-3-haiku-20240307"
+	case ProviderGrok:
+		return "grok-beta"
+	case ProviderPerplexity:
+		return "sonar"
+	default:
+		return ""
+	}
+}
+
+// GetAvailableModels returns a list of available models for a given provider
+func GetAvailableModels(provider Provider) []string {
+	switch provider {
+	case ProviderOpenAI:
+		return []string{
+			"gpt-4o-mini",   // Cost-effective default
+			"gpt-4o",        // Latest flagship model
+			"gpt-4-turbo",   // Fast and capable
+			"gpt-4",         // Original GPT-4
+			"gpt-3.5-turbo", // Legacy but fast
+		}
+	case ProviderGemini:
+		return []string{
+			"gemini-1.5-flash", // Cost-effective default
+			"gemini-1.5-pro",   // Higher quality
+			"gemini-1.0-pro",   // Legacy version
+		}
+	case ProviderClaude:
+		return []string{
+			"claude-3-haiku-20240307",  // Cost-effective default
+			"claude-3-sonnet-20240229", // Balanced performance
+			"claude-3-opus-20240229",   // Highest quality
+		}
+	case ProviderGrok:
+		return []string{
+			"grok-beta", // Current default
+		}
+	case ProviderPerplexity:
+		return []string{
+			"llama-3.1-sonar-small-128k-online", // Cost-effective default
+			"llama-3.1-sonar-large-128k-online", // Higher quality
+			"llama-3.1-sonar-huge-128k-online",  // Highest quality
+		}
+	default:
+		return []string{}
 	}
 }

@@ -26,6 +26,7 @@ Flowlyt combines traditional pattern matching with cutting-edge Abstract Syntax 
 - **Google Gemini** (1.5 Pro, 1.5 Flash) - Fast, cost-effective analysis  
 - **Anthropic Claude** (3 Opus, 3 Sonnet, 3 Haiku) - Detailed reasoning and nuanced analysis
 - **xAI Grok** (Beta) - Alternative analysis perspective
+- **Perplexity** (Llama 3.1 Sonar, GPT-4o) - Real-time web-enhanced analysis
 
 ### AI-Enhanced Features
 - 🎯 **False Positive Detection** - AI distinguishes between real threats and configuration noise
@@ -101,6 +102,7 @@ flowlyt scan ./my-repo --ai openai
 flowlyt scan ./my-repo --ai gemini  
 flowlyt scan ./my-repo --ai claude
 flowlyt scan ./my-repo --ai grok
+flowlyt scan ./my-repo --ai perplexity
 
 # Advanced AI configuration
 flowlyt scan ./my-repo \
@@ -118,6 +120,7 @@ flowlyt scan ./my-repo \
 | **Gemini** | [aistudio.google.com](https://aistudio.google.com/app/apikey) | `AI_API_KEY` |
 | **Claude** | [console.anthropic.com](https://console.anthropic.com/) | `AI_API_KEY` |
 | **Grok** | [console.x.ai](https://console.x.ai/) | `AI_API_KEY` |
+| **Perplexity** | [perplexity.ai](https://www.perplexity.ai/settings/api) | `AI_API_KEY` |
 
 ## 📊 Example Output
 
@@ -280,6 +283,7 @@ GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai
 # - Gemini: https://aistudio.google.com/app/apikey  
 # - Claude: https://console.anthropic.com/
 # - Grok: https://console.x.ai/
+# - Perplexity: https://www.perplexity.ai/settings/api
 
 # 3. Run AI-enhanced scan
 export AI_API_KEY=your-api-key
