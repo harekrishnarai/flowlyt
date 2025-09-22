@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -266,6 +267,33 @@ func main() {
 						Name:  "summary-only",
 						Usage: "Show only organization-level summary, skip individual repository details",
 					},
+					&cli.StringFlag{
+						Name:  "ai",
+						Usage: "AI provider for finding verification (openai, gemini, claude, grok, perplexity)",
+					},
+					&cli.StringFlag{
+						Name:    "ai-key",
+						Usage:   "API key for AI provider (or use AI_API_KEY environment variable)",
+						EnvVars: []string{"AI_API_KEY"},
+					},
+					&cli.StringFlag{
+						Name:  "ai-model",
+						Usage: "Specific AI model to use (optional, uses provider default)",
+					},
+					&cli.StringFlag{
+						Name:  "ai-base-url",
+						Usage: "Custom base URL for AI provider (for self-hosted models)",
+					},
+					&cli.IntFlag{
+						Name:  "ai-timeout",
+						Usage: "Timeout for AI analysis in seconds",
+						Value: 30,
+					},
+					&cli.IntFlag{
+						Name:  "ai-workers",
+						Usage: "Number of concurrent AI analysis workers",
+						Value: 5,
+					},
 				},
 				Action: analyzeOrgAction,
 			},
@@ -325,14 +353,12 @@ func loadAndOverrideConfig(c *cli.Context, outputFormat, outputFile string) (*co
 	return cfg, nil
 }
 
-// acquireRepository handles repository acquisition (clone or local path)
+// acquireRepository handles repository acquisition (API fetch or local path)
 func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (string, func(), error) {
 	var repoLocalPath string
 	var cleanup func()
 
 	if repoURL != "" {
-		fmt.Printf("Cloning repository from %s...\n", repoURL)
-
 		// Auto-detect platform from URL if not explicitly specified
 		if platform == constants.PlatformGitHub && c.String("platform") == constants.PlatformGitHub {
 			// Check if URL is actually GitLab
@@ -342,46 +368,35 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 			}
 		}
 
+		fmt.Printf("⚡ Fetching workflow files from %s...\n", repoURL)
+
+		var workflowContents map[string][]byte
 		var err error
+
 		switch platform {
 		case constants.PlatformGitHub:
+			owner, repo, parseErr := github.ParseRepositoryURL(repoURL)
+			if parseErr != nil {
+				return "", nil, parseErr
+			}
+
 			client := github.NewClient()
-			tempDir := c.String("temp-dir")
-
-			// Determine if we should show progress
-			showProgress := !constants.IsRunningInCI() && !c.Bool("no-progress")
-
-			if showProgress {
-				fmt.Printf("🔄 Cloning GitHub repository: %s\n", repoURL)
-
-				// Create progress callback
-				progressCallback := func(progress int, stage string) {
-					// Create a simple progress bar
-					barWidth := 40
-					filled := int((float64(progress) / 100) * float64(barWidth))
-					bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
-
-					// Print progress with carriage return to overwrite previous line
-					fmt.Printf("\r[%s] %d%% - %s", bar, progress, stage)
-					if progress >= 100 {
-						fmt.Println() // New line when complete
-					}
-				}
-
-				repoLocalPath, err = client.CloneRepositoryWithProgress(repoURL, tempDir, true, progressCallback)
-			} else {
-				// In CI environment or progress disabled, use quiet cloning
-				if constants.IsRunningInCI() {
-					fmt.Printf("Cloning repository: %s\n", repoURL)
-				}
-				repoLocalPath, err = client.CloneRepository(repoURL, tempDir)
-			}
-
+			fmt.Printf("� Downloading workflow files from GitHub repository: %s/%s\n", owner, repo)
+			workflowContents, err = client.GetWorkflowFilesContents(owner, repo)
 			if err != nil {
-				return "", nil, fmt.Errorf("failed to clone GitHub repository: %w", err)
+				return "", nil, fmt.Errorf("failed to fetch workflow files from %s: %w", repoURL, err)
 			}
+
+			if len(workflowContents) == 0 {
+				return "", nil, fmt.Errorf("no workflow files found in repository %s/%s", owner, repo)
+			}
+
+			fmt.Printf("✅ Successfully fetched %d workflow files\n", len(workflowContents))
 
 		case constants.PlatformGitLab:
+			// For GitLab, we still need to use cloning for now as GitLab API implementation would be similar
+			// but requires separate implementation. This could be added in a future enhancement.
+			fmt.Printf("🔄 Cloning GitLab repository: %s (API-based fetching not yet implemented for GitLab)\n", repoURL)
 			gitlabInstance := c.String("gitlab-instance")
 			client, err := gitlab.NewClient(gitlabInstance)
 			if err != nil {
@@ -389,23 +404,51 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 			}
 
 			tempDir := c.String("temp-dir")
-			repoLocalPath, err = client.CloneRepository(repoURL, tempDir)
+			repoLocalPath, err := client.CloneRepository(repoURL, tempDir)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to clone GitLab repository: %w", err)
 			}
 
+			// Set up cleanup function if we created a temporary directory
+			tempDirFlag := c.String("temp-dir")
+			if tempDirFlag == "" {
+				cleanup = func() {
+					fmt.Printf("Cleaning up temporary directory %s...\n", repoLocalPath)
+					os.RemoveAll(repoLocalPath)
+				}
+			}
+
+			return repoLocalPath, cleanup, nil
+
 		default:
-			return "", nil, fmt.Errorf("repository cloning from URL is not supported for platform: %s", platform)
+			return "", nil, fmt.Errorf("repository fetching from URL is not supported for platform: %s", platform)
 		}
 
-		// Set up cleanup function if we created a temporary directory
-		tempDirFlag := c.String("temp-dir")
-		if tempDirFlag == "" {
-			cleanup = func() {
-				fmt.Printf("Cleaning up temporary directory %s...\n", repoLocalPath)
-				os.RemoveAll(repoLocalPath)
+		// Create a temporary directory to store the fetched workflows (GitHub only)
+		tempDir, err := os.MkdirTemp("", "flowlyt-workflows-*")
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to create temporary directory: %w", err)
+		}
+
+		// Write workflow files to temporary directory
+		for path, content := range workflowContents {
+			fullPath := filepath.Join(tempDir, path)
+			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				os.RemoveAll(tempDir)
+				return "", nil, fmt.Errorf("failed to create workflow directory structure: %w", err)
+			}
+			if err := os.WriteFile(fullPath, content, 0644); err != nil {
+				os.RemoveAll(tempDir)
+				return "", nil, fmt.Errorf("failed to write workflow file: %w", err)
 			}
 		}
+
+		repoLocalPath = tempDir
+		cleanup = func() {
+			fmt.Printf("🧹 Cleaning up temporary directory %s...\n", repoLocalPath)
+			os.RemoveAll(repoLocalPath)
+		}
+
 	} else if repoPath != "" {
 		repoLocalPath = repoPath
 	}
@@ -961,6 +1004,55 @@ Original error: %s`, err.Error())
 		return fmt.Errorf("failed to analyze organization: %w", err)
 	}
 
+	// Enhance findings with AI analysis if requested
+	if c.String("ai") != "" && len(orgResult.RepositoryResults) > 0 {
+		err = enhanceOrgResultsWithAI(c, orgResult)
+		if err != nil {
+			fmt.Printf("⚠️  Warning: AI analysis failed: %v\n", err)
+			fmt.Printf("   Continuing with original findings...\n")
+		}
+	}
+	if err != nil {
+		// Provide helpful error messages for common authentication issues
+		if strings.Contains(err.Error(), "404 Not Found") {
+			return fmt.Errorf(`failed to analyze organization '%s': organization not found or access denied
+
+Possible solutions:
+1. Verify the organization name is correct
+2. Check if the organization is private and you have access
+3. Provide a GitHub token with appropriate permissions:
+   - Use flag: --token YOUR_TOKEN
+   - Or set environment variable: export GITHUB_TOKEN=YOUR_TOKEN
+   
+To create a GitHub token:
+   1. Go to https://github.com/settings/tokens
+   2. Click "Generate new token" -> "Generate new token (classic)"
+   3. Select scopes: 'repo' (for private repos) or 'public_repo' (for public repos)
+   4. Copy the token and use it with --token flag
+
+Original error: %s`, orgName, err.Error())
+		}
+		if strings.Contains(err.Error(), "401 Unauthorized") {
+			return fmt.Errorf(`authentication failed: invalid or expired GitHub token
+
+Please check your token and ensure it has the correct permissions:
+   - For public repositories: 'public_repo' scope
+   - For private repositories: 'repo' scope
+
+Original error: %s`, err.Error())
+		}
+		if strings.Contains(err.Error(), "403 Forbidden") {
+			return fmt.Errorf(`access forbidden: token lacks required permissions
+
+Your GitHub token needs additional permissions:
+   - For organization access: 'read:org' scope
+   - For private repositories: 'repo' scope
+
+Original error: %s`, err.Error())
+		}
+		return fmt.Errorf("failed to analyze organization: %w", err)
+	}
+
 	// Generate report
 	return generateOrganizationReport(orgResult, outputFormat, outputFile, c.Bool("summary-only"))
 }
@@ -1048,6 +1140,41 @@ func generateOrganizationReport(result *organization.OrganizationResult, outputF
 	}
 
 	fmt.Printf("\n✨ Organization analysis complete!\n")
+	return nil
+}
+
+// enhanceOrgResultsWithAI performs AI analysis on all findings in organization results
+func enhanceOrgResultsWithAI(c *cli.Context, orgResult *organization.OrganizationResult) error {
+	// Collect all findings from all repositories
+	var allFindings []rules.Finding
+	for _, repoResult := range orgResult.RepositoryResults {
+		allFindings = append(allFindings, repoResult.Findings...)
+	}
+
+	if len(allFindings) == 0 {
+		return nil // No findings to analyze
+	}
+
+	// Enhance findings with AI
+	enhancedFindings, err := enhanceFindingsWithAI(c, allFindings)
+	if err != nil {
+		return err
+	}
+
+	// Update the findings back in the repository results
+	enhancedIdx := 0
+	for i := range orgResult.RepositoryResults {
+		repoResult := &orgResult.RepositoryResults[i]
+		for j := range repoResult.Findings {
+			if enhancedIdx < len(enhancedFindings) {
+				repoResult.Findings[j] = enhancedFindings[enhancedIdx]
+				enhancedIdx++
+			}
+		}
+	}
+
+	// Recalculate the summary with enhanced findings
+	orgResult.Summary = orgResult.Summary // Keep existing summary structure, the findings are already updated
 	return nil
 }
 

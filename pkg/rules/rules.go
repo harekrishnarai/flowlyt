@@ -116,7 +116,12 @@ type Finding struct {
 	LineNumber  int    // Line number where the issue was found
 	GitHubURL   string // Direct GitHub URL to the line (for remote repositories)
 	GitLabURL   string // Direct GitLab URL to the line (for remote repositories)
-	
+
+	// Context fields for better AI analysis
+	Trigger     string `json:"trigger,omitempty"`      // Workflow trigger (e.g., "push", "pull_request", "workflow_dispatch")
+	RunnerType  string `json:"runner_type,omitempty"`  // Runner type (e.g., "ubuntu-latest", "self-hosted", "windows-latest")
+	FileContext string `json:"file_context,omitempty"` // File context (e.g., "production", "test", "example", "template")
+
 	// AI verification fields
 	AIVerified            bool    `json:"ai_verified,omitempty"`              // Whether AI analysis was performed
 	AILikelyFalsePositive *bool   `json:"ai_likely_false_positive,omitempty"` // AI assessment (nil if not analyzed)
@@ -574,6 +579,119 @@ func StringToPlatform(platformStr string) Platform {
 	}
 }
 
+// Helper functions for extracting context information
+
+// extractTriggerInfo extracts the trigger information from a workflow
+func extractTriggerInfo(workflow parser.WorkflowFile) string {
+	if workflow.Workflow.On == nil {
+		return "unknown"
+	}
+
+	// Handle different trigger formats
+	switch v := workflow.Workflow.On.(type) {
+	case string:
+		return v
+	case []interface{}:
+		if len(v) > 0 {
+			if str, ok := v[0].(string); ok {
+				return str
+			}
+		}
+		return "multiple"
+	case map[interface{}]interface{}:
+		// Extract the first trigger name
+		for key := range v {
+			if str, ok := key.(string); ok {
+				return str
+			}
+		}
+		return "complex"
+	case map[string]interface{}:
+		// Extract the first trigger name
+		for key := range v {
+			return key
+		}
+		return "complex"
+	default:
+		return "unknown"
+	}
+}
+
+// extractRunnerType extracts the runner type from a job
+func extractRunnerType(job parser.Job) string {
+	if job.RunsOn == nil {
+		return "unknown"
+	}
+
+	switch v := job.RunsOn.(type) {
+	case string:
+		return v
+	case []interface{}:
+		if len(v) > 0 {
+			if str, ok := v[0].(string); ok {
+				return str
+			}
+		}
+		return "matrix"
+	case map[interface{}]interface{}:
+		return "matrix"
+	case map[string]interface{}:
+		return "matrix"
+	default:
+		return "unknown"
+	}
+}
+
+// extractFileContext determines the context of the file based on path and content
+func extractFileContext(workflow parser.WorkflowFile) string {
+	path := strings.ToLower(workflow.Path)
+
+	// Check for common patterns in file names and paths
+	if strings.Contains(path, "test") || strings.Contains(path, "spec") {
+		return "test"
+	}
+	if strings.Contains(path, "example") || strings.Contains(path, "sample") || strings.Contains(path, "demo") {
+		return "example"
+	}
+	if strings.Contains(path, "template") || strings.Contains(path, ".template") {
+		return "template"
+	}
+	if strings.Contains(path, "dev") || strings.Contains(path, "develop") {
+		return "development"
+	}
+	if strings.Contains(path, "prod") || strings.Contains(path, "production") {
+		return "production"
+	}
+	if strings.Contains(path, "staging") || strings.Contains(path, "stage") {
+		return "staging"
+	}
+
+	// Check workflow name for context clues
+	workflowName := strings.ToLower(workflow.Workflow.Name)
+	if strings.Contains(workflowName, "test") || strings.Contains(workflowName, "spec") {
+		return "test"
+	}
+	if strings.Contains(workflowName, "build") || strings.Contains(workflowName, "ci") {
+		return "ci"
+	}
+	if strings.Contains(workflowName, "deploy") || strings.Contains(workflowName, "cd") {
+		return "deployment"
+	}
+	if strings.Contains(workflowName, "release") {
+		return "release"
+	}
+
+	return "production" // Default to production context for safety
+}
+
+// enhanceFindingWithContext adds context information to a finding
+func enhanceFindingWithContext(finding Finding, workflow parser.WorkflowFile, job parser.Job) Finding {
+	finding.Trigger = extractTriggerInfo(workflow)
+	finding.RunnerType = extractRunnerType(job)
+	finding.FileContext = extractFileContext(workflow)
+	return finding
+}
+
 // checkCurlPipeToShell checks for curl/wget piped to shell commands
 func checkCurlPipeToShell(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -603,7 +721,7 @@ func checkCurlPipeToShell(workflow parser.WorkflowFile) []Finding {
 					lineNumber = lineResult.LineNumber
 				}
 
-				findings = append(findings, Finding{
+				finding := Finding{
 					RuleID:      "MALICIOUS_CURL_PIPE_BASH",
 					RuleName:    "Curl Pipe to Shell",
 					Description: "Command downloads and executes code directly from the internet, which can be a security risk",
@@ -615,7 +733,11 @@ func checkCurlPipeToShell(workflow parser.WorkflowFile) []Finding {
 					Evidence:    step.Run,
 					LineNumber:  lineNumber,
 					Remediation: "Download the script first, verify its contents, and then execute it separately",
-				})
+				}
+
+				// Enhance with context information
+				finding = enhanceFindingWithContext(finding, workflow, job)
+				findings = append(findings, finding)
 			}
 		}
 	}
@@ -640,7 +762,7 @@ func checkBase64DecodeExecution(workflow parser.WorkflowFile) []Finding {
 				// Use the helper function for line number detection
 				lineNumber := findLineNumberWithMapper(workflow, step.Name, step.Run)
 
-				findings = append(findings, Finding{
+				finding := Finding{
 					RuleID:      "MALICIOUS_BASE64_DECODE",
 					RuleName:    "Base64 Decode Execution",
 					Description: "Command decodes and executes base64 encoded data, which can hide malicious code",
@@ -652,7 +774,11 @@ func checkBase64DecodeExecution(workflow parser.WorkflowFile) []Finding {
 					Evidence:    step.Run,
 					LineNumber:  lineNumber,
 					Remediation: "Avoid executing encoded commands. If necessary, decode to a file, verify content, then execute",
-				})
+				}
+
+				// Enhance with context information
+				finding = enhanceFindingWithContext(finding, workflow, job)
+				findings = append(findings, finding)
 			}
 		}
 	}
@@ -2099,31 +2225,35 @@ func checkArtifactPoisoning(workflow parser.WorkflowFile) []Finding {
 				if step.With != nil {
 					if nameInterface, exists := step.With["name"]; exists {
 						if name, ok := nameInterface.(string); ok {
-							// Check for user-controlled artifact names
+							// Check for user-controlled artifact names - but only flag if triggered by untrusted events
 							if strings.Contains(name, "${{ github.event.") || strings.Contains(name, "${{ inputs.") {
-								lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
-									Key:   "name",
-									Value: name,
-								})
+								// Only flag this as a security issue if the workflow can be triggered by untrusted events
+								if hasUntrustedWorkflowTriggersForArtifacts(workflow) {
+									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+										Key:   "name",
+										Value: name,
+									})
 
-								lineNumber := 0
-								if lineResult != nil {
-									lineNumber = lineResult.LineNumber
+									lineNumber := 0
+									if lineResult != nil {
+										lineNumber = lineResult.LineNumber
+									}
+
+									findings = append(findings, Finding{
+										RuleID:      "ARTIFACT_POISONING",
+										RuleName:    "Artifact Poisoning",
+										Description: "Artifact download uses user-controlled input for artifact name in a workflow that can be triggered by untrusted events, which could lead to path traversal",
+										Severity:    High,
+										Category:    SupplyChain,
+										FilePath:    workflow.Path,
+										JobName:     jobName,
+										StepName:    step.Name,
+										Evidence:    fmt.Sprintf("User-controlled artifact name in untrusted context: %s", name),
+										LineNumber:  lineNumber,
+										Remediation: "Validate and sanitize artifact names, use predefined artifact names only, or restrict workflow to trusted triggers",
+									})
 								}
-
-								findings = append(findings, Finding{
-									RuleID:      "ARTIFACT_POISONING",
-									RuleName:    "Artifact Poisoning",
-									Description: "Artifact download uses user-controlled input for artifact name, which could lead to path traversal",
-									Severity:    High,
-									Category:    SupplyChain,
-									FilePath:    workflow.Path,
-									JobName:     jobName,
-									StepName:    step.Name,
-									Evidence:    fmt.Sprintf("User-controlled artifact name: %s", name),
-									LineNumber:  lineNumber,
-									Remediation: "Validate and sanitize artifact names, or use predefined artifact names only",
-								})
+								// If only triggered by trusted events (push to main, workflow_dispatch), don't flag as vulnerability
 							}
 						}
 					}
@@ -2133,6 +2263,67 @@ func checkArtifactPoisoning(workflow parser.WorkflowFile) []Finding {
 	}
 
 	return findings
+}
+
+// hasUntrustedWorkflowTriggersForArtifacts checks if workflow has triggers that could make artifact poisoning risky
+func hasUntrustedWorkflowTriggersForArtifacts(workflow parser.WorkflowFile) bool {
+	// Events that could allow untrusted actors to control artifacts
+	untrustedEvents := []string{
+		"pull_request",
+		"pull_request_target",
+		"pull_request_review",
+		"pull_request_review_comment",
+		"issues",
+		"issue_comment",
+		"repository_dispatch",
+		"workflow_run", // Can be triggered by other workflows
+		"discussion",
+		"discussion_comment",
+		"public", // Repository made public
+	}
+
+	if workflow.Workflow.On == nil {
+		return false
+	}
+
+	switch on := workflow.Workflow.On.(type) {
+	case string:
+		for _, event := range untrustedEvents {
+			if on == event {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, eventInterface := range on {
+			if eventStr, ok := eventInterface.(string); ok {
+				for _, event := range untrustedEvents {
+					if eventStr == event {
+						return true
+					}
+				}
+			}
+		}
+	case map[interface{}]interface{}:
+		for eventInterface := range on {
+			if eventStr, ok := eventInterface.(string); ok {
+				for _, event := range untrustedEvents {
+					if eventStr == event {
+						return true
+					}
+				}
+			}
+		}
+	case map[string]interface{}:
+		for eventStr := range on {
+			for _, event := range untrustedEvents {
+				if eventStr == event {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // checkMatrixInjection checks for injection vulnerabilities through matrix strategy
@@ -3891,15 +4082,17 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 // Helper functions for complex pattern detection
 
 func hasUnsoundLogic(condition string) bool {
-	// Check for potentially dangerous condition patterns
+	// Check for actually dangerous condition patterns, not just any use of github.event
 	unsoundPatterns := []string{
-		`github\.event\..*==.*'.*'`,              // String comparison with user input
-		`contains\(.*github\.event`,              // Contains with event data
-		`startsWith\(.*github\.event`,            // StartsWith with event data
-		`github\.event\.pull_request\.head\.ref`, // Direct ref access
-		`github\.event\.issue\..*user`,           // Issue user data
-		`\|\|.*always\(\)`,                       // OR with always()
-		`&&.*\!.*cancelled\(\)`,                  // Complex negation patterns
+		// Only flag unquoted usage in shell context or dangerous equality checks
+		`\$\{\{\s*github\.event\.[^}]*\s*\}\}\s*\|\s*sh`,         // Unquoted github.event piped to shell
+		`\$\{\{\s*github\.event\.[^}]*\s*\}\}\s*\|\s*bash`,       // Unquoted github.event piped to bash
+		`eval.*\$\{\{\s*github\.event`,                           // github.event in eval context
+		`github\.event\.pull_request\.head\.ref.*==.*[^'].*[^']`, // Unquoted ref comparison (not quoted string)
+		`github\.event\.issue\.title.*==.*[^'].*[^']`,            // Unquoted issue title comparison
+		`github\.event\.comment\.body.*==.*[^'].*[^']`,           // Unquoted comment body comparison
+		`\|\|.*always\(\).*github\.event`,                        // Combining always() with event data unsafely
+		`&&.*\!.*cancelled\(\).*github\.event`,                   // Complex negation with event data
 	}
 
 	for _, pattern := range unsoundPatterns {

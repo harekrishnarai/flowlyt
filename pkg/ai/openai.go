@@ -154,7 +154,6 @@ func (c *OpenAIClient) VerifyFinding(ctx context.Context, finding rules.Finding)
 	return c.parseResponse(response.Choices[0].Message.Content)
 }
 
-// buildPrompt creates the analysis prompt for the AI
 func (c *OpenAIClient) buildPrompt(finding rules.Finding) string {
 	return fmt.Sprintf(`You are a cybersecurity expert specializing in CI/CD security, GitHub Actions hardening, and software supply chain security. Analyze this finding and determine if it's a false positive or true positive.
 
@@ -162,6 +161,9 @@ IMPORTANT CONTEXT:
 - This analysis is performed on a repository that was temporarily cloned to a /tmp/ directory for scanning
 - File paths containing /tmp/ are normal and expected - they do not indicate the actual repository location
 - Focus on the security implications of the CI/CD configuration, not the temporary file location
+- **Workflow Trigger:** The workflow was triggered by a '%s' event. This is crucial for understanding the context of the execution.
+- **Runner Type:** The job is running on a '%s' runner. Pay special attention to self-hosted runners as they have different security implications.
+- **File Context:** The finding was found in a file that appears to be part of '%s'. This can help differentiate between production code, tests, and examples.
 
 Finding Details:
 - Rule: %s (%s)
@@ -216,6 +218,9 @@ SEVERITY GUIDELINES:
 - INFO: Best practice violations with minimal security impact
 
 Be conservative - prefer false positive over missing real threats, especially for supply chain risks.`,
+		finding.Trigger, // Pass the trigger type
+		finding.RunnerType, // Pass the runner type
+		finding.FileContext, // Pass the file context (e.g., 'production', 'test', 'example')
 		finding.RuleName,
 		finding.RuleID,
 		finding.Description,
@@ -227,7 +232,6 @@ Be conservative - prefer false positive over missing real threats, especially fo
 		finding.Evidence,
 	)
 }
-
 // parseResponse parses the AI response into a VerificationResult
 func (c *OpenAIClient) parseResponse(content string) (*VerificationResult, error) {
 	var result VerificationResult

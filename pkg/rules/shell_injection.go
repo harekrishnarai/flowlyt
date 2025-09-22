@@ -173,8 +173,9 @@ func checkSelfHostedRunnerSecurity(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
 
-	// Check if workflow can be triggered by pull requests from forks
+	// Check if workflow can be triggered by pull requests from forks or other untrusted events
 	isPRTriggered := isPullRequestTriggered(workflow)
+	hasUntrustedTriggers := hasUntrustedWorkflowTriggers(workflow)
 
 	// Check each job for self-hosted runner usage
 	for jobName, job := range workflow.Workflow.Jobs {
@@ -190,27 +191,38 @@ func checkSelfHostedRunnerSecurity(workflow parser.WorkflowFile) []Finding {
 				lineNumber = lineResult.LineNumber
 			}
 
-			severity := Medium
-			description := "Job uses self-hosted runner which may have security implications"
-
+			// Only flag self-hosted runners when they are exposed to untrusted triggers
 			if isPRTriggered {
-				severity = Critical
-				description = "Job uses self-hosted runner and can be triggered by pull requests, allowing potential code execution on your infrastructure"
+				findings = append(findings, Finding{
+					RuleID:      "SELF_HOSTED_RUNNER_SECURITY",
+					RuleName:    "Self-Hosted Runner Security Risk",
+					Description: "Job uses self-hosted runner and can be triggered by pull requests, allowing potential code execution on your infrastructure",
+					Severity:    Critical,
+					Category:    AccessControl,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    "",
+					Evidence:    getRunsOnValue(job),
+					Remediation: "Consider using GitHub-hosted runners for public repositories, or restrict self-hosted runners to trusted events only",
+					LineNumber:  lineNumber,
+				})
+			} else if hasUntrustedTriggers {
+				findings = append(findings, Finding{
+					RuleID:      "SELF_HOSTED_RUNNER_SECURITY",
+					RuleName:    "Self-Hosted Runner Security Risk",
+					Description: "Job uses self-hosted runner with potentially untrusted triggers, which may have security implications",
+					Severity:    Medium,
+					Category:    AccessControl,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    "",
+					Evidence:    getRunsOnValue(job),
+					Remediation: "Review trigger events and consider using GitHub-hosted runners for workflows triggered by external events",
+					LineNumber:  lineNumber,
+				})
 			}
-
-			findings = append(findings, Finding{
-				RuleID:      "SELF_HOSTED_RUNNER_SECURITY",
-				RuleName:    "Self-Hosted Runner Security Risk",
-				Description: description,
-				Severity:    severity,
-				Category:    AccessControl,
-				FilePath:    workflow.Path,
-				JobName:     jobName,
-				StepName:    "",
-				Evidence:    getRunsOnValue(job),
-				Remediation: "Consider using GitHub-hosted runners for public repositories, or restrict self-hosted runners to trusted events only",
-				LineNumber:  lineNumber,
-			})
+			// If the workflow only has trusted triggers (push, workflow_dispatch to main branch, etc.),
+			// don't flag the self-hosted runner as a security risk
 		}
 	}
 
@@ -260,6 +272,65 @@ func isPullRequestTriggered(workflow parser.WorkflowFile) bool {
 	case map[string]interface{}:
 		for eventStr := range on {
 			for _, event := range prEvents {
+				if eventStr == event {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// hasUntrustedWorkflowTriggers checks if workflow has triggers that might be untrusted
+func hasUntrustedWorkflowTriggers(workflow parser.WorkflowFile) bool {
+	// Events that might be triggered by external or untrusted sources
+	untrustedEvents := []string{
+		"issues",
+		"issue_comment",
+		"repository_dispatch",
+		"workflow_run",
+		"schedule", // While not untrusted per se, scheduled jobs on self-hosted can be concerning
+		"discussion",
+		"discussion_comment",
+		"public", // Repository made public
+		"gollum", // Wiki updates
+	}
+
+	if workflow.Workflow.On == nil {
+		return false
+	}
+
+	switch on := workflow.Workflow.On.(type) {
+	case string:
+		for _, event := range untrustedEvents {
+			if on == event {
+				return true
+			}
+		}
+	case []interface{}:
+		for _, eventInterface := range on {
+			if eventStr, ok := eventInterface.(string); ok {
+				for _, event := range untrustedEvents {
+					if eventStr == event {
+						return true
+					}
+				}
+			}
+		}
+	case map[interface{}]interface{}:
+		for eventInterface := range on {
+			if eventStr, ok := eventInterface.(string); ok {
+				for _, event := range untrustedEvents {
+					if eventStr == event {
+						return true
+					}
+				}
+			}
+		}
+	case map[string]interface{}:
+		for eventStr := range on {
+			for _, event := range untrustedEvents {
 				if eventStr == event {
 					return true
 				}

@@ -3,13 +3,17 @@ package organization
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sync"
 	"time"
 
 	"github.com/harekrishnarai/flowlyt/pkg/config"
 	"github.com/harekrishnarai/flowlyt/pkg/github"
+	"github.com/harekrishnarai/flowlyt/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/pkg/shell"
+	"gopkg.in/yaml.v3"
 )
 
 // RepositoryFilter is now defined in the github package
@@ -211,22 +215,83 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 		Duration:   0,
 	}
 
-	// Clone repository temporarily (placeholder for now)
-	_, err := a.client.CloneRepository(repo.CloneURL, "")
+	// Parse repository URL to get owner and repo name
+	owner, repoName, err := github.ParseRepositoryURL(repo.CloneURL)
 	if err != nil {
-		result.Error = fmt.Errorf("failed to clone repository: %w", err)
+		result.Error = fmt.Errorf("failed to parse repository URL: %w", err)
 		result.Duration = time.Since(startTime)
 		return result
 	}
 
-	// TODO: Implement the actual workflow analysis
-	// This would involve:
-	// 1. Finding workflow files in the repository
-	// 2. Parsing and analyzing them
-	// 3. Running security rules
-	// 4. Collecting findings
+	// Fetch workflow files directly via API (much faster than cloning)
+	workflowContents, err := a.client.GetWorkflowFilesContents(owner, repoName)
+	if err != nil {
+		result.Error = fmt.Errorf("failed to fetch workflow files: %w", err)
+		result.Duration = time.Since(startTime)
+		return result
+	}
 
-	// For now, return empty result to avoid compilation errors
+	// If no workflow files found, that's not an error - just return empty results
+	if len(workflowContents) == 0 {
+		result.Duration = time.Since(startTime)
+		return result
+	}
+
+	result.WorkflowsCount = len(workflowContents)
+
+	// Perform actual workflow analysis
+	allFindings := []rules.Finding{}
+
+	for filename, content := range workflowContents {
+		// Parse workflow content
+		workflow := parser.Workflow{}
+		if parseErr := yaml.Unmarshal([]byte(content), &workflow); parseErr != nil {
+			// Skip files that can't be parsed but don't fail the entire analysis
+			continue
+		}
+
+		// Create a workflow file object
+		workflowFile := parser.WorkflowFile{
+			Path:     filepath.Join(".github/workflows", filename),
+			Name:     filename,
+			Content:  []byte(content),
+			Workflow: workflow,
+		}
+
+		// Get standard rules for GitHub Actions
+		standardRules := rules.StandardRules()
+
+		// Apply standard rules
+		for _, rule := range standardRules {
+			if a.config.IsRuleEnabled(rule.ID) {
+				findings := rule.Check(workflowFile)
+				allFindings = append(allFindings, findings...)
+			}
+		}
+
+		// Apply shell analysis
+		shellAnalyzer := shell.NewAnalyzer()
+		shellFindings := shellAnalyzer.Analyze(workflowFile)
+
+		for _, finding := range shellFindings {
+			if a.config.IsRuleEnabled(finding.RuleID) {
+				allFindings = append(allFindings, finding)
+			}
+		}
+	}
+
+	// Enhance findings with GitHub URLs
+	for i := range allFindings {
+		allFindings[i].GitHubURL = fmt.Sprintf("https://github.com/%s/%s/blob/main/%s", owner, repoName, allFindings[i].FilePath)
+
+		// Extract context fields for AI analysis (simplified version)
+		allFindings[i].Trigger = "push"      // Default trigger
+		allFindings[i].RunnerType = "github" // Default runner
+		allFindings[i].FileContext = fmt.Sprintf("Repository: %s/%s", owner, repoName)
+	}
+
+	result.Findings = allFindings
+	result.RulesCount = len(rules.StandardRules())
 	result.Duration = time.Since(startTime)
 	return result
 }

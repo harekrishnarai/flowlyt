@@ -320,6 +320,36 @@ func (c *Client) GetWorkflowFiles(owner, repo string) ([]*github.RepositoryConte
 	return workflowFiles, nil
 }
 
+// GetWorkflowFilesContents fetches all workflow files from a repository using the GitHub API.
+func (c *Client) GetWorkflowFilesContents(owner, repo string) (map[string][]byte, error) {
+	workflowFiles, err := c.GetWorkflowFiles(owner, repo)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list workflow files: %w", err)
+	}
+
+	contents := make(map[string][]byte)
+	for _, file := range workflowFiles {
+		fileContent, _, _, err := c.client.Repositories.GetContents(
+			c.ctx,
+			owner,
+			repo,
+			file.GetPath(),
+			nil,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get content for file %s: %w", file.GetPath(), err)
+		}
+
+		decodedContent, err := fileContent.GetContent()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode content of %s: %w", file.GetPath(), err)
+		}
+		contents[file.GetPath()] = []byte(decodedContent)
+	}
+
+	return contents, nil
+}
+
 // DownloadWorkflowFiles downloads workflow files to a local directory
 func (c *Client) DownloadWorkflowFiles(owner, repo, destDir string) ([]string, error) {
 	// Get workflow files
