@@ -281,6 +281,8 @@ func (v *Validator) ValidateEntropyThreshold(threshold float64) error {
 func (v *Validator) validatePathSafety(path string) error {
 	// Clean the path and check for traversal
 	cleanPath := filepath.Clean(path)
+	cleanPathUnix := filepath.ToSlash(cleanPath)
+	isAbsolute := filepath.IsAbs(cleanPath) || strings.HasPrefix(cleanPathUnix, "/")
 
 	// Check for directory traversal patterns
 	if strings.Contains(cleanPath, "..") {
@@ -288,22 +290,22 @@ func (v *Validator) validatePathSafety(path string) error {
 	}
 
 	// Check for absolute paths trying to access system directories
-	if filepath.IsAbs(cleanPath) {
+	if isAbsolute {
 		// Allow certain safe absolute paths but reject system directories
 		dangerousPaths := []string{"/etc", "/sys", "/proc", "/dev", "/root", "/usr", "/bin", "/sbin"}
 		for _, dangerous := range dangerousPaths {
-			if strings.HasPrefix(cleanPath, dangerous) {
+			if strings.HasPrefix(cleanPathUnix, dangerous) {
 				return fmt.Errorf("path accesses restricted system directory")
 			}
 		}
 
 		// Special handling for /var - allow temp directories but block others
-		if strings.HasPrefix(cleanPath, "/var") {
+		if strings.HasPrefix(cleanPathUnix, "/var") {
 			// Allow /var/folders (macOS temp), /var/tmp, etc.
 			allowedVarPaths := []string{"/var/folders", "/var/tmp"}
 			allowed := false
 			for _, allowedPath := range allowedVarPaths {
-				if strings.HasPrefix(cleanPath, allowedPath) {
+				if strings.HasPrefix(cleanPathUnix, allowedPath) {
 					allowed = true
 					break
 				}

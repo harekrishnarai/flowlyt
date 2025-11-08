@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/harekrishnarai/flowlyt/pkg/analysis/astutil"
 	"github.com/harekrishnarai/flowlyt/pkg/config"
 	"github.com/harekrishnarai/flowlyt/pkg/github"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
@@ -237,31 +238,29 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 		return result
 	}
 
-	result.WorkflowsCount = len(workflowContents)
-
-	// Perform actual workflow analysis
-	allFindings := []rules.Finding{}
-
+	workflowFiles := make([]parser.WorkflowFile, 0, len(workflowContents))
 	for filename, content := range workflowContents {
-		// Parse workflow content
 		workflow := parser.Workflow{}
 		if parseErr := yaml.Unmarshal([]byte(content), &workflow); parseErr != nil {
-			// Skip files that can't be parsed but don't fail the entire analysis
 			continue
 		}
 
-		// Create a workflow file object
-		workflowFile := parser.WorkflowFile{
+		workflowFiles = append(workflowFiles, parser.WorkflowFile{
 			Path:     filepath.Join(".github/workflows", filename),
 			Name:     filename,
 			Content:  []byte(content),
 			Workflow: workflow,
-		}
+		})
+	}
 
-		// Get standard rules for GitHub Actions
-		standardRules := rules.StandardRules()
+	result.WorkflowsCount = len(workflowFiles)
 
-		// Apply standard rules
+	// Perform actual workflow analysis
+	allFindings := []rules.Finding{}
+
+	standardRules := rules.StandardRules()
+
+	for _, workflowFile := range workflowFiles {
 		for _, rule := range standardRules {
 			if a.config.IsRuleEnabled(rule.ID) {
 				findings := rule.Check(workflowFile)
@@ -280,6 +279,25 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 		}
 	}
 
+	// Enrich using AST insights (reachability, metadata, data flow)
+	if len(workflowFiles) > 0 {
+		insights := astutil.CollectInsights(workflowFiles)
+		if len(insights) > 0 {
+			if filtered, suppressed := astutil.FilterFindingsByReachability(insights, allFindings); suppressed > 0 {
+				allFindings = filtered
+			}
+
+			allFindings = astutil.EnrichFindingsWithMetadata(allFindings, insights)
+
+			if astFlows := astutil.GenerateDataFlowFindings(insights); len(astFlows) > 0 {
+				enabled := filterEnabledByRule(astFlows, a.config)
+				if len(enabled) > 0 {
+					allFindings = append(allFindings, enabled...)
+				}
+			}
+		}
+	}
+
 	// Enhance findings with GitHub URLs
 	for i := range allFindings {
 		allFindings[i].GitHubURL = fmt.Sprintf("https://github.com/%s/%s/blob/main/%s", owner, repoName, allFindings[i].FilePath)
@@ -294,6 +312,16 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 	result.RulesCount = len(rules.StandardRules())
 	result.Duration = time.Since(startTime)
 	return result
+}
+
+func filterEnabledByRule(findings []rules.Finding, cfg *config.Config) []rules.Finding {
+	enabled := make([]rules.Finding, 0, len(findings))
+	for _, finding := range findings {
+		if cfg.IsRuleEnabled(finding.RuleID) {
+			enabled = append(enabled, finding)
+		}
+	}
+	return enabled
 }
 
 // calculateSummary computes organization-level statistics

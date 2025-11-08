@@ -245,6 +245,13 @@ func (g *Generator) createSARIFReport() SARIF {
 		},
 	}
 
+	if g.Result.SuppressedCount > 0 {
+		run.Properties["flowlyt.suppressedReachability"] = g.Result.SuppressedCount
+	}
+	if g.Result.GeneratedByAST > 0 {
+		run.Properties["flowlyt.generatedAstFindings"] = g.Result.GeneratedByAST
+	}
+
 	return SARIF{
 		Version: "2.1.0",
 		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -320,6 +327,30 @@ func (g *Generator) createSARIFResult(finding rules.Finding, ruleIndex int) SARI
 	}
 	if finding.GitLabURL != "" {
 		properties["gitlabUrl"] = finding.GitLabURL
+	}
+	if finding.RunnerType != "" {
+		properties["runnerType"] = finding.RunnerType
+	}
+	if finding.FileContext != "" {
+		properties["fileContext"] = finding.FileContext
+	}
+	if finding.AIVerified {
+		properties["ai.verified"] = true
+		if finding.AILikelyFalsePositive != nil {
+			properties["ai.likelyFalsePositive"] = *finding.AILikelyFalsePositive
+		}
+		if finding.AIConfidence > 0 {
+			properties["ai.confidence"] = finding.AIConfidence
+		}
+		if finding.AIReasoning != "" {
+			properties["ai.reasoning"] = finding.AIReasoning
+		}
+		if finding.AISuggestedSeverity != "" {
+			properties["ai.suggestedSeverity"] = finding.AISuggestedSeverity
+		}
+		if finding.AIError != "" {
+			properties["ai.error"] = finding.AIError
+		}
 	}
 
 	return SARIFResult{

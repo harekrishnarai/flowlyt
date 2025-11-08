@@ -1004,6 +1004,11 @@ func checkUnpinnedAction(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
+			// Allow trusted semantic version pins for well-known publishers
+			if isTrustedSemverReference(step.Uses) {
+				continue
+			}
+
 			// Check if the action is pinned with a commit SHA (40 hex characters)
 			shaPattern := regexp.MustCompile(`@[a-f0-9]{40}$`)
 			if !shaPattern.MatchString(step.Uses) {
@@ -1138,7 +1143,7 @@ func checkHardcodedSecretsWithConfig(workflow parser.WorkflowFile, config interf
 			}
 
 			// Enhanced filtering for false positives
-			if shouldSkipSecret(content, match[0], match[1], matchStr, config) {
+			if shouldSkipSecret(content, match[0], match[1], matchStr, workflow.Path, config) {
 				continue
 			}
 
@@ -1182,7 +1187,7 @@ func checkHardcodedSecretsWithConfig(workflow parser.WorkflowFile, config interf
 // Enhanced helper functions for advanced secret detection
 
 // shouldSkipSecret determines if a potential secret should be skipped based on context
-func shouldSkipSecret(content string, start, end int, matchStr string, config interface{}) bool {
+func shouldSkipSecret(content string, start, end int, matchStr, filePath string, config interface{}) bool {
 	// Skip if the match is a 40-char hex SHA and is used in a 'uses:' line
 	if isLikelyActionSHA(content, start, end) {
 		return true
@@ -1198,26 +1203,55 @@ func shouldSkipSecret(content string, start, end int, matchStr string, config in
 		return true
 	}
 
+	lineStart := strings.LastIndex(content[:start], "\n")
+	if lineStart == -1 {
+		lineStart = 0
+	} else {
+		lineStart++
+	}
+	lineEnd := strings.Index(content[start:], "\n")
+	if lineEnd == -1 {
+		lineEnd = len(content)
+	} else {
+		lineEnd += start
+	}
+	contextLine := content[lineStart:lineEnd]
+	contextLower := strings.ToLower(contextLine)
+
+	// Skip templated or placeholder content commonly used in docs/examples
+	if strings.Contains(matchStr, "{{") || strings.Contains(matchStr, "}}") || strings.Contains(matchStr, "<%") || strings.Contains(matchStr, "%>") {
+		return true
+	}
+
+	skipKeywords := []string{
+		"example", "placeholder", "sample", "changeme", "change-me",
+		"dummy", "template", "documentation", "tutorial",
+		"instructions", "replace-me", "todo",
+		"insert", "configure", "fill-in", "set-your", "xxx", "yyy",
+	}
+
+	for _, keyword := range skipKeywords {
+		if strings.Contains(contextLower, keyword) {
+			return true
+		}
+	}
+
+	if isAllUpperOrSnake(matchStr) && (strings.Contains(matchStr, "YOUR") || strings.Contains(matchStr, "PLACEHOLDER") || strings.Contains(matchStr, "EXAMPLE")) {
+		return true
+	}
+
+	// Skip if the match is in a docs/examples path (prevents sample workflows from flagging)
+	if looksLikeDocumentationPath(filePath) {
+		return true
+	}
+
 	// Check configuration-based ignores if config is provided
 	if config != nil {
-		// Extract context around the match for configuration checks
-		lineStart := strings.LastIndex(content[:start], "\n")
-		if lineStart == -1 {
-			lineStart = 0
-		} else {
-			lineStart++
+		if cfg, ok := config.(interface {
+			ShouldIgnoreSecret(text, context string) bool
+		}); ok && cfg.ShouldIgnoreSecret(matchStr, contextLine) {
+			return true
 		}
-		lineEnd := strings.Index(content[start:], "\n")
-		if lineEnd == -1 {
-			lineEnd = len(content)
-		} else {
-			lineEnd += start
-		}
-		context := content[lineStart:lineEnd]
-
-		// TODO: Use proper type assertion when config package is imported
-		// For now, fall back to default behavior
-		_ = context // Avoid unused variable warning
 	}
 
 	// Skip common false positives - but be more specific
@@ -1252,6 +1286,77 @@ func shouldSkipSecret(content string, start, end int, matchStr string, config in
 	// Skip if it's a URL without credentials
 	if isURLWithoutCredentials(matchStr) {
 		return true
+	}
+
+	return false
+}
+
+func isAllUpperOrSnake(s string) bool {
+	if len(s) < 6 {
+		return false
+	}
+
+	hasLetter := false
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' {
+			return false
+		}
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			hasLetter = true
+			continue
+		}
+		if r != '_' && r != '-' {
+			return false
+		}
+	}
+
+	return hasLetter
+}
+
+func looksLikeDocumentationPath(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.Contains(lower, "/docs/") ||
+		strings.Contains(lower, "/doc/") ||
+		strings.Contains(lower, "/examples/") ||
+		strings.Contains(lower, "/samples/") ||
+		strings.Contains(lower, "/test/") ||
+		strings.Contains(lower, "/tests/")
+}
+
+var (
+	semverReferencePattern    = regexp.MustCompile(`^v?\d+(\.\d+){0,2}$`)
+	trustedActionOrgPrefixes  = []string{"actions/", "github/", "microsoft/", "azure/", "google/", "hashicorp/", "aws-actions/"}
+	dockerTrustedPrefix       = "docker://"
+	trustedCompositeIndicator = "/.github/"
+)
+
+func isTrustedSemverReference(uses string) bool {
+	lower := strings.ToLower(uses)
+
+	if strings.HasPrefix(lower, dockerTrustedPrefix) {
+		// docker image versions are typically handled separately
+		return false
+	}
+
+	parts := strings.Split(lower, "@")
+	if len(parts) != 2 {
+		return false
+	}
+
+	ref := parts[1]
+	if !semverReferencePattern.MatchString(ref) {
+		return false
+	}
+
+	// Skip composite repositories that live within .github directories (usually internal)
+	if strings.Contains(parts[0], trustedCompositeIndicator) {
+		return true
+	}
+
+	for _, prefix := range trustedActionOrgPrefixes {
+		if strings.HasPrefix(parts[0], prefix) {
+			return true
+		}
 	}
 
 	return false
