@@ -186,6 +186,33 @@ func GenerateFileURL(repoURL, filePath string, lineNumber int) string {
 	return fmt.Sprintf("%s/%s/%s/-/blob/%s/%s", instanceURL, owner, repo, ref, cleanPath)
 }
 
+// GenerateFileURLWithBranch creates a GitLab URL using an explicit branch name (no SHA).
+func GenerateFileURLWithBranch(repoURL, filePath string, lineNumber int, branch string) string {
+	instanceURL, owner, repo, err := ParseRepositoryURL(repoURL)
+	if err != nil {
+		return ""
+	}
+	cleanPath := strings.ReplaceAll(filePath, "\\", "/")
+	cleanPath = strings.TrimPrefix(cleanPath, "/")
+	if strings.HasSuffix(cleanPath, ".gitlab-ci.yml") {
+		cleanPath = ".gitlab-ci.yml"
+	} else if strings.HasSuffix(cleanPath, ".gitlab-ci.yaml") {
+		cleanPath = ".gitlab-ci.yaml"
+	} else if idx := strings.Index(cleanPath, ".github/workflows/"); idx != -1 {
+		// When scanning a mixed repo locally, still trim any temp prefix
+		cleanPath = cleanPath[idx:]
+	} else if idx := strings.Index(cleanPath, "/.github/workflows/"); idx != -1 {
+		cleanPath = cleanPath[idx+1:]
+	}
+	if strings.TrimSpace(branch) == "" {
+		branch = "master"
+	}
+	if lineNumber > 0 {
+		return fmt.Sprintf("%s/%s/%s/-/blob/%s/%s#L%d", instanceURL, owner, repo, branch, cleanPath, lineNumber)
+	}
+	return fmt.Sprintf("%s/%s/%s/-/blob/%s/%s", instanceURL, owner, repo, branch, cleanPath)
+}
+
 func detectGitLabRef(instanceURL, owner, repo string) string {
 	// Prefer CI SHA if available
 	if sha := strings.TrimSpace(os.Getenv("CI_COMMIT_SHA")); sha != "" {

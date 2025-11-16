@@ -87,6 +87,11 @@ func main() {
 						Value:   constants.DefaultOutputFormat,
 					},
 					&cli.StringFlag{
+						Name:  "branch",
+						Usage: "Branch name to use for file links (defaults to 'main')",
+						Value: "main",
+					},
+					&cli.StringFlag{
 						Name:  "output-file",
 						Usage: "Output file path (default: stdout)",
 					},
@@ -544,15 +549,23 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 
 	// Enhance findings with GitHub URLs if scanning a remote GitHub repository
 	if repoURL != "" && github.IsGitHubRepository(repoURL) {
+		branch := c.String("branch")
+		if strings.TrimSpace(branch) == "" {
+			branch = "main"
+		}
 		for i := range findings {
-			findings[i].GitHubURL = github.GenerateFileURL(repoURL, findings[i].FilePath, findings[i].LineNumber)
+			findings[i].GitHubURL = github.GenerateFileURLWithBranch(repoURL, findings[i].FilePath, findings[i].LineNumber, branch)
 		}
 	}
 
 	// Enhance findings with GitLab URLs if scanning a remote GitLab repository
 	if repoURL != "" && gitlab.IsGitLabURL(repoURL) {
+		branch := c.String("branch")
+		if strings.TrimSpace(branch) == "" {
+			branch = "main"
+		}
 		for i := range findings {
-			findings[i].GitLabURL = gitlab.GenerateFileURL(repoURL, findings[i].FilePath, findings[i].LineNumber)
+			findings[i].GitLabURL = gitlab.GenerateFileURLWithBranch(repoURL, findings[i].FilePath, findings[i].LineNumber, branch)
 		}
 	}
 

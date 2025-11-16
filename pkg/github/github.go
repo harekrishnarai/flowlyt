@@ -461,15 +461,18 @@ func GenerateFileURL(repoURL, filePath string, lineNumber int) string {
 		return ""
 	}
 
-	// Remove leading slash and any temporary directory prefixes from file path
-	cleanPath := strings.TrimPrefix(filePath, "/")
-
-	// Remove common temporary directory patterns
-	// Example: /var/folders/.../flowlyt-owner-repo12345/.github/workflows/file.yml -> .github/workflows/file.yml
+	// Normalize path separators and strip any temp prefixes so URLs never include local paths
+	cleanPath := strings.ReplaceAll(filePath, "\\", "/")
+	cleanPath = strings.TrimPrefix(cleanPath, "/")
+	// If the path contains a workflow root, slice from there
 	if idx := strings.Index(cleanPath, ".github/workflows/"); idx != -1 {
 		cleanPath = cleanPath[idx:]
-	} else if idx := strings.Index(cleanPath, ".gitlab-ci.yml"); idx != -1 {
+	} else if idx := strings.Index(cleanPath, "/.github/workflows/"); idx != -1 {
+		cleanPath = cleanPath[idx+1:]
+	} else if strings.HasSuffix(cleanPath, ".gitlab-ci.yml") {
 		cleanPath = ".gitlab-ci.yml"
+	} else if strings.HasSuffix(cleanPath, ".gitlab-ci.yaml") {
+		cleanPath = ".gitlab-ci.yaml"
 	}
 
 	// Detect best ref: prefer SHA, then explicit ref, then default branch
@@ -486,6 +489,32 @@ func GenerateFileURL(repoURL, filePath string, lineNumber int) string {
 // IsGitHubRepository checks if a repository URL is a GitHub repository
 func IsGitHubRepository(repoURL string) bool {
 	return strings.Contains(repoURL, "github.com")
+}
+
+// GenerateFileURLWithBranch creates a GitHub URL using an explicit branch name (no SHA).
+func GenerateFileURLWithBranch(repoURL, filePath string, lineNumber int, branch string) string {
+	owner, repo, err := ParseRepositoryURL(repoURL)
+	if err != nil {
+		return ""
+	}
+	cleanPath := strings.ReplaceAll(filePath, "\\", "/")
+	cleanPath = strings.TrimPrefix(cleanPath, "/")
+	if idx := strings.Index(cleanPath, ".github/workflows/"); idx != -1 {
+		cleanPath = cleanPath[idx:]
+	} else if idx := strings.Index(cleanPath, "/.github/workflows/"); idx != -1 {
+		cleanPath = cleanPath[idx+1:]
+	} else if strings.HasSuffix(cleanPath, ".gitlab-ci.yml") {
+		cleanPath = ".gitlab-ci.yml"
+	} else if strings.HasSuffix(cleanPath, ".gitlab-ci.yaml") {
+		cleanPath = ".gitlab-ci.yaml"
+	}
+	if strings.TrimSpace(branch) == "" {
+		branch = "main"
+	}
+	if lineNumber > 0 {
+		return fmt.Sprintf("https://github.com/%s/%s/blob/%s/%s#L%d", owner, repo, branch, cleanPath, lineNumber)
+	}
+	return fmt.Sprintf("https://github.com/%s/%s/blob/%s/%s", owner, repo, branch, cleanPath)
 }
 
 // detectGitHubRef determines the best ref (prefer immutable SHA, else default branch)
