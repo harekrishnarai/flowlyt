@@ -38,6 +38,9 @@ type Analyzer struct {
 	// optional persistent cache across runs
 	cacheFilePath string
 	persistCache  map[string]*VerificationResult // fp -> result
+
+	// for progress / logging
+	provider Provider
 }
 
 // NewAnalyzer creates a new AI analyzer
@@ -64,6 +67,7 @@ func NewAnalyzer(client Client, maxWorkers int, timeout time.Duration) *Analyzer
 		excludeRules:  exclude,
 		cacheFilePath: cachePath,
 		persistCache:  make(map[string]*VerificationResult, 256),
+		provider:      client.GetProvider(),
 	}
 }
 
@@ -123,8 +127,15 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 
 	// Collect results
 	enhancedFindings := make([]EnhancedFinding, 0, len(findings))
+	total := len(filtered)
+	completed := 0
 	for result := range resultsChan {
 		enhancedFindings = append(enhancedFindings, result)
+		completed++
+		// Lightweight progress indicator for CLI users
+		if completed == total || completed%10 == 0 {
+			fmt.Printf("🤖 AI (%s): %d/%d findings analyzed\r\n", a.provider, completed, total)
+		}
 	}
 
 	// Check if context was cancelled

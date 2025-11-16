@@ -51,6 +51,8 @@ type grokError struct {
 	Code any `json:"code"`
 }
 
+const grokSystemPrompt = "You are a CI/CD security assistant. Respond ONLY with a single JSON object that matches the requested schema. Do not include any prose, markdown, comments, or additional text outside the JSON object."
+
 // NewGrokClient creates a new Grok client
 func NewGrokClient(config Config) (*GrokClient, error) {
 	if config.APIKey == "" {
@@ -111,7 +113,7 @@ func (c *GrokClient) VerifyFinding(ctx context.Context, finding rules.Finding) (
 		Messages: []grokMessage{
 			{
 				Role:    "system",
-				Content: "You are a cybersecurity expert analyzing CI/CD security findings. Your task is to determine if a security finding is a false positive or a true positive. Respond only with valid JSON.",
+				Content: grokSystemPrompt,
 			},
 			{
 				Role:    "user",
@@ -125,34 +127,46 @@ func (c *GrokClient) VerifyFinding(ctx context.Context, finding rules.Finding) (
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	const maxRetries = 3
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to make request: %w", err)
+		} else {
+			defer resp.Body.Close()
+
+			var response grokResponse
+			if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+				lastErr = fmt.Errorf("failed to decode response: %w", err)
+			} else if response.Error != nil {
+				lastErr = fmt.Errorf("Grok API error: %s", response.Error.Message)
+			} else if len(response.Choices) == 0 {
+				lastErr = fmt.Errorf("no response from Grok")
+			} else {
+				return c.parseResponse(response.Choices[0].Message.Content)
+			}
+		}
+
+		if attempt < maxRetries-1 {
+			backoff := time.Duration(1<<attempt) * time.Second
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return nil, fmt.Errorf("Grok request cancelled during backoff: %w", ctx.Err())
+			}
+		}
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var response grokResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if response.Error != nil {
-		return nil, fmt.Errorf("Grok API error: %s", response.Error.Message)
-	}
-
-	if len(response.Choices) == 0 {
-		return nil, fmt.Errorf("no response from Grok")
-	}
-
-	return c.parseResponse(response.Choices[0].Message.Content)
+	return nil, lastErr
 }
 
 // buildPrompt creates the analysis prompt for the AI
