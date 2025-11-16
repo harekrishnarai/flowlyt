@@ -112,6 +112,28 @@ flowlyt scan ./my-repo \
   --ai-timeout 60
 ```
 
+### Authenticated Remote Scans (GitHub/GitLab)
+
+Unauthenticated API calls to GitHub/GitLab are heavily rate limited. For reliable `--url` scans, provide a token via environment variable or CLI flag.
+
+```bash
+# GitHub: use environment variable
+export GITHUB_TOKEN=ghp_your_token_here
+flowlyt scan --url https://github.com/step-security/github-actions-goat \
+  --output json --output-file results.json
+
+# GitHub: or via flag (overrides env)
+flowlyt scan --url https://github.com/step-security/github-actions-goat \
+  --github-token ghp_your_token_here \
+  --output json --output-file results-with-token.json
+
+# GitLab: SaaS or self-hosted
+export GITLAB_TOKEN=glpat_your_token_here
+flowlyt scan --platform gitlab \
+  --url https://gitlab.com/owner/repo \
+  --gitlab-token glpat_your_token_here
+```
+
 ### 🔑 API Key Setup (BYOK)
 
 | Provider | Get API Key | Environment Variable |

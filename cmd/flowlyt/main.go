@@ -81,6 +81,16 @@ func main() {
 						Usage:   "Specific workflow file to scan",
 					},
 					&cli.StringFlag{
+						Name:    "github-token",
+						Usage:   "GitHub personal access token for remote scans (overrides GITHUB_TOKEN)",
+						EnvVars: []string{"GITHUB_TOKEN"},
+					},
+					&cli.StringFlag{
+						Name:    "gitlab-token",
+						Usage:   "GitLab personal access token for remote scans (overrides GITLAB_TOKEN)",
+						EnvVars: []string{"GITLAB_TOKEN"},
+					},
+					&cli.StringFlag{
 						Name:    "output",
 						Aliases: []string{"o"},
 						Usage:   "Output format (json, yaml, table, sarif)",
@@ -386,9 +396,15 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 				return "", nil, parseErr
 			}
 
-			client := github.NewClient()
+			// Prefer explicit token flag, falling back to env/gh auth
+			var ghClient *github.Client
+			if token := c.String("github-token"); token != "" {
+				ghClient = github.NewClientWithToken(token)
+			} else {
+				ghClient = github.NewClient()
+			}
 			fmt.Printf("� Downloading workflow files from GitHub repository: %s/%s\n", owner, repo)
-			workflowContents, err = client.GetWorkflowFilesContents(owner, repo)
+			workflowContents, err = ghClient.GetWorkflowFilesContents(owner, repo)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to fetch workflow files from %s: %w", repoURL, err)
 			}
@@ -833,6 +849,14 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	cfg, err := loadAndOverrideConfig(c, outputFormat, outputFile)
 	if err != nil {
 		return err
+	}
+
+	// If explicit tokens are provided, ensure they are visible to helpers that read env
+	if ghTok := c.String("github-token"); strings.TrimSpace(ghTok) != "" {
+		os.Setenv("GITHUB_TOKEN", ghTok)
+	}
+	if glTok := c.String("gitlab-token"); strings.TrimSpace(glTok) != "" {
+		os.Setenv("GITLAB_TOKEN", glTok)
 	}
 
 	// Get the repository path, URL, or workflow file
