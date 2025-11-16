@@ -11,19 +11,23 @@ Based on the comparison with Zizmor, I've implemented critical missing features 
 **Status:** ✅ **IMPLEMENTED**
 
 **What was added:**
+
 - Detection of missing `persist-credentials: false` in `actions/checkout` steps
 - This prevents credentials from persisting in artifacts
 
 **Implementation:**
+
 - Enhanced `checkArtipackedVulnerability()` function in `pkg/rules/rules.go`
 - Checks all `actions/checkout` steps for `persist-credentials: false`
 - Flags as HIGH severity if missing or set to `true`
 
 **Expected Impact:**
+
 - Will detect ~26 findings (matching Zizmor's count)
 - Critical security issue - credentials can leak through artifacts
 
 **Example Detection:**
+
 ```yaml
 # ❌ Will be flagged:
 - uses: actions/checkout@v4
@@ -39,21 +43,25 @@ Based on the comparison with Zizmor, I've implemented critical missing features 
 **Status:** ✅ **IMPLEMENTED**
 
 **What was added:**
+
 - Detection of missing `permissions: block` at workflow level
 - Detection of missing `permissions: block` at job level
 - Detection of `write-all` permissions at job level
 - Better context for permission issues
 
 **Implementation:**
+
 - Enhanced `checkBroadPermissions()` function in `pkg/rules/rules.go`
 - Checks for missing permissions (defaults to write-all in GitHub Actions)
 - Flags both workflow-level and job-level permission issues
 
 **Expected Impact:**
+
 - Will detect ~23 findings (matching Zizmor's count)
 - Prevents overly broad permissions that violate least privilege
 
 **Example Detection:**
+
 ```yaml
 # ❌ Will be flagged (missing permissions):
 jobs:
@@ -75,6 +83,7 @@ jobs:
 ### Priority 1 (Critical - Still Missing)
 
 1. **Known Vulnerable Actions (CVE Database Integration)**
+
    - **Status:** ⚠️ **NOT IMPLEMENTED**
    - **Impact:** Zizmor detected 7 actions with known CVEs (e.g., `GHSA-mrrh-fwg8-r2c3`)
    - **Recommendation:** Integrate OSV.dev or GHSA API to check action versions
@@ -90,6 +99,7 @@ jobs:
 ### Priority 2 (False Positive Reduction)
 
 3. **REF_CONFUSION Rule Tuning**
+
    - **Status:** ⚠️ **NEEDS TUNING**
    - **Issue:** 64 findings - many may be false positives
    - **Recommendation:**
@@ -98,6 +108,7 @@ jobs:
      - Add allow-list for verified actions
 
 4. **UNTRUSTED_ACTION_SOURCE Tuning**
+
    - **Status:** ⚠️ **NEEDS TUNING**
    - **Issue:** 42 findings - many legitimate actions from individual developers
    - **Recommendation:**
@@ -106,6 +117,7 @@ jobs:
      - Only flag as HIGH for truly suspicious patterns
 
 5. **EXTERNAL_TRIGGER_DEBUG Tuning**
+
    - **Status:** ⚠️ **NEEDS TUNING**
    - **Issue:** 21 findings - includes `workflow_dispatch` which is often legitimate
    - **Recommendation:**
@@ -121,11 +133,13 @@ jobs:
 ## 📊 Expected Results After Implementation
 
 ### Before (Current):
+
 - **Total Findings:** 215
 - **Missing Critical Features:** 3 (credential persistence, CVE database, enhanced permissions)
 - **False Positives:** ~30-40% (estimated)
 
 ### After (With Implemented Features):
+
 - **Total Findings:** ~240-250 (with new detections)
 - **New Detections:**
   - ~26 credential persistence findings
@@ -133,6 +147,7 @@ jobs:
 - **Missing Features:** 1 (CVE database for actions)
 
 ### After Full Implementation (Including Tuning):
+
 - **Total Findings:** ~120-150 (after false positive reduction)
 - **False Positives:** ~10-15% (estimated)
 - **Coverage:** Matches or exceeds Zizmor's capabilities
@@ -140,15 +155,18 @@ jobs:
 ## 🎯 Next Steps
 
 1. **Test the new implementations:**
+
    ```bash
    .\flowlyt.exe scan --url https://github.com/step-security/github-actions-goat --no-banner
    ```
 
 2. **Verify new findings:**
+
    - Check for `ARTIPACKED_VULNERABILITY` findings (should see ~26)
    - Check for `BROAD_PERMISSIONS` findings (should see ~23)
 
 3. **Implement CVE Database Integration:**
+
    - Research OSV.dev API for action vulnerabilities
    - Create new rule or enhance existing vulnerability intelligence
    - Test with known vulnerable actions
@@ -161,27 +179,32 @@ jobs:
 ## 📝 Code Changes Summary
 
 ### Files Modified:
+
 1. **`pkg/rules/rules.go`**
    - Enhanced `checkArtipackedVulnerability()` - Added `persist-credentials` detection
    - Enhanced `checkBroadPermissions()` - Added missing permissions detection
 
 ### New Detection Capabilities:
+
 - ✅ Credential persistence through artifacts
 - ✅ Missing permissions blocks (workflow and job level)
 - ✅ Job-level `write-all` permissions
 
 ### Lines of Code Added:
+
 - ~80 lines in `checkArtipackedVulnerability()`
 - ~100 lines in `checkBroadPermissions()`
 
 ## 🔍 Testing Recommendations
 
 1. **Test on github-actions-goat:**
+
    ```bash
    .\flowlyt.exe scan --url https://github.com/step-security/github-actions-goat --no-banner --output json --output-file results.json
    ```
 
 2. **Compare with Zizmor:**
+
    - Verify credential persistence findings match
    - Verify permissions findings match
    - Check for any new false positives
@@ -201,16 +224,79 @@ jobs:
 ## Conclusion
 
 **Implemented:**
+
 - ✅ Credential persistence detection (matching Zizmor)
 - ✅ Enhanced permissions detection (matching Zizmor)
 
 **Remaining:**
+
 - ⚠️ CVE database integration for actions
 - ⚠️ False positive reduction through rule tuning
 
 **Impact:**
+
 - Flowlyt now matches Zizmor's core detection capabilities
 - Still maintains broader rule coverage (46+ rules vs 6 rules)
 - AST-based analysis remains a unique advantage
 
+---
 
+## Previously Implemented (Foundational) Improvements
+
+These improvements were completed in prior iterations and are already live in the codebase. They underpin the accuracy, cost efficiency, and UX of scans. See also: `AI_IMPROVEMENTS.md`, `IMPLEMENTATION_SUMMARY.md`, and `COMMANDS.md`.
+
+### A) AI Efficiency & Quality
+
+- Shared compact prompt template (`pkg/ai/prompt.go`) used by all providers.
+- In‑run de‑duplication of AI calls via fingerprint cache (`pkg/ai/analyzer.go`).
+- AI scope control via environment:
+  - `AI_MIN_SEVERITY`, `AI_INCLUDE_RULES`, `AI_EXCLUDE_RULES`.
+- Persistent AI cache across runs (JSONL) with `AI_CACHE_FILE`.
+- OpenAI guardrails:
+  - `response_format: { "type": "json_object" }` to ensure parsable JSON.
+  - Dynamic `max_tokens` based on prompt size to reduce cost/time.
+- Evidence trimming in prompts to avoid oversized requests.
+
+Verification:
+
+```powershell
+$env:AI_MIN_SEVERITY = "MEDIUM"
+$env:AI_CACHE_FILE = ".flowlyt-ai-cache.jsonl"
+.\flowlyt.exe scan --url https://github.com/step-security/github-actions-goat --no-banner --ai openai
+.\flowlyt.exe scan --url https://github.com/step-security/github-actions-goat --no-banner --ai openai  # second run should reuse cache
+```
+
+### B) Correct, Branch/SHA‑Aware File URLs
+
+- GitHub and GitLab URL builders now prefer commit SHA if available, otherwise fall back to branch (and detect default branch via API/local git).
+- Organization scan updated to use the same ref‑aware URL builder.
+- Eliminates broken links caused by hardcoded `main/master`.
+
+Verification:
+
+```powershell
+.\flowlyt.exe scan --url https://github.com/<owner>/<repo-with-master-default> --no-banner --output json --output-file results.json
+# Inspect findings -> urls should use /blob/master/... or /blob/<sha>/...
+```
+
+### C) False‑Positive Hygiene
+
+- Real glob‑matching for ignores via `doublestar` (config‑driven).
+- Secrets rule respects placeholders and project config (reduced noise).
+- Unpinned‑action rule trusts well‑known first‑party actions using semantic versions.
+
+### D) AST Insight Layer & Reachability
+
+- Single‑pass AST insight collection reused by CLI and org scans.
+- Reachability filtering prunes findings from unreachable jobs/steps.
+- Enrichment with runner/trigger context; sensitive data‑flow findings generated.
+
+Impact:
+
+- Lower noise, higher precision, and clearer context in reports.
+
+### E) Documentation & Commands
+
+- `COMMANDS.md` for quick usage, examples, and troubleshooting.
+- `AI_IMPROVEMENTS.md` for AI configuration and behavior details.
+- `IMPLEMENTATION_SUMMARY.md` for a concise changelog of recent non‑SARIF work.
