@@ -23,8 +23,8 @@ type ScanResult struct {
 	RulesCount      int             `json:"rulesCount"`
 	Findings        []rules.Finding `json:"findings"`
 	Summary         ResultSummary   `json:"summary"`
-	SuppressedCount int             `json:"suppressedCount,omitempty"`
-	GeneratedByAST  int             `json:"astGeneratedCount,omitempty"`
+	SuppressedCount int             `json:"suppressedCount"`
+	GeneratedByAST  int             `json:"astGeneratedCount"`
 }
 
 // ResultSummary provides a summary of the scan findings by severity
