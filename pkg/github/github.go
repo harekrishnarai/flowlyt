@@ -3,7 +3,10 @@ package github
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -469,16 +472,85 @@ func GenerateFileURL(repoURL, filePath string, lineNumber int) string {
 		cleanPath = ".gitlab-ci.yml"
 	}
 
-	if lineNumber > 0 {
-		return fmt.Sprintf("https://github.com/%s/%s/blob/main/%s#L%d", owner, repo, cleanPath, lineNumber)
+	// Detect best ref: prefer SHA, then explicit ref, then default branch
+	ref := detectGitHubRef(owner, repo)
+	if ref == "" {
+		ref = "main"
 	}
-
-	return fmt.Sprintf("https://github.com/%s/%s/blob/main/%s", owner, repo, cleanPath)
+	if lineNumber > 0 {
+		return fmt.Sprintf("https://github.com/%s/%s/blob/%s/%s#L%d", owner, repo, ref, cleanPath, lineNumber)
+	}
+	return fmt.Sprintf("https://github.com/%s/%s/blob/%s/%s", owner, repo, ref, cleanPath)
 }
 
 // IsGitHubRepository checks if a repository URL is a GitHub repository
 func IsGitHubRepository(repoURL string) bool {
 	return strings.Contains(repoURL, "github.com")
+}
+
+// detectGitHubRef determines the best ref (prefer immutable SHA, else default branch)
+func detectGitHubRef(owner, repo string) string {
+	// Prefer explicit CI env
+	if sha := strings.TrimSpace(os.Getenv("GITHUB_SHA")); sha != "" {
+		return sha
+	}
+	// GitHub Actions: branch or tag name
+	if rn := strings.TrimSpace(os.Getenv("GITHUB_REF_NAME")); rn != "" {
+		return rn
+	}
+	// Try local git HEAD
+	if head := localGitHeadSHA(); head != "" {
+		return head
+	}
+	// Fallback: repository default branch via API
+	if def := fetchGitHubDefaultBranch(owner, repo); def != "" {
+		return def
+	}
+	return ""
+}
+
+func localGitHeadSHA() string {
+	if _, err := exec.LookPath("git"); err != nil {
+		return ""
+	}
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func fetchGitHubDefaultBranch(owner, repo string) string {
+	reqURL := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return ""
+	}
+	// Add token if available to increase rate limits
+	if tok := strings.TrimSpace(os.Getenv("GITHUB_TOKEN")); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ""
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+	var obj struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(obj.DefaultBranch)
 }
 
 // RepositoryFilter defines criteria for filtering repositories during organization analysis

@@ -2,12 +2,16 @@ package gitlab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Client represents a GitLab repository client
@@ -171,10 +175,93 @@ func GenerateFileURL(repoURL, filePath string, lineNumber int) string {
 		cleanPath = ".gitlab-ci.yaml"
 	}
 
-	// Build GitLab URL format: https://gitlab.com/owner/repo/-/blob/master/file.yml?ref_type=heads#L123
-	if lineNumber > 0 {
-		return fmt.Sprintf("%s/%s/%s/-/blob/master/%s?ref_type=heads#L%d", instanceURL, owner, repo, cleanPath, lineNumber)
+	// Determine best ref (SHA > branch > default)
+	ref := detectGitLabRef(instanceURL, owner, repo)
+	if ref == "" {
+		ref = "master"
 	}
+	if lineNumber > 0 {
+		return fmt.Sprintf("%s/%s/%s/-/blob/%s/%s#L%d", instanceURL, owner, repo, ref, cleanPath, lineNumber)
+	}
+	return fmt.Sprintf("%s/%s/%s/-/blob/%s/%s", instanceURL, owner, repo, ref, cleanPath)
+}
 
-	return fmt.Sprintf("%s/%s/%s/-/blob/master/%s?ref_type=heads", instanceURL, owner, repo, cleanPath)
+func detectGitLabRef(instanceURL, owner, repo string) string {
+	// Prefer CI SHA if available
+	if sha := strings.TrimSpace(os.Getenv("CI_COMMIT_SHA")); sha != "" {
+		return sha
+	}
+	// Branch name in CI
+	if br := strings.TrimSpace(os.Getenv("CI_COMMIT_REF_NAME")); br != "" {
+		return br
+	}
+	// Try local git HEAD
+	if head := localGitHeadSHA(); head != "" {
+		return head
+	}
+	// Fallback to default_branch via API
+	if def := fetchGitLabDefaultBranch(instanceURL, owner, repo); def != "" {
+		return def
+	}
+	return ""
+}
+
+func fetchGitLabDefaultBranch(instanceURL, owner, repo string) string {
+	// GET /api/v4/projects/:id  where :id is URL-encoded "namespace/project"
+	project := url.QueryEscape(fmt.Sprintf("%s/%s", owner, repo))
+	reqURL := fmt.Sprintf("%s/api/v4/projects/%s", strings.TrimRight(instanceURL, "/"), project)
+	req, err := http.NewRequest("GET", reqURL, nil)
+	if err != nil {
+		return ""
+	}
+	if tok := strings.TrimSpace(getenvCompat("GITLAB_TOKEN")); tok != "" {
+		req.Header.Set("PRIVATE-TOKEN", tok)
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return ""
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+	var obj struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(obj.DefaultBranch)
+}
+
+var netHttpClient http.Client
+
+func localGitHeadSHA() string {
+	if _, err := exec.LookPath("git"); err != nil {
+		return ""
+	}
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func getenvCompat(k string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	if v := os.Getenv(strings.ToLower(k)); v != "" {
+		return v
+	}
+	if v := os.Getenv(strings.ToUpper(k)); v != "" {
+		return v
+	}
+	return ""
 }

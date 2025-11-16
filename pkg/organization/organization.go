@@ -298,13 +298,13 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 		}
 	}
 
-	// Enhance findings with GitHub URLs
+	// Enhance findings with GitHub URLs using branch/sha-aware builder
+	repoRefURL := fmt.Sprintf("https://github.com/%s/%s", owner, repoName)
 	for i := range allFindings {
-		allFindings[i].GitHubURL = fmt.Sprintf("https://github.com/%s/%s/blob/main/%s", owner, repoName, allFindings[i].FilePath)
-
-		// Extract context fields for AI analysis (simplified version)
-		allFindings[i].Trigger = "push"      // Default trigger
-		allFindings[i].RunnerType = "github" // Default runner
+		allFindings[i].GitHubURL = github.GenerateFileURL(repoRefURL, allFindings[i].FilePath, allFindings[i].LineNumber)
+		// Extract context fields for AI analysis (simplified defaults)
+		allFindings[i].Trigger = "push"
+		allFindings[i].RunnerType = "github"
 		allFindings[i].FileContext = fmt.Sprintf("Repository: %s/%s", owner, repoName)
 	}
 

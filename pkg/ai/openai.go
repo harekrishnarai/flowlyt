@@ -28,6 +28,9 @@ type openAIRequest struct {
 	Messages    []message `json:"messages"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
 	Temperature float64   `json:"temperature,omitempty"`
+	ResponseFmt *struct {
+		Type string `json:"type"`
+	} `json:"response_format,omitempty"`
 }
 
 type message struct {
@@ -36,7 +39,7 @@ type message struct {
 }
 
 type openAIResponse struct {
-	Choices []choice `json:"choices"`
+	Choices []choice  `json:"choices"`
 	Error   *apiError `json:"error,omitempty"`
 }
 
@@ -102,16 +105,32 @@ func (c *OpenAIClient) GetProvider() Provider {
 // VerifyFinding analyzes a finding using OpenAI
 func (c *OpenAIClient) VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error) {
 	prompt := c.buildPrompt(finding)
-	
+
+	// Dynamic token guardrail: estimate prompt tokens and reserve headroom
+	// Rough heuristic: ~4 chars per token
+	promptTokens := len(prompt) / 4
+	if promptTokens < 1 {
+		promptTokens = 1
+	}
+	contextWindow := 128000 // gpt-4o-mini nominal context
+	// Reserve 1024 tokens headroom for safety
+	available := contextWindow - promptTokens - 1024
+	if available < 256 {
+		available = 256
+	}
+	dynamicMax := c.maxTokens
+	if dynamicMax == 0 || dynamicMax > available {
+		dynamicMax = available
+	}
+
 	req := openAIRequest{
 		Model:       c.model,
-		MaxTokens:   c.maxTokens,
+		MaxTokens:   dynamicMax,
 		Temperature: c.temperature,
+		ResponseFmt: &struct {
+			Type string `json:"type"`
+		}{Type: "json_object"},
 		Messages: []message{
-			{
-				Role:    "system",
-				Content: "You are a cybersecurity expert analyzing CI/CD security findings. Your task is to determine if a security finding is a false positive or a true positive. Respond only with valid JSON.",
-			},
 			{
 				Role:    "user",
 				Content: prompt,
@@ -155,83 +174,9 @@ func (c *OpenAIClient) VerifyFinding(ctx context.Context, finding rules.Finding)
 }
 
 func (c *OpenAIClient) buildPrompt(finding rules.Finding) string {
-	return fmt.Sprintf(`You are a cybersecurity expert specializing in CI/CD security, GitHub Actions hardening, and software supply chain security. Analyze this finding and determine if it's a false positive or true positive.
-
-IMPORTANT CONTEXT:
-- This analysis is performed on a repository that was temporarily cloned to a /tmp/ directory for scanning
-- File paths containing /tmp/ are normal and expected - they do not indicate the actual repository location
-- Focus on the security implications of the CI/CD configuration, not the temporary file location
-- **Workflow Trigger:** The workflow was triggered by a '%s' event. This is crucial for understanding the context of the execution.
-- **Runner Type:** The job is running on a '%s' runner. Pay special attention to self-hosted runners as they have different security implications.
-- **File Context:** The finding was found in a file that appears to be part of '%s'. This can help differentiate between production code, tests, and examples.
-
-Finding Details:
-- Rule: %s (%s)
-- Description: %s
-- Severity: %s
-- Category: %s
-- File: %s
-- Job: %s
-- Step: %s
-- Evidence: %s
-
-Please analyze this finding and respond with JSON in this exact format:
-{
-  "is_likely_false_positive": boolean,
-  "confidence": float (0.0 to 1.0),
-  "reasoning": "detailed explanation of your analysis",
-  "suggested_severity": "CRITICAL|HIGH|MEDIUM|LOW|INFO (only if you suggest a different severity)"
+	return composeFindingPrompt(finding)
 }
 
-Analyze from these critical security perspectives:
-
-1. GITHUB ACTIONS HARDENING:
-   - Are actions pinned to specific SHA commits to prevent supply chain attacks?
-   - Are dangerous permissions (write, admin) properly scoped?
-   - Are secrets handled securely and not exposed in logs?
-   - Are workflow triggers properly restricted to prevent abuse?
-
-2. SOFTWARE SUPPLY CHAIN SECURITY:
-   - Can this configuration lead to dependency confusion attacks?
-   - Are third-party actions from trusted publishers or properly vetted?
-   - Could malicious code be injected through compromised dependencies?
-   - Are build artifacts properly signed and verified?
-
-3. RUNNER COMPROMISE & ATTACK VECTORS:
-   - Could this configuration allow lateral movement if a runner is compromised?
-   - Are self-hosted runners properly isolated and secured?
-   - Can attackers persist in the environment or access other repositories?
-   - Could this lead to credential theft or privilege escalation?
-
-4. CI/CD PIPELINE SECURITY:
-   - Is the evidence actually indicative of a security risk in the CI/CD pipeline?
-   - Could this be legitimate usage in a CI/CD context?
-   - Is the severity appropriate for the actual risk level?
-   - Are there any context clues that suggest this is intentional/safe?
-   - Does the /tmp/ path indicate a temporary scanning location rather than a security issue?
-
-SEVERITY GUIDELINES:
-- CRITICAL: Direct code execution, credential exposure, or full environment compromise
-- HIGH: Supply chain compromise, privilege escalation, or significant attack surface
-- MEDIUM: Configuration weaknesses that could facilitate attacks
-- LOW: Minor security hygiene issues or potential information disclosure
-- INFO: Best practice violations with minimal security impact
-
-Be conservative - prefer false positive over missing real threats, especially for supply chain risks.`,
-		finding.Trigger, // Pass the trigger type
-		finding.RunnerType, // Pass the runner type
-		finding.FileContext, // Pass the file context (e.g., 'production', 'test', 'example')
-		finding.RuleName,
-		finding.RuleID,
-		finding.Description,
-		string(finding.Severity),
-		string(finding.Category),
-		finding.FilePath,
-		finding.JobName,
-		finding.StepName,
-		finding.Evidence,
-	)
-}
 // parseResponse parses the AI response into a VerificationResult
 func (c *OpenAIClient) parseResponse(content string) (*VerificationResult, error) {
 	var result VerificationResult
