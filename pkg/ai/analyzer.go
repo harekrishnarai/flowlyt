@@ -3,6 +3,8 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"strings"
@@ -214,15 +216,11 @@ func fingerprintFinding(f rules.Finding) string {
 }
 
 func hashEvidence(s string) string {
-	const n = 256
-	// Simple, fast hash to avoid pulling crypto into hot path
-	h := uint64(1469598103934665603) // FNV-1a offset
-	for i := 0; i < len(s); i++ {
-		h ^= uint64(s[i])
-		h *= 1099511628211
+	if len(s) == 0 {
+		return "evidence:none"
 	}
-	// Return fixed-size text
-	return fmt.Sprintf("%x", h)[:n/4]
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:]) // 64 hex chars
 }
 
 // shouldSendToAI decides if a finding should be sent to AI based on configured severity/rule filters.
