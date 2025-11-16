@@ -50,7 +50,8 @@ type choice struct {
 type apiError struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
-	Code    string `json:"code"`
+	// Code can be numeric or string depending on OpenAI response, so keep it generic.
+	Code any `json:"code"`
 }
 
 // NewOpenAIClient creates a new OpenAI client

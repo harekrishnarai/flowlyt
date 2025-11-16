@@ -47,7 +47,8 @@ type grokChoice struct {
 type grokError struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
-	Code    string `json:"code"`
+	// Code may be numeric or string depending on xAI response, so allow any.
+	Code any `json:"code"`
 }
 
 // NewGrokClient creates a new Grok client

@@ -62,7 +62,8 @@ type perplexityUsage struct {
 type perplexityError struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
-	Code    string `json:"code"`
+	// Code can be numeric or string depending on Perplexity response, so keep it generic.
+	Code any `json:"code"`
 }
 
 // NewPerplexityClient creates a new Perplexity client
