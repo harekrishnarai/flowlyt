@@ -6,7 +6,7 @@ import "os"
 const (
 	// Version information
 	AppName    = "flowlyt"
-	AppVersion = "0.0.6"
+	AppVersion = "0.0.7"
 	AppUsage   = "Multi-Platform CI/CD Security Analyzer"
 
 	// Default configuration values

@@ -24,7 +24,7 @@ sudo mv flowlyt /usr/local/bin/
 GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 
 # Alternative: install specific version
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v0.0.6
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v0.0.7
 ```
 
 This installs the `flowlyt` binary to your `$GOPATH/bin` directory. Ensure `$GOPATH/bin` is in your system's `PATH`.
