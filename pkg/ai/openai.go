@@ -28,6 +28,9 @@ type openAIRequest struct {
 	Messages    []message `json:"messages"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
 	Temperature float64   `json:"temperature,omitempty"`
+	ResponseFmt *struct {
+		Type string `json:"type"`
+	} `json:"response_format,omitempty"`
 }
 
 type message struct {
@@ -36,7 +39,7 @@ type message struct {
 }
 
 type openAIResponse struct {
-	Choices []choice `json:"choices"`
+	Choices []choice  `json:"choices"`
 	Error   *apiError `json:"error,omitempty"`
 }
 
@@ -47,8 +50,11 @@ type choice struct {
 type apiError struct {
 	Message string `json:"message"`
 	Type    string `json:"type"`
-	Code    string `json:"code"`
+	// Code can be numeric or string depending on OpenAI response, so keep it generic.
+	Code any `json:"code"`
 }
+
+const openAISystemPrompt = "You are a CI/CD security assistant. Respond ONLY with a single JSON object that matches the requested schema. Do not include any prose, markdown, comments, or additional text outside the JSON object."
 
 // NewOpenAIClient creates a new OpenAI client
 func NewOpenAIClient(config Config) (*OpenAIClient, error) {
@@ -102,15 +108,35 @@ func (c *OpenAIClient) GetProvider() Provider {
 // VerifyFinding analyzes a finding using OpenAI
 func (c *OpenAIClient) VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error) {
 	prompt := c.buildPrompt(finding)
-	
+
+	// Dynamic token guardrail: estimate prompt tokens and reserve headroom
+	// Rough heuristic: ~4 chars per token
+	promptTokens := len(prompt) / 4
+	if promptTokens < 1 {
+		promptTokens = 1
+	}
+	contextWindow := 128000 // gpt-4o-mini nominal context
+	// Reserve 1024 tokens headroom for safety
+	available := contextWindow - promptTokens - 1024
+	if available < 256 {
+		available = 256
+	}
+	dynamicMax := c.maxTokens
+	if dynamicMax == 0 || dynamicMax > available {
+		dynamicMax = available
+	}
+
 	req := openAIRequest{
 		Model:       c.model,
-		MaxTokens:   c.maxTokens,
+		MaxTokens:   dynamicMax,
 		Temperature: c.temperature,
+		ResponseFmt: &struct {
+			Type string `json:"type"`
+		}{Type: "json_object"},
 		Messages: []message{
 			{
 				Role:    "system",
-				Content: "You are a cybersecurity expert analyzing CI/CD security findings. Your task is to determine if a security finding is a false positive or a true positive. Respond only with valid JSON.",
+				Content: openAISystemPrompt,
 			},
 			{
 				Role:    "user",
@@ -124,114 +150,53 @@ func (c *OpenAIClient) VerifyFinding(ctx context.Context, finding rules.Finding)
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	// Simple retry with backoff for rate limiting / transient errors
+	const maxRetries = 3
+	var lastErr error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request: %w", err)
+		}
+
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+		resp, err := c.httpClient.Do(httpReq)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to make request: %w", err)
+		} else {
+			defer resp.Body.Close()
+
+			var response openAIResponse
+			if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+				lastErr = fmt.Errorf("failed to decode response: %w", err)
+			} else if response.Error != nil {
+				lastErr = fmt.Errorf("OpenAI API error: %s", response.Error.Message)
+			} else if len(response.Choices) == 0 {
+				lastErr = fmt.Errorf("no response from OpenAI")
+			} else {
+				return c.parseResponse(response.Choices[0].Message.Content)
+			}
+		}
+
+		if attempt < maxRetries-1 {
+			backoff := time.Duration(1<<attempt) * time.Second
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return nil, fmt.Errorf("OpenAI request cancelled during backoff: %w", ctx.Err())
+			}
+		}
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to make request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var response openAIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	if response.Error != nil {
-		return nil, fmt.Errorf("OpenAI API error: %s", response.Error.Message)
-	}
-
-	if len(response.Choices) == 0 {
-		return nil, fmt.Errorf("no response from OpenAI")
-	}
-
-	return c.parseResponse(response.Choices[0].Message.Content)
+	return nil, lastErr
 }
 
 func (c *OpenAIClient) buildPrompt(finding rules.Finding) string {
-	return fmt.Sprintf(`You are a cybersecurity expert specializing in CI/CD security, GitHub Actions hardening, and software supply chain security. Analyze this finding and determine if it's a false positive or true positive.
-
-IMPORTANT CONTEXT:
-- This analysis is performed on a repository that was temporarily cloned to a /tmp/ directory for scanning
-- File paths containing /tmp/ are normal and expected - they do not indicate the actual repository location
-- Focus on the security implications of the CI/CD configuration, not the temporary file location
-- **Workflow Trigger:** The workflow was triggered by a '%s' event. This is crucial for understanding the context of the execution.
-- **Runner Type:** The job is running on a '%s' runner. Pay special attention to self-hosted runners as they have different security implications.
-- **File Context:** The finding was found in a file that appears to be part of '%s'. This can help differentiate between production code, tests, and examples.
-
-Finding Details:
-- Rule: %s (%s)
-- Description: %s
-- Severity: %s
-- Category: %s
-- File: %s
-- Job: %s
-- Step: %s
-- Evidence: %s
-
-Please analyze this finding and respond with JSON in this exact format:
-{
-  "is_likely_false_positive": boolean,
-  "confidence": float (0.0 to 1.0),
-  "reasoning": "detailed explanation of your analysis",
-  "suggested_severity": "CRITICAL|HIGH|MEDIUM|LOW|INFO (only if you suggest a different severity)"
+	return composeFindingPrompt(finding)
 }
 
-Analyze from these critical security perspectives:
-
-1. GITHUB ACTIONS HARDENING:
-   - Are actions pinned to specific SHA commits to prevent supply chain attacks?
-   - Are dangerous permissions (write, admin) properly scoped?
-   - Are secrets handled securely and not exposed in logs?
-   - Are workflow triggers properly restricted to prevent abuse?
-
-2. SOFTWARE SUPPLY CHAIN SECURITY:
-   - Can this configuration lead to dependency confusion attacks?
-   - Are third-party actions from trusted publishers or properly vetted?
-   - Could malicious code be injected through compromised dependencies?
-   - Are build artifacts properly signed and verified?
-
-3. RUNNER COMPROMISE & ATTACK VECTORS:
-   - Could this configuration allow lateral movement if a runner is compromised?
-   - Are self-hosted runners properly isolated and secured?
-   - Can attackers persist in the environment or access other repositories?
-   - Could this lead to credential theft or privilege escalation?
-
-4. CI/CD PIPELINE SECURITY:
-   - Is the evidence actually indicative of a security risk in the CI/CD pipeline?
-   - Could this be legitimate usage in a CI/CD context?
-   - Is the severity appropriate for the actual risk level?
-   - Are there any context clues that suggest this is intentional/safe?
-   - Does the /tmp/ path indicate a temporary scanning location rather than a security issue?
-
-SEVERITY GUIDELINES:
-- CRITICAL: Direct code execution, credential exposure, or full environment compromise
-- HIGH: Supply chain compromise, privilege escalation, or significant attack surface
-- MEDIUM: Configuration weaknesses that could facilitate attacks
-- LOW: Minor security hygiene issues or potential information disclosure
-- INFO: Best practice violations with minimal security impact
-
-Be conservative - prefer false positive over missing real threats, especially for supply chain risks.`,
-		finding.Trigger, // Pass the trigger type
-		finding.RunnerType, // Pass the runner type
-		finding.FileContext, // Pass the file context (e.g., 'production', 'test', 'example')
-		finding.RuleName,
-		finding.RuleID,
-		finding.Description,
-		string(finding.Severity),
-		string(finding.Category),
-		finding.FilePath,
-		finding.JobName,
-		finding.StepName,
-		finding.Evidence,
-	)
-}
 // parseResponse parses the AI response into a VerificationResult
 func (c *OpenAIClient) parseResponse(content string) (*VerificationResult, error) {
 	var result VerificationResult

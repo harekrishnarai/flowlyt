@@ -9,11 +9,11 @@ import (
 
 // MockClient implements the Client interface for testing
 type MockClient struct {
-	provider        Provider
-	verifyResult    *VerificationResult
-	verifyError     error
-	closeError      error
-	callCount       int
+	provider     Provider
+	verifyResult *VerificationResult
+	verifyError  error
+	closeError   error
+	callCount    int
 }
 
 func (m *MockClient) VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error) {
@@ -82,10 +82,10 @@ func TestValidateProvider(t *testing.T) {
 
 func TestGetSupportedProviders(t *testing.T) {
 	providers := GetSupportedProviders()
-	expected := []string{"openai", "gemini", "claude", "grok"}
-	
+	expected := []string{"openai", "gemini", "claude", "grok", "perplexity"}
+
 	if len(providers) != len(expected) {
-		t.Errorf("GetSupportedProviders() returned %d providers, expected %d", len(providers), len(expected))
+		t.Fatalf("GetSupportedProviders() returned %d providers, expected %d", len(providers), len(expected))
 	}
 
 	for i, provider := range providers {
@@ -129,6 +129,14 @@ func TestNewClient(t *testing.T) {
 			name: "valid grok config",
 			config: Config{
 				Provider: ProviderGrok,
+				APIKey:   "test-key",
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid perplexity config",
+			config: Config{
+				Provider: ProviderPerplexity,
 				APIKey:   "test-key",
 			},
 			wantErr: false,

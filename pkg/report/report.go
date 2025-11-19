@@ -16,13 +16,15 @@ import (
 
 // ScanResult represents the overall result of a security scan
 type ScanResult struct {
-	Repository     string          `json:"repository"`
-	ScanTime       time.Time       `json:"scanTime"`
-	Duration       time.Duration   `json:"duration"`
-	WorkflowsCount int             `json:"workflowsCount"`
-	RulesCount     int             `json:"rulesCount"`
-	Findings       []rules.Finding `json:"findings"`
-	Summary        ResultSummary   `json:"summary"`
+	Repository      string          `json:"repository"`
+	ScanTime        time.Time       `json:"scanTime"`
+	Duration        time.Duration   `json:"duration"`
+	WorkflowsCount  int             `json:"workflowsCount"`
+	RulesCount      int             `json:"rulesCount"`
+	Findings        []rules.Finding `json:"findings"`
+	Summary         ResultSummary   `json:"summary"`
+	SuppressedCount int             `json:"suppressedCount"`
+	GeneratedByAST  int             `json:"astGeneratedCount"`
 }
 
 // ResultSummary provides a summary of the scan findings by severity
@@ -102,6 +104,23 @@ func (g *Generator) generateCLIReport() error {
 	fmt.Println(g.Result.WorkflowsCount)
 	infoStyle.Printf("%-20s ", "Rules Applied:")
 	fmt.Println(g.Result.RulesCount)
+
+	tipPrinted := false
+	if g.Result.SuppressedCount > 0 {
+		infoStyle.Printf("%-20s ", "AST Suppressed:")
+		fmt.Printf("%d findings removed via reachability\n", g.Result.SuppressedCount)
+		tipPrinted = true
+	}
+	if g.Result.GeneratedByAST > 0 {
+		infoStyle.Printf("%-20s ", "AST Data Flows:")
+		fmt.Printf("%d new insights\n", g.Result.GeneratedByAST)
+
+		tipPrinted = true
+	}
+	if tipPrinted {
+		infoStyle.Printf("%-20s ", "Tip:")
+		fmt.Println("Use .flowlyt.yml to review intentional flows or suppress safe patterns.")
+	}
 
 	// Add AI analysis summary if any findings were AI verified
 	aiVerifiedCount := 0
@@ -299,7 +318,7 @@ func (g *Generator) generateCLIReport() error {
 					fmt.Println()
 					aiStyle := color.New(color.FgMagenta, color.Bold)
 					aiStyle.Printf("  %-12s ", "🤖 AI Analysis:")
-					
+
 					if finding.AIError != "" {
 						errorStyle := color.New(color.FgRed)
 						errorStyle.Printf("Failed - %s\n", finding.AIError)
@@ -311,12 +330,12 @@ func (g *Generator) generateCLIReport() error {
 							alertStyle := color.New(color.FgRed, color.Bold)
 							alertStyle.Printf("Likely TRUE POSITIVE (%.0f%% confidence)\n", finding.AIConfidence*100)
 						}
-						
+
 						if finding.AIReasoning != "" {
 							infoStyle.Printf("  %-12s ", "AI Reasoning:")
 							fmt.Println(finding.AIReasoning)
 						}
-						
+
 						if finding.AISuggestedSeverity != "" && finding.AISuggestedSeverity != string(finding.Severity) {
 							infoStyle.Printf("  %-12s ", "AI Suggests:")
 							fmt.Printf("%s severity (current: %s)\n", finding.AISuggestedSeverity, string(finding.Severity))
@@ -388,6 +407,12 @@ func (g *Generator) generateMarkdownReport() error {
 	markdownBuilder.WriteString(fmt.Sprintf("- **Duration:** %s\n", g.Result.Duration.Round(time.Millisecond)))
 	markdownBuilder.WriteString(fmt.Sprintf("- **Workflows Analyzed:** %d\n", g.Result.WorkflowsCount))
 	markdownBuilder.WriteString(fmt.Sprintf("- **Rules Applied:** %d\n", g.Result.RulesCount))
+	if g.Result.SuppressedCount > 0 {
+		markdownBuilder.WriteString(fmt.Sprintf("- **AST Reachability Suppressed:** %d findings\n", g.Result.SuppressedCount))
+	}
+	if g.Result.GeneratedByAST > 0 {
+		markdownBuilder.WriteString(fmt.Sprintf("- **AST Data Flow Insights:** %d findings\n", g.Result.GeneratedByAST))
+	}
 
 	// Summary section
 	markdownBuilder.WriteString("\n## Summary\n\n")

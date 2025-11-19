@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/harekrishnarai/flowlyt/pkg/ai"
+	"github.com/harekrishnarai/flowlyt/pkg/analysis/astutil"
 	"github.com/harekrishnarai/flowlyt/pkg/concurrent"
 	"github.com/harekrishnarai/flowlyt/pkg/config"
 	"github.com/harekrishnarai/flowlyt/pkg/constants"
@@ -80,10 +81,25 @@ func main() {
 						Usage:   "Specific workflow file to scan",
 					},
 					&cli.StringFlag{
+						Name:    "github-token",
+						Usage:   "GitHub personal access token for remote scans (overrides GITHUB_TOKEN)",
+						EnvVars: []string{"GITHUB_TOKEN"},
+					},
+					&cli.StringFlag{
+						Name:    "gitlab-token",
+						Usage:   "GitLab personal access token for remote scans (overrides GITLAB_TOKEN)",
+						EnvVars: []string{"GITLAB_TOKEN"},
+					},
+					&cli.StringFlag{
 						Name:    "output",
 						Aliases: []string{"o"},
 						Usage:   "Output format (json, yaml, table, sarif)",
 						Value:   constants.DefaultOutputFormat,
+					},
+					&cli.StringFlag{
+						Name:  "branch",
+						Usage: "Branch name to use for file links (defaults to 'main')",
+						Value: "main",
 					},
 					&cli.StringFlag{
 						Name:  "output-file",
@@ -380,9 +396,15 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 				return "", nil, parseErr
 			}
 
-			client := github.NewClient()
+			// Prefer explicit token flag, falling back to env/gh auth
+			var ghClient *github.Client
+			if token := c.String("github-token"); token != "" {
+				ghClient = github.NewClientWithToken(token)
+			} else {
+				ghClient = github.NewClient()
+			}
 			fmt.Printf("� Downloading workflow files from GitHub repository: %s/%s\n", owner, repo)
-			workflowContents, err = client.GetWorkflowFilesContents(owner, repo)
+			workflowContents, err = ghClient.GetWorkflowFilesContents(owner, repo)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to fetch workflow files from %s: %w", repoURL, err)
 			}
@@ -543,15 +565,23 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 
 	// Enhance findings with GitHub URLs if scanning a remote GitHub repository
 	if repoURL != "" && github.IsGitHubRepository(repoURL) {
+		branch := c.String("branch")
+		if strings.TrimSpace(branch) == "" {
+			branch = "main"
+		}
 		for i := range findings {
-			findings[i].GitHubURL = github.GenerateFileURL(repoURL, findings[i].FilePath, findings[i].LineNumber)
+			findings[i].GitHubURL = github.GenerateFileURLWithBranch(repoURL, findings[i].FilePath, findings[i].LineNumber, branch)
 		}
 	}
 
 	// Enhance findings with GitLab URLs if scanning a remote GitLab repository
 	if repoURL != "" && gitlab.IsGitLabURL(repoURL) {
+		branch := c.String("branch")
+		if strings.TrimSpace(branch) == "" {
+			branch = "main"
+		}
 		for i := range findings {
-			findings[i].GitLabURL = gitlab.GenerateFileURL(repoURL, findings[i].FilePath, findings[i].LineNumber)
+			findings[i].GitLabURL = gitlab.GenerateFileURLWithBranch(repoURL, findings[i].FilePath, findings[i].LineNumber, branch)
 		}
 	}
 
@@ -642,7 +672,7 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 }
 
 // processAndGenerateReport filters findings, generates reports, and prints summary
-func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, outputFormat, outputFile string, startTime time.Time, workflowsCount, rulesCount int, repoLocalPath string, enableVulnIntel bool) error {
+func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, outputFormat, outputFile string, startTime time.Time, workflowsCount, rulesCount int, repoLocalPath string, enableVulnIntel bool, astStats *astutil.Stats) error {
 	// Filter findings based on configuration
 	filteredFindings := []rules.Finding{}
 	for _, finding := range allFindings {
@@ -666,14 +696,23 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 	summary := report.CalculateSummary(sortedFindings)
 
 	// Create scan result
+	suppressedCount := 0
+	generatedCount := 0
+	if astStats != nil {
+		suppressedCount = astStats.SuppressedReachability
+		generatedCount = astStats.GeneratedDataFlows
+	}
+
 	result := report.ScanResult{
-		Repository:     repoLocalPath,
-		ScanTime:       startTime,
-		Duration:       time.Since(startTime),
-		WorkflowsCount: workflowsCount,
-		RulesCount:     rulesCount,
-		Findings:       sortedFindings,
-		Summary:        summary,
+		Repository:      repoLocalPath,
+		ScanTime:        startTime,
+		Duration:        time.Since(startTime),
+		WorkflowsCount:  workflowsCount,
+		RulesCount:      rulesCount,
+		Findings:        sortedFindings,
+		Summary:         summary,
+		SuppressedCount: suppressedCount,
+		GeneratedByAST:  generatedCount,
 	}
 
 	// Use configuration for output format and file
@@ -812,6 +851,14 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 		return err
 	}
 
+	// If explicit tokens are provided, ensure they are visible to helpers that read env
+	if ghTok := c.String("github-token"); strings.TrimSpace(ghTok) != "" {
+		os.Setenv("GITHUB_TOKEN", ghTok)
+	}
+	if glTok := c.String("gitlab-token"); strings.TrimSpace(glTok) != "" {
+		os.Setenv("GITLAB_TOKEN", glTok)
+	}
+
 	// Get the repository path, URL, or workflow file
 	repoPath := c.String("repo")
 	repoURL := c.String("url")
@@ -872,6 +919,32 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 		return err
 	}
 
+	astInsights := astutil.CollectInsights(workflowFiles)
+	astStats := &astutil.Stats{}
+
+	if len(astInsights) > 0 {
+		// Filter unreachable findings using AST reachability analysis
+		if filteredFindings, suppressed := astutil.FilterFindingsByReachability(astInsights, allFindings); suppressed > 0 {
+			fmt.Printf("✨ AST Reachability: suppressed %d unreachable findings\n", suppressed)
+			allFindings = filteredFindings
+			astStats.SuppressedReachability = suppressed
+		} else {
+			allFindings = filteredFindings
+		}
+
+		// Enrich existing findings with AST metadata
+		allFindings = astutil.EnrichFindingsWithMetadata(allFindings, astInsights)
+
+		// Generate additional AST-derived findings (e.g., sensitive data flows)
+		if astFlowFindings := astutil.GenerateDataFlowFindings(astInsights); len(astFlowFindings) > 0 {
+			enabledFlows := filterFindingsByRuleToggle(astFlowFindings, cfg)
+			if len(enabledFlows) > 0 {
+				allFindings = append(allFindings, enabledFlows...)
+				astStats.GeneratedDataFlows = len(enabledFlows)
+			}
+		}
+	}
+
 	// Enhance findings with AI analysis if requested
 	allFindings, err = enhanceFindingsWithAI(c, allFindings)
 	if err != nil {
@@ -879,7 +952,7 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	}
 
 	// Process results and generate report
-	return processAndGenerateReport(allFindings, cfg, outputFormat, outputFile, startTime, len(workflowFiles), len(standardRules), repoLocalPath, c.Bool("enable-vuln-intel"))
+	return processAndGenerateReport(allFindings, cfg, outputFormat, outputFile, startTime, len(workflowFiles), len(standardRules), repoLocalPath, c.Bool("enable-vuln-intel"), astStats)
 }
 
 // shouldIncludeSeverity checks if a finding should be included based on minimum severity
@@ -895,6 +968,16 @@ func shouldIncludeSeverity(findingSeverity, minSeverity string) bool {
 	}
 
 	return findingLevel >= minLevel
+}
+
+func filterFindingsByRuleToggle(findings []rules.Finding, cfg *config.Config) []rules.Finding {
+	enabled := make([]rules.Finding, 0, len(findings))
+	for _, finding := range findings {
+		if cfg.IsRuleEnabled(finding.RuleID) {
+			enabled = append(enabled, finding)
+		}
+	}
+	return enabled
 }
 
 // analyzeOrganization analyzes all repositories in a GitHub organization

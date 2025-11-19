@@ -1004,6 +1004,11 @@ func checkUnpinnedAction(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
+			// Allow trusted semantic version pins for well-known publishers
+			if isTrustedSemverReference(step.Uses) {
+				continue
+			}
+
 			// Check if the action is pinned with a commit SHA (40 hex characters)
 			shaPattern := regexp.MustCompile(`@[a-f0-9]{40}$`)
 			if !shaPattern.MatchString(step.Uses) {
@@ -1138,7 +1143,7 @@ func checkHardcodedSecretsWithConfig(workflow parser.WorkflowFile, config interf
 			}
 
 			// Enhanced filtering for false positives
-			if shouldSkipSecret(content, match[0], match[1], matchStr, config) {
+			if shouldSkipSecret(content, match[0], match[1], matchStr, workflow.Path, config) {
 				continue
 			}
 
@@ -1182,7 +1187,7 @@ func checkHardcodedSecretsWithConfig(workflow parser.WorkflowFile, config interf
 // Enhanced helper functions for advanced secret detection
 
 // shouldSkipSecret determines if a potential secret should be skipped based on context
-func shouldSkipSecret(content string, start, end int, matchStr string, config interface{}) bool {
+func shouldSkipSecret(content string, start, end int, matchStr, filePath string, config interface{}) bool {
 	// Skip if the match is a 40-char hex SHA and is used in a 'uses:' line
 	if isLikelyActionSHA(content, start, end) {
 		return true
@@ -1198,26 +1203,55 @@ func shouldSkipSecret(content string, start, end int, matchStr string, config in
 		return true
 	}
 
+	lineStart := strings.LastIndex(content[:start], "\n")
+	if lineStart == -1 {
+		lineStart = 0
+	} else {
+		lineStart++
+	}
+	lineEnd := strings.Index(content[start:], "\n")
+	if lineEnd == -1 {
+		lineEnd = len(content)
+	} else {
+		lineEnd += start
+	}
+	contextLine := content[lineStart:lineEnd]
+	contextLower := strings.ToLower(contextLine)
+
+	// Skip templated or placeholder content commonly used in docs/examples
+	if strings.Contains(matchStr, "{{") || strings.Contains(matchStr, "}}") || strings.Contains(matchStr, "<%") || strings.Contains(matchStr, "%>") {
+		return true
+	}
+
+	skipKeywords := []string{
+		"example", "placeholder", "sample", "changeme", "change-me",
+		"dummy", "template", "documentation", "tutorial",
+		"instructions", "replace-me", "todo",
+		"insert", "configure", "fill-in", "set-your", "xxx", "yyy",
+	}
+
+	for _, keyword := range skipKeywords {
+		if strings.Contains(contextLower, keyword) {
+			return true
+		}
+	}
+
+	if isAllUpperOrSnake(matchStr) && (strings.Contains(matchStr, "YOUR") || strings.Contains(matchStr, "PLACEHOLDER") || strings.Contains(matchStr, "EXAMPLE")) {
+		return true
+	}
+
+	// Skip if the match is in a docs/examples path (prevents sample workflows from flagging)
+	if looksLikeDocumentationPath(filePath) {
+		return true
+	}
+
 	// Check configuration-based ignores if config is provided
 	if config != nil {
-		// Extract context around the match for configuration checks
-		lineStart := strings.LastIndex(content[:start], "\n")
-		if lineStart == -1 {
-			lineStart = 0
-		} else {
-			lineStart++
+		if cfg, ok := config.(interface {
+			ShouldIgnoreSecret(text, context string) bool
+		}); ok && cfg.ShouldIgnoreSecret(matchStr, contextLine) {
+			return true
 		}
-		lineEnd := strings.Index(content[start:], "\n")
-		if lineEnd == -1 {
-			lineEnd = len(content)
-		} else {
-			lineEnd += start
-		}
-		context := content[lineStart:lineEnd]
-
-		// TODO: Use proper type assertion when config package is imported
-		// For now, fall back to default behavior
-		_ = context // Avoid unused variable warning
 	}
 
 	// Skip common false positives - but be more specific
@@ -1252,6 +1286,77 @@ func shouldSkipSecret(content string, start, end int, matchStr string, config in
 	// Skip if it's a URL without credentials
 	if isURLWithoutCredentials(matchStr) {
 		return true
+	}
+
+	return false
+}
+
+func isAllUpperOrSnake(s string) bool {
+	if len(s) < 6 {
+		return false
+	}
+
+	hasLetter := false
+	for _, r := range s {
+		if r >= 'a' && r <= 'z' {
+			return false
+		}
+		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			hasLetter = true
+			continue
+		}
+		if r != '_' && r != '-' {
+			return false
+		}
+	}
+
+	return hasLetter
+}
+
+func looksLikeDocumentationPath(path string) bool {
+	lower := strings.ToLower(path)
+	return strings.Contains(lower, "/docs/") ||
+		strings.Contains(lower, "/doc/") ||
+		strings.Contains(lower, "/examples/") ||
+		strings.Contains(lower, "/samples/") ||
+		strings.Contains(lower, "/test/") ||
+		strings.Contains(lower, "/tests/")
+}
+
+var (
+	semverReferencePattern    = regexp.MustCompile(`^v?\d+(\.\d+){0,2}$`)
+	trustedActionOrgPrefixes  = []string{"actions/", "github/", "microsoft/", "azure/", "google/", "hashicorp/", "aws-actions/"}
+	dockerTrustedPrefix       = "docker://"
+	trustedCompositeIndicator = "/.github/"
+)
+
+func isTrustedSemverReference(uses string) bool {
+	lower := strings.ToLower(uses)
+
+	if strings.HasPrefix(lower, dockerTrustedPrefix) {
+		// docker image versions are typically handled separately
+		return false
+	}
+
+	parts := strings.Split(lower, "@")
+	if len(parts) != 2 {
+		return false
+	}
+
+	ref := parts[1]
+	if !semverReferencePattern.MatchString(ref) {
+		return false
+	}
+
+	// Skip composite repositories that live within .github directories (usually internal)
+	if strings.Contains(parts[0], trustedCompositeIndicator) {
+		return true
+	}
+
+	for _, prefix := range trustedActionOrgPrefixes {
+		if strings.HasPrefix(parts[0], prefix) {
+			return true
+		}
 	}
 
 	return false
@@ -1528,12 +1633,13 @@ func checkContinueOnErrorCriticalJob(workflow parser.WorkflowFile) []Finding {
 // checkBroadPermissions checks for overly broad permissions in workflows
 func checkBroadPermissions(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+	content := string(workflow.Content)
 
-	// Check for write-all permissions
+	// Check for write-all permissions at workflow level
 	if workflow.Workflow.Permissions != nil {
 		if permStr, ok := workflow.Workflow.Permissions.(string); ok && permStr == "write-all" {
 			// Find line number for permissions
-			content := string(workflow.Content)
 			lines := strings.Split(content, "\n")
 			lineNumber := 1
 
@@ -1557,6 +1663,108 @@ func checkBroadPermissions(workflow parser.WorkflowFile) []Finding {
 				LineNumber:  lineNumber,
 				Remediation: "Use specific permissions instead of 'write-all'. Define only the permissions your workflow actually needs.",
 			})
+		}
+	}
+
+	// Check for missing permissions: block at workflow level (defaults to write-all)
+	// GitHub Actions defaults to write-all if permissions are not explicitly set
+	hasWorkflowPermissions := workflow.Workflow.Permissions != nil
+	if !hasWorkflowPermissions {
+		// Check if there are any jobs that might need permissions
+		hasJobs := len(workflow.Workflow.Jobs) > 0
+		if hasJobs {
+			// Find a good line number (after 'on:' trigger)
+			lines := strings.Split(content, "\n")
+			lineNumber := 1
+			for i, line := range lines {
+				if strings.Contains(line, "on:") {
+					// Look for permissions after the trigger section
+					for j := i + 1; j < len(lines) && j < i+20; j++ {
+						if strings.Contains(lines[j], "jobs:") {
+							lineNumber = j
+							break
+						}
+					}
+					break
+				}
+			}
+
+			findings = append(findings, Finding{
+				RuleID:      "BROAD_PERMISSIONS",
+				RuleName:    "Missing Permissions Block",
+				Description: "Workflow does not set permissions, defaulting to write-all which grants excessive access",
+				Severity:    High,
+				Category:    Misconfiguration,
+				FilePath:    workflow.Path,
+				JobName:     "",
+				StepName:    "",
+				Evidence:    "default permissions used due to no permissions: block",
+				LineNumber:  lineNumber,
+				Remediation: "Add 'permissions: {}' or specific minimal permissions to restrict access. Use 'permissions: read-all' for read-only workflows.",
+			})
+		}
+	}
+
+	// Check for missing permissions: block at job level
+	for jobName, job := range workflow.Workflow.Jobs {
+		// Check if job has permissions set
+		hasJobPermissions := job.Permissions != nil
+
+		// If job doesn't have permissions, it inherits from workflow or defaults to write-all
+		if !hasJobPermissions {
+			// Only flag if workflow also doesn't have permissions (double default)
+			if !hasWorkflowPermissions {
+				pattern := linenum.FindPattern{
+					Key:   "jobs",
+					Value: jobName,
+				}
+				lineResult := lineMapper.FindLineNumber(pattern)
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+
+				findings = append(findings, Finding{
+					RuleID:      "BROAD_PERMISSIONS",
+					RuleName:    "Missing Permissions Block",
+					Description: fmt.Sprintf("Job '%s' does not set permissions, defaulting to write-all which grants excessive access", jobName),
+					Severity:    High,
+					Category:    Misconfiguration,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    "",
+					Evidence:    fmt.Sprintf("job '%s' missing permissions: block", jobName),
+					LineNumber:  lineNumber,
+					Remediation: "Add 'permissions: {}' or specific minimal permissions to the job to restrict access.",
+				})
+			}
+		} else {
+			// Job has permissions, check if it's overly broad
+			if permStr, ok := job.Permissions.(string); ok && permStr == "write-all" {
+				pattern := linenum.FindPattern{
+					Key:   "permissions",
+					Value: "write-all",
+				}
+				lineResult := lineMapper.FindLineNumber(pattern)
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+
+				findings = append(findings, Finding{
+					RuleID:      "BROAD_PERMISSIONS",
+					RuleName:    "Overly Broad Permissions",
+					Description: fmt.Sprintf("Job '%s' uses 'write-all' permissions, granting excessive access", jobName),
+					Severity:    Critical,
+					Category:    Misconfiguration,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    "",
+					Evidence:    fmt.Sprintf("permissions: write-all in job '%s'", jobName),
+					LineNumber:  lineNumber,
+					Remediation: "Use specific permissions instead of 'write-all'. Define only the permissions this job actually needs.",
+				})
+			}
 		}
 	}
 
@@ -3996,6 +4204,53 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 			stepName := step.Name
 			if stepName == "" {
 				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			// Check for actions/checkout without persist-credentials: false
+			// This is critical for preventing credential persistence in artifacts
+			if step.Uses != "" && strings.Contains(step.Uses, "checkout") {
+				hasPersistCredentials := false
+				persistCredentialsValue := ""
+
+				if step.With != nil {
+					if pc, exists := step.With["persist-credentials"]; exists {
+						hasPersistCredentials = true
+						persistCredentialsValue = fmt.Sprintf("%v", pc)
+					}
+				}
+
+				// Flag if persist-credentials is not explicitly set to false
+				if !hasPersistCredentials || persistCredentialsValue != "false" {
+					pattern := linenum.FindPattern{
+						Key:   "uses",
+						Value: step.Uses,
+					}
+					lineResult := lineMapper.FindLineNumber(pattern)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					severity := High
+					description := "actions/checkout does not set persist-credentials: false, which may allow credentials to persist in artifacts"
+					if !hasPersistCredentials {
+						description = "actions/checkout missing persist-credentials: false, credentials may persist in artifacts"
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "ARTIPACKED_VULNERABILITY",
+						RuleName:    "Credential Persistence Risk",
+						Description: description,
+						Severity:    severity,
+						Category:    SecretsExposure,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    fmt.Sprintf("uses: %s (persist-credentials: %s)", step.Uses, persistCredentialsValue),
+						Remediation: "Add 'persist-credentials: false' to actions/checkout to prevent credential persistence in artifacts",
+						LineNumber:  lineNumber,
+					})
+				}
 			}
 
 			// Check for artifact upload/download actions

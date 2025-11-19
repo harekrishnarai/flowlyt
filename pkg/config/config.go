@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/harekrishnarai/flowlyt/pkg/constants"
 	"gopkg.in/yaml.v3"
 )
@@ -344,9 +345,11 @@ func (config *Config) ShouldIgnoreForRule(ruleID, text, filePath string) bool {
 		return true
 	}
 
+	normalizedPath := filepath.ToSlash(filePath)
+
 	// Check file patterns
 	for _, filePattern := range config.Rules.FalsePositives.Files {
-		if matched, _ := filepath.Match(filePattern, filePath); matched {
+		if matchGlobPattern(filePattern, normalizedPath) {
 			return true
 		}
 	}
@@ -355,7 +358,7 @@ func (config *Config) ShouldIgnoreForRule(ruleID, text, filePath string) bool {
 	if ruleIgnores, exists := config.Rules.FalsePositives.Rules[ruleID]; exists {
 		// Check file patterns for this rule
 		for _, filePattern := range ruleIgnores.Files {
-			if matched, _ := filepath.Match(filePattern, filePath); matched {
+			if matchGlobPattern(filePattern, normalizedPath) {
 				return true
 			}
 		}
@@ -407,6 +410,32 @@ func (config *Config) shouldIgnore(text string, patterns, stringList []string) b
 	// Check regex patterns
 	for _, pattern := range patterns {
 		if matched, _ := regexp.MatchString(pattern, text); matched {
+			return true
+		}
+	}
+
+	return false
+}
+
+func matchGlobPattern(pattern, path string) bool {
+	if pattern == "" {
+		return false
+	}
+
+	normalizedPattern := filepath.ToSlash(pattern)
+	matchers := []string{normalizedPattern}
+
+	// Automatically add a glob that searches anywhere in the tree when the pattern isn't absolute
+	if !strings.HasPrefix(normalizedPattern, "**/") &&
+		!strings.HasPrefix(normalizedPattern, "./") &&
+		!strings.HasPrefix(normalizedPattern, "/") &&
+		!strings.Contains(normalizedPattern, ":") {
+		matchers = append(matchers, "**/"+normalizedPattern)
+	}
+
+	for _, candidate := range matchers {
+		matched, err := doublestar.Match(candidate, path)
+		if err == nil && matched {
 			return true
 		}
 	}
