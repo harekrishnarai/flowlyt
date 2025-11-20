@@ -234,7 +234,10 @@ runs:
         # Build scan command
         SCAN_CMD="$FLOWLYT_BINARY scan"
         SCAN_CMD="$SCAN_CMD --repo $(pwd)"
-        SCAN_CMD="$SCAN_CMD --config ${{ inputs.config-file }}"
+        # Only pass --config when a non-empty path was provided
+        if [ -n "${{ inputs.config-file }}" ]; then
+          SCAN_CMD="$SCAN_CMD --config \"${{ inputs.config-file }}\""
+        fi
         SCAN_CMD="$SCAN_CMD --output ${{ inputs.output-format }}"
         SCAN_CMD="$SCAN_CMD --output-file ${{ inputs.output-file }}"
         SCAN_CMD="$SCAN_CMD --min-severity ${{ inputs.min-severity }}"
