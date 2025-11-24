@@ -1,249 +1,67 @@
 package report
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/owenrumney/go-sarif/v2/sarif"
 )
 
-// SARIF represents a Static Analysis Results Interchange Format report
-// Based on SARIF v2.1.0 specification: https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html
-type SARIF struct {
-	Version string     `json:"version"`
-	Schema  string     `json:"$schema"`
-	Runs    []SARIFRun `json:"runs"`
-}
-
-// SARIFRun represents a single analysis run
-type SARIFRun struct {
-	Tool       SARIFTool              `json:"tool"`
-	Invocation SARIFInvocation        `json:"invocation"`
-	Results    []SARIFResult          `json:"results"`
-	Artifacts  []SARIFArtifact        `json:"artifacts,omitempty"`
-	Rules      []SARIFRule            `json:"rules,omitempty"`
-	ColumnKind string                 `json:"columnKind,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFTool represents the analysis tool
-type SARIFTool struct {
-	Driver SARIFDriver `json:"driver"`
-}
-
-// SARIFDriver represents the tool driver
-type SARIFDriver struct {
-	Name            string      `json:"name"`
-	Version         string      `json:"version,omitempty"`
-	InformationUri  string      `json:"informationUri,omitempty"`
-	FullName        string      `json:"fullName,omitempty"`
-	SemanticVersion string      `json:"semanticVersion,omitempty"`
-	Rules           []SARIFRule `json:"rules,omitempty"`
-}
-
-// SARIFRule represents a rule definition
-type SARIFRule struct {
-	ID                   string                 `json:"id"`
-	Name                 string                 `json:"name,omitempty"`
-	ShortDescription     SARIFMessage           `json:"shortDescription,omitempty"`
-	FullDescription      SARIFMessage           `json:"fullDescription,omitempty"`
-	DefaultConfiguration SARIFRuleConfiguration `json:"defaultConfiguration,omitempty"`
-	Help                 SARIFMessage           `json:"help,omitempty"`
-	HelpUri              string                 `json:"helpUri,omitempty"`
-	Properties           map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFRuleConfiguration represents rule configuration
-type SARIFRuleConfiguration struct {
-	Level string `json:"level"`
-}
-
-// SARIFInvocation represents tool invocation details
-type SARIFInvocation struct {
-	CommandLine         string    `json:"commandLine,omitempty"`
-	StartTimeUtc        time.Time `json:"startTimeUtc"`
-	EndTimeUtc          time.Time `json:"endTimeUtc"`
-	ExecutionSuccessful bool      `json:"executionSuccessful"`
-}
-
-// SARIFResult represents a single analysis result (finding)
-type SARIFResult struct {
-	RuleID              string                 `json:"ruleId"`
-	RuleIndex           int                    `json:"ruleIndex,omitempty"`
-	Level               string                 `json:"level"`
-	Message             SARIFMessage           `json:"message"`
-	Locations           []SARIFLocation        `json:"locations"`
-	PartialFingerprints map[string]string      `json:"partialFingerprints,omitempty"`
-	Properties          map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFMessage represents a message in SARIF
-type SARIFMessage struct {
-	Text       string                 `json:"text"`
-	Markdown   string                 `json:"markdown,omitempty"`
-	Arguments  []string               `json:"arguments,omitempty"`
-	ID         string                 `json:"id,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFLocation represents a location where an issue was found
-type SARIFLocation struct {
-	PhysicalLocation SARIFPhysicalLocation  `json:"physicalLocation"`
-	LogicalLocations []SARIFLogicalLocation `json:"logicalLocations,omitempty"`
-	Message          SARIFMessage           `json:"message,omitempty"`
-	Properties       map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFPhysicalLocation represents a physical location in source code
-type SARIFPhysicalLocation struct {
-	ArtifactLocation SARIFArtifactLocation `json:"artifactLocation"`
-	Region           SARIFRegion           `json:"region,omitempty"`
-	ContextRegion    SARIFRegion           `json:"contextRegion,omitempty"`
-}
-
-// SARIFLogicalLocation represents a logical location (job, step, etc.)
-type SARIFLogicalLocation struct {
-	Name               string                 `json:"name,omitempty"`
-	Index              int                    `json:"index,omitempty"`
-	FullyQualifiedName string                 `json:"fullyQualifiedName,omitempty"`
-	DecoratedName      string                 `json:"decoratedName,omitempty"`
-	Kind               string                 `json:"kind,omitempty"`
-	Properties         map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFArtifactLocation represents a reference to an artifact
-type SARIFArtifactLocation struct {
-	URI         string                 `json:"uri"`
-	URIBaseId   string                 `json:"uriBaseId,omitempty"`
-	Index       int                    `json:"index,omitempty"`
-	Description SARIFMessage           `json:"description,omitempty"`
-	Properties  map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFRegion represents a region in a file
-type SARIFRegion struct {
-	StartLine   int                    `json:"startLine,omitempty"`
-	StartColumn int                    `json:"startColumn,omitempty"`
-	EndLine     int                    `json:"endLine,omitempty"`
-	EndColumn   int                    `json:"endColumn,omitempty"`
-	CharOffset  int                    `json:"charOffset,omitempty"`
-	CharLength  int                    `json:"charLength,omitempty"`
-	ByteOffset  int                    `json:"byteOffset,omitempty"`
-	ByteLength  int                    `json:"byteLength,omitempty"`
-	Snippet     SARIFArtifactContent   `json:"snippet,omitempty"`
-	Message     SARIFMessage           `json:"message,omitempty"`
-	Properties  map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFArtifactContent represents content of an artifact
-type SARIFArtifactContent struct {
-	Text       string                  `json:"text,omitempty"`
-	Binary     string                  `json:"binary,omitempty"`
-	Rendered   SARIFMultiformatMessage `json:"rendered,omitempty"`
-	Properties map[string]interface{}  `json:"properties,omitempty"`
-}
-
-// SARIFMultiformatMessage represents a message that can be rendered in multiple formats
-type SARIFMultiformatMessage struct {
-	Text       string                 `json:"text,omitempty"`
-	Markdown   string                 `json:"markdown,omitempty"`
-	Properties map[string]interface{} `json:"properties,omitempty"`
-}
-
-// SARIFArtifact represents a file or other artifact
-type SARIFArtifact struct {
-	Location            SARIFArtifactLocation  `json:"location"`
-	Length              int64                  `json:"length,omitempty"`
-	MimeType            string                 `json:"mimeType,omitempty"`
-	Contents            SARIFArtifactContent   `json:"contents,omitempty"`
-	Encoding            string                 `json:"encoding,omitempty"`
-	SourceLanguage      string                 `json:"sourceLanguage,omitempty"`
-	Hashes              map[string]string      `json:"hashes,omitempty"`
-	LastModifiedTimeUtc time.Time              `json:"lastModifiedTimeUtc,omitempty"`
-	Description         SARIFMessage           `json:"description,omitempty"`
-	Properties          map[string]interface{} `json:"properties,omitempty"`
-}
-
-// generateSARIFReport creates a SARIF-compliant report
+// generateSARIFReport creates a SARIF-compliant report using the go-sarif library
 func (g *Generator) generateSARIFReport() error {
-	sarif := g.createSARIFReport()
-
-	data, err := json.MarshalIndent(sarif, "", "  ")
+	report, err := g.createSARIFReport()
 	if err != nil {
-		return fmt.Errorf("failed to marshal SARIF: %w", err)
+		return fmt.Errorf("failed to create SARIF report: %w", err)
 	}
 
 	if g.FilePath != "" {
-		err = os.WriteFile(g.FilePath, data, 0644)
+		err = report.WriteFile(g.FilePath)
 		if err != nil {
 			return fmt.Errorf("failed to write SARIF report to file: %w", err)
 		}
 		fmt.Printf("SARIF report written to %s\n", g.FilePath)
 	} else {
-		fmt.Println(string(data))
+		// Write to stdout
+		err = report.PrettyWrite(os.Stdout)
+		if err != nil {
+			return fmt.Errorf("failed to write SARIF to stdout: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// createSARIFReport converts scan results to SARIF format
-func (g *Generator) createSARIFReport() SARIF {
-	// Create rule definitions from findings
-	ruleMap := make(map[string]SARIFRule)
-	for _, finding := range g.Result.Findings {
-		if _, exists := ruleMap[finding.RuleID]; !exists {
-			ruleMap[finding.RuleID] = g.createSARIFRule(finding)
-		}
+// createSARIFReport converts scan results to SARIF format using go-sarif library
+func (g *Generator) createSARIFReport() (*sarif.Report, error) {
+	// Create a new SARIF report
+	report, err := sarif.New(sarif.Version210)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create SARIF report: %w", err)
 	}
 
-	// Convert map to slice for consistent ordering
-	var rules []SARIFRule
-	for _, rule := range ruleMap {
-		rules = append(rules, rule)
-	}
+	// Add run to the report
+	run := sarif.NewRunWithInformationURI("Flowlyt", "https://github.com/harekrishnarai/flowlyt")
+	run.Tool.Driver.WithVersion("0.1.0")
+	run.Tool.Driver.WithFullName("Flowlyt - CI/CD Security Analyzer")
+	run.Tool.Driver.WithSemanticVersion("0.1.0")
 
-	// Create results from findings
-	var results []SARIFResult
-	for _, finding := range g.Result.Findings {
-		result := g.createSARIFResult(finding, g.getRuleIndex(finding.RuleID, rules))
-		results = append(results, result)
-	}
+	// Set invocation information
+	run.AddInvocation(true).
+		WithStartTimeUTC(g.Result.ScanTime).
+		WithEndTimeUTC(g.Result.ScanTime.Add(g.Result.Duration))
 
-	// Create artifacts (files) referenced in the scan
-	artifacts := g.createSARIFArtifacts()
-
-	run := SARIFRun{
-		Tool: SARIFTool{
-			Driver: SARIFDriver{
-				Name:            "Flowlyt",
-				Version:         "0.1.0",
-				InformationUri:  "https://github.com/harekrishnarai/flowlyt",
-				FullName:        "Flowlyt - CI/CD Security Analyzer",
-				SemanticVersion: "0.1.0",
-				Rules:           rules,
-			},
-		},
-		Invocation: SARIFInvocation{
-			StartTimeUtc:        g.Result.ScanTime,
-			EndTimeUtc:          g.Result.ScanTime.Add(g.Result.Duration),
-			ExecutionSuccessful: true,
-		},
-		Results:    results,
-		Artifacts:  artifacts,
-		ColumnKind: "utf16CodeUnits",
-		Properties: map[string]interface{}{
-			"repository":     g.Result.Repository,
-			"workflowsCount": g.Result.WorkflowsCount,
-			"rulesCount":     g.Result.RulesCount,
-			"summary":        g.Result.Summary,
-		},
+	// Add run properties - initialize the Properties map first
+	if run.Properties == nil {
+		run.Properties = make(sarif.Properties)
 	}
+	run.Properties["repository"] = g.Result.Repository
+	run.Properties["workflowsCount"] = g.Result.WorkflowsCount
+	run.Properties["rulesCount"] = g.Result.RulesCount
+	run.Properties["summary"] = g.Result.Summary
 
 	if g.Result.SuppressedCount > 0 {
 		run.Properties["flowlyt.suppressedReachability"] = g.Result.SuppressedCount
@@ -252,206 +70,171 @@ func (g *Generator) createSARIFReport() SARIF {
 		run.Properties["flowlyt.generatedAstFindings"] = g.Result.GeneratedByAST
 	}
 
-	return SARIF{
-		Version: "2.1.0",
-		Schema:  "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-		Runs:    []SARIFRun{run},
+	// Create rule definitions from findings
+	ruleMap := make(map[string]bool)
+	for _, finding := range g.Result.Findings {
+		if !ruleMap[finding.RuleID] {
+			g.addSARIFRule(run, finding)
+			ruleMap[finding.RuleID] = true
+		}
 	}
+
+	// Add results from findings
+	for _, finding := range g.Result.Findings {
+		g.addSARIFResult(run, finding)
+	}
+
+	// Add artifacts (files) referenced in the scan
+	g.addSARIFArtifacts(run)
+
+	report.AddRun(run)
+	return report, nil
 }
 
-// createSARIFRule converts a finding to a SARIF rule definition
-func (g *Generator) createSARIFRule(finding rules.Finding) SARIFRule {
+// addSARIFRule adds a rule definition to the SARIF run
+func (g *Generator) addSARIFRule(run *sarif.Run, finding rules.Finding) {
 	level := g.severityToSARIFLevel(finding.Severity)
 
-	return SARIFRule{
-		ID:   finding.RuleID,
-		Name: finding.RuleName,
-		ShortDescription: SARIFMessage{
-			Text: finding.RuleName,
-		},
-		FullDescription: SARIFMessage{
-			Text: finding.Description,
-		},
-		DefaultConfiguration: SARIFRuleConfiguration{
-			Level: level,
-		},
-		Help: SARIFMessage{
-			Text:     finding.Remediation,
-			Markdown: g.formatRemediation(finding.Remediation),
-		},
-		Properties: map[string]interface{}{
-			"category":         string(finding.Category),
-			"severity":         string(finding.Severity),
-			"tags":             []string{"security", "ci-cd", string(finding.Category)},
-			"precision":        "high",
-			"problem.severity": string(finding.Severity),
-		},
-	}
+	rule := run.AddRule(finding.RuleID).
+		WithName(finding.RuleName).
+		WithShortDescription(sarif.NewMultiformatMessageString(finding.RuleName)).
+		WithFullDescription(sarif.NewMultiformatMessageString(finding.Description)).
+		WithHelp(sarif.NewMultiformatMessageString(finding.Remediation).WithMarkdown(g.formatRemediation(finding.Remediation)))
+
+	// Set default configuration level
+	rule.WithDefaultConfiguration(sarif.NewReportingConfiguration().WithLevel(level))
+
+	// Add rule properties
+	rule.WithProperties(sarif.Properties{
+		"category":         string(finding.Category),
+		"severity":         string(finding.Severity),
+		"tags":             []string{"security", "ci-cd", string(finding.Category)},
+		"precision":        "high",
+		"problem.severity": string(finding.Severity),
+	})
 }
 
-// createSARIFResult converts a finding to a SARIF result
-func (g *Generator) createSARIFResult(finding rules.Finding, ruleIndex int) SARIFResult {
+// addSARIFResult adds a result to the SARIF run
+func (g *Generator) addSARIFResult(run *sarif.Run, finding rules.Finding) {
 	level := g.severityToSARIFLevel(finding.Severity)
 
-	// Create message with context
-	message := SARIFMessage{
-		Text: finding.Description,
-	}
-
-	// Create locations
-	locations := []SARIFLocation{
-		g.createSARIFLocation(finding),
-	}
-
-	// Create partial fingerprints for result tracking
-	fingerprints := map[string]string{
-		"flowlyt/v1": g.generateFingerprint(finding),
-	}
-
-	properties := map[string]interface{}{
-		"category":    string(finding.Category),
-		"severity":    string(finding.Severity),
-		"evidence":    MaskSecrets(finding.Evidence),
-		"remediation": finding.Remediation,
-	}
-
-	// Add job/step context if available
-	if finding.JobName != "" {
-		properties["jobName"] = finding.JobName
-	}
-	if finding.StepName != "" {
-		properties["stepName"] = finding.StepName
-	}
-	if finding.GitHubURL != "" {
-		properties["githubUrl"] = finding.GitHubURL
-	}
-	if finding.GitLabURL != "" {
-		properties["gitlabUrl"] = finding.GitLabURL
-	}
-	if finding.RunnerType != "" {
-		properties["runnerType"] = finding.RunnerType
-	}
-	if finding.FileContext != "" {
-		properties["fileContext"] = finding.FileContext
-	}
-	if finding.AIVerified {
-		properties["ai.verified"] = true
-		if finding.AILikelyFalsePositive != nil {
-			properties["ai.likelyFalsePositive"] = *finding.AILikelyFalsePositive
-		}
-		if finding.AIConfidence > 0 {
-			properties["ai.confidence"] = finding.AIConfidence
-		}
-		if finding.AIReasoning != "" {
-			properties["ai.reasoning"] = finding.AIReasoning
-		}
-		if finding.AISuggestedSeverity != "" {
-			properties["ai.suggestedSeverity"] = finding.AISuggestedSeverity
-		}
-		if finding.AIError != "" {
-			properties["ai.error"] = finding.AIError
-		}
-	}
-
-	return SARIFResult{
-		RuleID:              finding.RuleID,
-		RuleIndex:           ruleIndex,
-		Level:               level,
-		Message:             message,
-		Locations:           locations,
-		PartialFingerprints: fingerprints,
-		Properties:          properties,
-	}
-}
-
-// createSARIFLocation creates a SARIF location from a finding
-func (g *Generator) createSARIFLocation(finding rules.Finding) SARIFLocation {
-	// Normalize file path for SARIF (use forward slashes, relative path)
+	// Normalize file path
 	normalizedPath := g.normalizeFilePath(finding.FilePath)
 
-	physicalLocation := SARIFPhysicalLocation{
-		ArtifactLocation: SARIFArtifactLocation{
-			URI: normalizedPath,
-		},
-	}
+	// Create the result
+	result := run.CreateResultForRule(finding.RuleID).
+		WithLevel(level).
+		WithMessage(sarif.NewTextMessage(finding.Description))
 
-	// Add line/column information if available
+	// Add location
+	location := sarif.NewPhysicalLocation().
+		WithArtifactLocation(sarif.NewSimpleArtifactLocation(normalizedPath))
+
 	if finding.LineNumber > 0 {
-		physicalLocation.Region = SARIFRegion{
-			StartLine: finding.LineNumber,
-			EndLine:   finding.LineNumber,
-		}
+		region := sarif.NewSimpleRegion(finding.LineNumber, finding.LineNumber)
+		location.WithRegion(region)
 	}
 
-	location := SARIFLocation{
-		PhysicalLocation: physicalLocation,
-	}
+	result.AddLocation(sarif.NewLocation().WithPhysicalLocation(location))
 
 	// Add logical locations for workflow context
-	var logicalLocations []SARIFLogicalLocation
-
 	if finding.JobName != "" {
-		logicalLocations = append(logicalLocations, SARIFLogicalLocation{
-			Name:               finding.JobName,
-			Kind:               "job",
-			FullyQualifiedName: finding.JobName,
-		})
+		logicalLocation := sarif.NewLogicalLocation().
+			WithName(finding.JobName).
+			WithKind("job").
+			WithFullyQualifiedName(finding.JobName)
+		result.Locations[0].AddLogicalLocations(logicalLocation)
 	}
 
 	if finding.StepName != "" {
-		logicalLocations = append(logicalLocations, SARIFLogicalLocation{
-			Name:               finding.StepName,
-			Kind:               "step",
-			FullyQualifiedName: g.getFullyQualifiedStepName(finding),
-		})
+		logicalLocation := sarif.NewLogicalLocation().
+			WithName(finding.StepName).
+			WithKind("step").
+			WithFullyQualifiedName(g.getFullyQualifiedStepName(finding))
+		result.Locations[0].AddLogicalLocations(logicalLocation)
 	}
 
-	if len(logicalLocations) > 0 {
-		location.LogicalLocations = logicalLocations
-	}
+	// Add partial fingerprints
+	result.WithPartialFingerPrints(map[string]interface{}{
+		"flowlyt/v1": g.generateFingerprint(finding),
+	})
 
-	return location
+	// Add result properties - initialize the Properties map first
+	if result.Properties == nil {
+		result.Properties = make(sarif.Properties)
+	}
+	result.Properties["category"] = string(finding.Category)
+	result.Properties["severity"] = string(finding.Severity)
+	result.Properties["evidence"] = MaskSecrets(finding.Evidence)
+	result.Properties["remediation"] = finding.Remediation
+
+	if finding.JobName != "" {
+		result.Properties["jobName"] = finding.JobName
+	}
+	if finding.StepName != "" {
+		result.Properties["stepName"] = finding.StepName
+	}
+	if finding.GitHubURL != "" {
+		result.Properties["githubUrl"] = finding.GitHubURL
+	}
+	if finding.GitLabURL != "" {
+		result.Properties["gitlabUrl"] = finding.GitLabURL
+	}
+	if finding.RunnerType != "" {
+		result.Properties["runnerType"] = finding.RunnerType
+	}
+	if finding.FileContext != "" {
+		result.Properties["fileContext"] = finding.FileContext
+	}
+	if finding.AIVerified {
+		result.Properties["ai.verified"] = true
+		if finding.AILikelyFalsePositive != nil {
+			result.Properties["ai.likelyFalsePositive"] = *finding.AILikelyFalsePositive
+		}
+		if finding.AIConfidence > 0 {
+			result.Properties["ai.confidence"] = finding.AIConfidence
+		}
+		if finding.AIReasoning != "" {
+			result.Properties["ai.reasoning"] = finding.AIReasoning
+		}
+		if finding.AISuggestedSeverity != "" {
+			result.Properties["ai.suggestedSeverity"] = finding.AISuggestedSeverity
+		}
+		if finding.AIError != "" {
+			result.Properties["ai.error"] = finding.AIError
+		}
+	}
 }
 
-// createSARIFArtifacts creates artifact entries for analyzed files
-func (g *Generator) createSARIFArtifacts() []SARIFArtifact {
-	artifactMap := make(map[string]SARIFArtifact)
+// addSARIFArtifacts adds artifact entries for analyzed files
+func (g *Generator) addSARIFArtifacts(run *sarif.Run) {
+	artifactMap := make(map[string]bool)
 
 	for _, finding := range g.Result.Findings {
 		normalizedPath := g.normalizeFilePath(finding.FilePath)
 
-		if _, exists := artifactMap[normalizedPath]; !exists {
-			artifact := SARIFArtifact{
-				Location: SARIFArtifactLocation{
-					URI: normalizedPath,
-				},
-				MimeType:       g.getMimeType(finding.FilePath),
-				SourceLanguage: "yaml",
-				Description: SARIFMessage{
-					Text: "CI/CD workflow file",
-				},
-				Properties: map[string]interface{}{
-					"fileType": "workflow",
-				},
+		if !artifactMap[normalizedPath] {
+			artifact := run.AddDistinctArtifact(normalizedPath)
+
+			// Set MIME type and source language
+			artifact.WithMimeType(g.getMimeType(finding.FilePath))
+			artifact.WithSourceLanguage("yaml")
+			artifact.WithDescription(sarif.NewMessage().WithText("CI/CD workflow file"))
+
+			// Add properties - initialize the Properties map first
+			if artifact.Properties == nil {
+				artifact.Properties = make(sarif.Properties)
 			}
+			artifact.Properties["fileType"] = "workflow"
 
 			// Try to get file info if it's a local file
 			if info, err := os.Stat(finding.FilePath); err == nil {
-				artifact.Length = info.Size()
-				artifact.LastModifiedTimeUtc = info.ModTime()
+				artifact.WithLength(int(info.Size()))
 			}
 
-			artifactMap[normalizedPath] = artifact
+			artifactMap[normalizedPath] = true
 		}
 	}
-
-	// Convert map to slice
-	var artifacts []SARIFArtifact
-	for _, artifact := range artifactMap {
-		artifacts = append(artifacts, artifact)
-	}
-
-	return artifacts
 }
 
 // Helper functions
@@ -472,16 +255,6 @@ func (g *Generator) severityToSARIFLevel(severity rules.Severity) string {
 	default:
 		return "warning"
 	}
-}
-
-// getRuleIndex finds the index of a rule in the rules array
-func (g *Generator) getRuleIndex(ruleID string, rules []SARIFRule) int {
-	for i, rule := range rules {
-		if rule.ID == ruleID {
-			return i
-		}
-	}
-	return 0
 }
 
 // normalizeFilePath normalizes file paths for SARIF format
@@ -508,11 +281,6 @@ func (g *Generator) normalizeFilePath(filePath string) string {
 				}
 			}
 		}
-	}
-
-	// URL encode if necessary
-	if strings.Contains(normalized, " ") {
-		normalized = url.QueryEscape(normalized)
 	}
 
 	return normalized
