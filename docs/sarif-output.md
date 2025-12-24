@@ -63,13 +63,18 @@ Flowlyt's SARIF implementation includes all essential SARIF 2.1.0 features:
 
 ### 🔍 Rich Results
 - **Rule mapping**: Each finding linked to specific rule definition
-- **Severity levels**: Mapped to SARIF levels (error, warning, note)
+- **Severity levels**: GitHub Advanced Security compatible severity mapping
+  - **Critical** (9.0-10.0): Displayed as "Critical" in GitHub Security tab
+  - **High** (7.0-8.9): Displayed as "High" in GitHub Security tab
+  - **Medium** (4.0-6.9): Displayed as "Medium" in GitHub Security tab
+  - **Low** (0.1-3.9): Displayed as "Low" in GitHub Security tab
+  - **Info** (0.0): Informational findings
 - **Evidence**: Masked sensitive content for security
 - **Remediation**: Actionable fix recommendations
 
 ### 🔗 Result Tracking
 - **Fingerprints**: Stable identifiers for result deduplication
-- **Properties**: Extended metadata for integration
+- **Properties**: Extended metadata for integration including `security-severity` score
 - **Categories**: Security category classification
 
 ## GitHub Integration
@@ -153,7 +158,7 @@ jobs:
 
 ## SARIF Structure
 
-Flowlyt generates SARIF with this structure:
+Flowlyt generates SARIF with GitHub Advanced Security compatible structure:
 
 ```json
 {
@@ -164,7 +169,20 @@ Flowlyt generates SARIF with this structure:
       "driver": {
         "name": "Flowlyt",
         "version": "0.1.0",
-        "rules": [/* Rule definitions */]
+        "rules": [{
+          "id": "MALICIOUS_CURL_PIPE_BASH",
+          "name": "Dangerous Curl Pipe to Bash",
+          "shortDescription": { "text": "Dangerous Curl Pipe to Bash" },
+          "fullDescription": { "text": "Command downloads and executes code..." },
+          "defaultConfiguration": { "level": "error" },
+          "properties": {
+            "category": "MALICIOUS_PATTERN",
+            "severity": "HIGH",
+            "security-severity": "8.0",
+            "tags": ["security", "ci-cd", "MALICIOUS_PATTERN"],
+            "precision": "high"
+          }
+        }]
       }
     },
     "invocation": {
@@ -217,7 +235,7 @@ Flowlyt generates SARIF with this structure:
 
 ## Example SARIF Output
 
-Here's a sample SARIF result for a curl pipe vulnerability:
+Here's a sample SARIF result for a curl pipe vulnerability with GitHub Advanced Security severity mapping:
 
 ```json
 {
@@ -245,6 +263,7 @@ Here's a sample SARIF result for a curl pipe vulnerability:
   "properties": {
     "category": "MALICIOUS_PATTERN",
     "severity": "HIGH",
+    "security-severity": "8.0",
     "evidence": "curl ******* | bash",
     "remediation": "Download the script first, verify its contents, then execute separately",
     "jobName": "deploy-production",
@@ -252,6 +271,20 @@ Here's a sample SARIF result for a curl pipe vulnerability:
   }
 }
 ```
+
+### Understanding Severity Mapping
+
+Flowlyt uses the `security-severity` property to provide GitHub Advanced Security with precise severity information:
+
+| Flowlyt Severity | security-severity Score | GitHub Display | SARIF Level |
+|-----------------|------------------------|----------------|-------------|
+| CRITICAL        | 9.0                    | Critical       | error       |
+| HIGH            | 8.0                    | High           | error       |
+| MEDIUM          | 5.0                    | Medium         | warning     |
+| LOW             | 3.0                    | Low            | warning     |
+| INFO            | 0.0                    | Note           | note        |
+
+This ensures that findings appear with the correct severity in GitHub's Security tab instead of generic "Error" and "Warning" labels.
 
 ## Troubleshooting
 

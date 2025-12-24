@@ -45,9 +45,9 @@ func (g *Generator) createSARIFReport() (*sarif.Report, error) {
 
 	// Add run to the report
 	run := sarif.NewRunWithInformationURI("Flowlyt", "https://github.com/harekrishnarai/flowlyt")
-	run.Tool.Driver.WithVersion("0.1.0")
+	run.Tool.Driver.WithVersion("0.0.9")
 	run.Tool.Driver.WithFullName("Flowlyt - CI/CD Security Analyzer")
-	run.Tool.Driver.WithSemanticVersion("0.1.0")
+	run.Tool.Driver.WithSemanticVersion("0.0.9")
 
 	// Set invocation information
 	run.AddInvocation(true).
@@ -104,13 +104,14 @@ func (g *Generator) addSARIFRule(run *sarif.Run, finding rules.Finding) {
 	// Set default configuration level
 	rule.WithDefaultConfiguration(sarif.NewReportingConfiguration().WithLevel(level))
 
-	// Add rule properties
+	// Add rule properties with GitHub Advanced Security compatible severity
 	rule.WithProperties(sarif.Properties{
-		"category":         string(finding.Category),
-		"severity":         string(finding.Severity),
-		"tags":             []string{"security", "ci-cd", string(finding.Category)},
-		"precision":        "high",
-		"problem.severity": string(finding.Severity),
+		"category":          string(finding.Category),
+		"severity":          string(finding.Severity),
+		"security-severity": g.getSecuritySeverityScore(finding.Severity),
+		"tags":              []string{"security", "ci-cd", string(finding.Category)},
+		"precision":         "high",
+		"problem.severity":  string(finding.Severity),
 	})
 }
 
@@ -240,20 +241,44 @@ func (g *Generator) addSARIFArtifacts(run *sarif.Run) {
 // Helper functions
 
 // severityToSARIFLevel converts Flowlyt severity to SARIF level
+// GitHub Advanced Security uses this along with security-severity for display
 func (g *Generator) severityToSARIFLevel(severity rules.Severity) string {
 	switch severity {
 	case rules.Critical:
-		return "error"
+		return "error" // Critical issues are always errors
 	case rules.High:
-		return "error"
+		return "error" // High severity issues are errors
 	case rules.Medium:
-		return "warning"
+		return "warning" // Medium severity issues are warnings
 	case rules.Low:
-		return "note"
+		return "warning" // Low severity issues are warnings
 	case rules.Info:
-		return "note"
+		return "note" // Informational findings are notes
 	default:
 		return "warning"
+	}
+}
+
+// getSecuritySeverityScore returns a numeric severity score for GitHub Advanced Security
+// GitHub uses this score to categorize findings:
+// 9.0-10.0: Critical
+// 7.0-8.9: High
+// 4.0-6.9: Medium
+// 0.1-3.9: Low
+func (g *Generator) getSecuritySeverityScore(severity rules.Severity) string {
+	switch severity {
+	case rules.Critical:
+		return "9.0" // Critical: 9.0-10.0 range
+	case rules.High:
+		return "8.0" // High: 7.0-8.9 range
+	case rules.Medium:
+		return "5.0" // Medium: 4.0-6.9 range
+	case rules.Low:
+		return "3.0" // Low: 0.1-3.9 range
+	case rules.Info:
+		return "0.0" // Info: 0.0 for informational
+	default:
+		return "5.0" // Default to medium
 	}
 }
 

@@ -69,7 +69,7 @@ func NewGeminiClient(config Config) (*GeminiClient, error) {
 
 	model := config.Model
 	if model == "" {
-		model = "gemini-1.5-flash" // Use cost-effective model by default
+		model = "gemini-2.5-flash" // Use cost-effective model by default
 	}
 
 	maxTokens := config.MaxTokens

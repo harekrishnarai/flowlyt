@@ -132,6 +132,17 @@ func TestSARIFGeneration(t *testing.T) {
 	// Validate rules are defined
 	if run.Tool.Driver.Rules == nil || len(run.Tool.Driver.Rules) == 0 {
 		t.Error("Expected rules to be defined in tool driver")
+	} else {
+		// Validate that rules have security-severity property
+		for _, rule := range run.Tool.Driver.Rules {
+			if rule.Properties == nil {
+				t.Errorf("Expected rule %s to have properties", rule.ID)
+				continue
+			}
+			if _, ok := rule.Properties["security-severity"]; !ok {
+				t.Errorf("Expected rule %s to have security-severity property", rule.ID)
+			}
+		}
 	}
 
 	// Validate the JSON structure is valid
@@ -165,7 +176,7 @@ func TestSeverityToSARIFLevel(t *testing.T) {
 		{rules.Critical, "error"},
 		{rules.High, "error"},
 		{rules.Medium, "warning"},
-		{rules.Low, "note"},
+		{rules.Low, "warning"},
 		{rules.Info, "note"},
 	}
 
@@ -178,6 +189,33 @@ func TestSeverityToSARIFLevel(t *testing.T) {
 			if level != tt.expected {
 				t.Errorf("Expected level '%s' for severity '%s', got '%s'", 
 					tt.expected, tt.severity, level)
+			}
+		})
+	}
+}
+
+func TestGetSecuritySeverityScore(t *testing.T) {
+	tests := []struct {
+		severity     rules.Severity
+		expected     string
+		description  string
+	}{
+		{rules.Critical, "9.0", "Critical should map to 9.0 (9.0-10.0 range)"},
+		{rules.High, "8.0", "High should map to 8.0 (7.0-8.9 range)"},
+		{rules.Medium, "5.0", "Medium should map to 5.0 (4.0-6.9 range)"},
+		{rules.Low, "3.0", "Low should map to 3.0 (0.1-3.9 range)"},
+		{rules.Info, "0.0", "Info should map to 0.0"},
+	}
+
+	result := ScanResult{}
+	generator := NewGenerator(result, "sarif", false, "")
+
+	for _, tt := range tests {
+		t.Run(string(tt.severity), func(t *testing.T) {
+			score := generator.getSecuritySeverityScore(tt.severity)
+			if score != tt.expected {
+				t.Errorf("Expected security-severity '%s' for severity '%s', got '%s'. %s", 
+					tt.expected, tt.severity, score, tt.description)
 			}
 		})
 	}

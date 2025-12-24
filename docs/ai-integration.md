@@ -202,7 +202,7 @@ flowlyt scan --repo . --ai openai --ai-key your-key  # Visible in process list
 
 ```bash
 # Use cost-effective models for routine scans
-flowlyt scan --repo . --ai gemini --ai-model gemini-1.5-flash
+flowlyt scan --repo . --ai gemini --ai-model gemini-2.5-flash
 
 # Reserve premium models for critical analysis
 flowlyt scan --repo . --ai openai --ai-model gpt-4 --min-severity CRITICAL

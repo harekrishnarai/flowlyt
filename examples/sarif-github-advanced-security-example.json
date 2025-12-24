@@ -1,0 +1,245 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Flowlyt",
+          "fullName": "Flowlyt - CI/CD Security Analyzer",
+          "version": "0.1.0",
+          "semanticVersion": "0.1.0",
+          "informationUri": "https://github.com/harekrishnarai/flowlyt",
+          "rules": [
+            {
+              "id": "MALICIOUS_CURL_PIPE_BASH",
+              "name": "Dangerous Curl Pipe to Bash",
+              "shortDescription": {
+                "text": "Dangerous Curl Pipe to Bash"
+              },
+              "fullDescription": {
+                "text": "Command downloads and executes code directly from the internet without verification"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "category": "MALICIOUS_PATTERN",
+                "severity": "HIGH",
+                "security-severity": "8.0",
+                "tags": ["security", "ci-cd", "MALICIOUS_PATTERN"],
+                "precision": "high",
+                "problem.severity": "HIGH"
+              }
+            },
+            {
+              "id": "UNTRUSTED_ACTION_SOURCE",
+              "name": "Untrusted Action Source",
+              "shortDescription": {
+                "text": "Untrusted Action Source"
+              },
+              "fullDescription": {
+                "text": "Action is sourced from an untrusted repository that could be compromised"
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "properties": {
+                "category": "SUPPLY_CHAIN",
+                "severity": "CRITICAL",
+                "security-severity": "9.0",
+                "tags": ["security", "ci-cd", "SUPPLY_CHAIN"],
+                "precision": "high",
+                "problem.severity": "CRITICAL"
+              }
+            },
+            {
+              "id": "WEAK_SECRET_PATTERN",
+              "name": "Weak Secret Pattern",
+              "shortDescription": {
+                "text": "Weak Secret Pattern"
+              },
+              "fullDescription": {
+                "text": "Potentially hardcoded credentials or secrets detected in the workflow"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "category": "SECRET_EXPOSURE",
+                "severity": "MEDIUM",
+                "security-severity": "5.0",
+                "tags": ["security", "ci-cd", "SECRET_EXPOSURE"],
+                "precision": "high",
+                "problem.severity": "MEDIUM"
+              }
+            },
+            {
+              "id": "MISSING_WORKFLOW_PERMISSIONS",
+              "name": "Missing Workflow Permissions",
+              "shortDescription": {
+                "text": "Missing Workflow Permissions"
+              },
+              "fullDescription": {
+                "text": "Workflow does not specify explicit permissions, which could grant excessive access"
+              },
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "properties": {
+                "category": "ACCESS_CONTROL",
+                "severity": "LOW",
+                "security-severity": "3.0",
+                "tags": ["security", "ci-cd", "ACCESS_CONTROL"],
+                "precision": "high",
+                "problem.severity": "LOW"
+              }
+            }
+          ]
+        }
+      },
+      "results": [
+        {
+          "ruleId": "UNTRUSTED_ACTION_SOURCE",
+          "level": "error",
+          "message": {
+            "text": "Action 'suspicious/action@main' uses a branch reference which could be updated maliciously"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/flowlyt-scan.yml"
+                },
+                "region": {
+                  "startLine": 20,
+                  "endLine": 20
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "security-scan",
+                  "kind": "job"
+                },
+                {
+                  "name": "Run Security Check",
+                  "kind": "step",
+                  "fullyQualifiedName": "security-scan.Run Security Check"
+                }
+              ]
+            }
+          ],
+          "partialFingerprints": {
+            "flowlyt/v1": "UNTRUSTED_ACTION_SOURCE:.github/workflows/flowlyt-scan.yml:20"
+          },
+          "properties": {
+            "category": "SUPPLY_CHAIN",
+            "severity": "CRITICAL",
+            "evidence": "uses: suspicious/action@main",
+            "remediation": "Pin actions to full-length commit SHA instead of branch or tag references",
+            "jobName": "security-scan",
+            "stepName": "Run Security Check"
+          }
+        },
+        {
+          "ruleId": "MALICIOUS_CURL_PIPE_BASH",
+          "level": "error",
+          "message": {
+            "text": "Command downloads and executes code directly from the internet"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/deploy.yml"
+                },
+                "region": {
+                  "startLine": 42,
+                  "endLine": 42
+                }
+              },
+              "logicalLocations": [
+                {
+                  "name": "deploy-production",
+                  "kind": "job"
+                },
+                {
+                  "name": "Install dependencies",
+                  "kind": "step",
+                  "fullyQualifiedName": "deploy-production.Install dependencies"
+                }
+              ]
+            }
+          ],
+          "partialFingerprints": {
+            "flowlyt/v1": "MALICIOUS_CURL_PIPE_BASH:.github/workflows/deploy.yml:42"
+          },
+          "properties": {
+            "category": "MALICIOUS_PATTERN",
+            "severity": "HIGH",
+            "evidence": "curl ******* | bash",
+            "remediation": "Download the script first, verify its contents, then execute separately"
+          }
+        },
+        {
+          "ruleId": "WEAK_SECRET_PATTERN",
+          "level": "warning",
+          "message": {
+            "text": "Potentially hardcoded credentials detected"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/api-test.yml"
+                },
+                "region": {
+                  "startLine": 15,
+                  "endLine": 15
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "flowlyt/v1": "WEAK_SECRET_PATTERN:.github/workflows/api-test.yml:15"
+          },
+          "properties": {
+            "category": "SECRET_EXPOSURE",
+            "severity": "MEDIUM",
+            "evidence": "API_KEY: [MASKED]",
+            "remediation": "Use GitHub Secrets to store sensitive values"
+          }
+        },
+        {
+          "ruleId": "MISSING_WORKFLOW_PERMISSIONS",
+          "level": "warning",
+          "message": {
+            "text": "Workflow does not specify explicit permissions"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/build.yml"
+                },
+                "region": {
+                  "startLine": 1,
+                  "endLine": 1
+                }
+              }
+            }
+          ],
+          "partialFingerprints": {
+            "flowlyt/v1": "MISSING_WORKFLOW_PERMISSIONS:.github/workflows/build.yml:1"
+          },
+          "properties": {
+            "category": "ACCESS_CONTROL",
+            "severity": "LOW",
+            "evidence": "permissions not defined",
+            "remediation": "Add explicit permissions block to workflow with least privilege principle"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -220,7 +220,7 @@ Found 4 real issues (1 Critical, 1 High, 2 Medium) | 8 false positives filtered 
     output-format: 'sarif'
     enable-ast-analysis: true
     ai-provider: 'gemini'  # or 'openai', 'claude', 'grok'
-    ai-model: 'gemini-1.5-flash'
+    ai-model: 'gemini-2.5-flash'
   env:
     AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # Your API key
     

@@ -96,7 +96,7 @@ func GetDefaultModel(provider Provider) string {
 	case ProviderOpenAI:
 		return "gpt-4o-mini"
 	case ProviderGemini:
-		return "gemini-1.5-flash"
+		return "gemini-2.5-flash"
 	case ProviderClaude:
 		return "claude-3-haiku-20240307"
 	case ProviderGrok:
@@ -121,7 +121,7 @@ func GetAvailableModels(provider Provider) []string {
 		}
 	case ProviderGemini:
 		return []string{
-			"gemini-1.5-flash", // Cost-effective default
+			"gemini-2.5-flash", // Cost-effective default
 			"gemini-1.5-pro",   // Higher quality
 			"gemini-1.0-pro",   // Legacy version
 		}
