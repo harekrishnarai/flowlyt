@@ -49,47 +49,27 @@ Flowlyt combines traditional pattern matching with cutting-edge Abstract Syntax 
 ## 🚀 Quick Start
 
 
-## ⚠️ Known Issues
+## Installation
 
-### Go Module Proxy Cache Issue
-
-**Issue**: `go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest` may install an incorrect version (v1.0.0) due to a Go module proxy cache issue.
-
-**Symptoms**:
-- Installing with `@latest` downloads v1.0.2 instead of the actual latest version
-- Tool may not function correctly or detect security issues properly
-
-**Workaround**: Use the `GOPRIVATE` environment variable to bypass the proxy cache:
-
-```bash
-# Recommended installation method (bypasses proxy cache)
-GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
-```
-
-**Alternative**: Install specific version directly:
+Install latest version directly:
 ```bash
 # Install specific latest version
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v1.0.2
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+```
+
+Install specific version directly:
+```bash
+# Install specific latest version
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v1.0.3
 ```
 
 **Verification**: Check that you have the correct version:
 ```bash
 flowlyt --version
-# Should output: flowlyt version 1.0.2
+# Should output: flowlyt version 1.0.3
 ```
 
-This issue has been reported to GitHub support and should be resolved server-side in the future.
 
-
-```bash
-# Install (recommended method to avoid proxy cache issues)
-GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
-
-# Basic scan without AI
-flowlyt scan ./my-repo --output-format sarif
-
-
-```
 
 ### 🤖 AI-Powered Analysis Setup
 
@@ -212,7 +192,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run Flowlyt Security Scan
-        uses: harekrishnarai/flowlyt@v1.0.2
+        uses: harekrishnarai/flowlyt@v1.0.3
         with:
           output-format: 'sarif'
           output-file: 'flowlyt-results.sarif'
@@ -230,7 +210,7 @@ jobs:
 ### Advanced Configuration with AST & Vulnerability Intel
 ```yaml
 - name: Advanced Flowlyt Scan
-  uses: harekrishnarai/flowlyt@v1.0.2
+  uses: harekrishnarai/flowlyt@v1.0.3
   with:
     config-file: '.flowlyt.yml'
     output-format: 'sarif'
@@ -281,16 +261,6 @@ jobs:
 - **Transparent Costs** - Pay only for what you use with your own account
 - **Provider Choice** - Switch between OpenAI, Gemini, Claude, or Grok anytime
 
-## ⚠️ Known Issues
-
-### Go Module Proxy Cache Issue
-
-**Issue**: `go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest` may install an incorrect version (v1.0.0) due to a Go module proxy cache issue.
-
-**Workaround**: Use the `GOPRIVATE` environment variable:
-```bash
-GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
-```
 
 ## 🚀 Roadmap
 
@@ -319,7 +289,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 ### 🚀 Quick Start with AI (3 steps)
 ```bash
 # 1. Install Flowlyt
-GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 
 # 2. Get your API key (choose one):
 # - OpenAI: https://platform.openai.com/api-keys

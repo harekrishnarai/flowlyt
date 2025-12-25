@@ -3,8 +3,8 @@ package organization
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -246,7 +246,7 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 		}
 
 		workflowFiles = append(workflowFiles, parser.WorkflowFile{
-			Path:     filepath.Join(".github/workflows", filename),
+			Path:     filename,
 			Name:     filename,
 			Content:  []byte(content),
 			Workflow: workflow,
@@ -300,8 +300,13 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 
 	// Enhance findings with GitHub URLs using branch/sha-aware builder
 	repoRefURL := fmt.Sprintf("https://github.com/%s/%s", owner, repoName)
+	// Use the default branch from repository info, fallback to "main" if not available
+	branch := repo.DefaultBranch
+	if strings.TrimSpace(branch) == "" {
+		branch = "main"
+	}
 	for i := range allFindings {
-		allFindings[i].GitHubURL = github.GenerateFileURL(repoRefURL, allFindings[i].FilePath, allFindings[i].LineNumber)
+		allFindings[i].GitHubURL = github.GenerateFileURLWithBranch(repoRefURL, allFindings[i].FilePath, allFindings[i].LineNumber, branch)
 		// Extract context fields for AI analysis (simplified defaults)
 		allFindings[i].Trigger = "push"
 		allFindings[i].RunnerType = "github"
