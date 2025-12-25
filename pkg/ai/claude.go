@@ -63,7 +63,8 @@ func NewClaudeClient(config Config) (*ClaudeClient, error) {
 
 	model := config.Model
 	if model == "" {
-		model = "claude-3-haiku-20240307" // Use cost-effective model by default
+		// Default to Claude Haiku latest stable for better quality/cost
+		model = "claude-3-5-haiku-20241022"
 	}
 
 	maxTokens := config.MaxTokens

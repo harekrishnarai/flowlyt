@@ -98,7 +98,8 @@ func GetDefaultModel(provider Provider) string {
 	case ProviderGemini:
 		return "gemini-2.5-flash"
 	case ProviderClaude:
-		return "claude-3-haiku-20240307"
+		// Default to Claude Haiku latest stable for better quality/cost
+		return "claude-3-5-haiku-20241022"
 	case ProviderGrok:
 		return "grok-beta"
 	case ProviderPerplexity:
@@ -127,9 +128,9 @@ func GetAvailableModels(provider Provider) []string {
 		}
 	case ProviderClaude:
 		return []string{
-			"claude-3-haiku-20240307",  // Cost-effective default
-			"claude-3-sonnet-20240229", // Balanced performance
-			"claude-3-opus-20240229",   // Highest quality
+			"claude-3-5-haiku-20241022", // Default (quality + speed)
+			"claude-3-sonnet-20240229",  // Balanced performance
+			"claude-3-opus-20240229",    // Highest quality
 		}
 	case ProviderGrok:
 		return []string{

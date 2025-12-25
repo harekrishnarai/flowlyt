@@ -18,12 +18,87 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run Flowlyt Security Scan
-        uses: harekrishnarai/flowlyt@v1
+        uses: harekrishnarai/flowlyt@v1.0.0
         with:
           fail-on-severity: 'CRITICAL'
           upload-sarif: 'true'
           comment-on-pr: 'true'
 ```
+
+## Manual Scan (workflow_dispatch)
+
+Trigger a manual scan and upload SARIF to GitHub Security. This example uses the v1.0.0 release tag and sets the required permissions.
+
+```yaml
+name: Flowlyt manual scan
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Flowlyt security scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Flowlyt Security Scan
+        uses: harekrishnarai/flowlyt@v1.0.0
+        with:
+          # Do not pass config-file or enable-ast-analysis here
+          repository: .
+          output-format: sarif
+          output-file: flowlyt-results.sarif
+          min-severity: LOW
+          fail-on-severity: CRITICAL
+          max-critical: 0
+          max-high: 0
+          comment-on-pr: true
+          upload-sarif: 'true'
+          sarif-category: flowlyt
+          create-issue: 'false'
+          issue-labels: security,flowlyt
+          continue-on-error: 'false'
+          verbose: 'false'
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: flowlyt-results.sarif
+```
+
+Optional: Pin to a specific commit for maximum supply-chain security.
+
+```yaml
+      - name: Run Flowlyt Security Scan (pinned)
+        uses: harekrishnarai/flowlyt@f9c1041af4ffe2a45adbe374c8d9d40fb07d3d6d
+        with:
+          repository: .
+          output-format: sarif
+          output-file: flowlyt-results.sarif
+          min-severity: LOW
+          fail-on-severity: CRITICAL
+          max-critical: 0
+          max-high: 0
+          comment-on-pr: true
+          upload-sarif: 'true'
+          sarif-category: flowlyt
+          create-issue: 'false'
+          issue-labels: security,flowlyt
+          continue-on-error: 'false'
+          verbose: 'false'
+```
+
+Notes:
+- `security-events: write` is required to upload SARIF to the GitHub Security tab.
+- `repository: .` scans the current repository’s workflows.
+- Avoid passing `config-file` or enabling AST analysis via Action inputs unless documented; they are not required for standard scans.
 
 ## Features
 
@@ -51,7 +126,7 @@ jobs:
 
 ```yaml
 - name: Security Scan
-  uses: harekrishnarai/flowlyt@v1
+  uses: harekrishnarai/flowlyt@v1.0.0
   with:
     # Minimum severity to report (INFO, LOW, MEDIUM, HIGH, CRITICAL)
     min-severity: 'MEDIUM'
@@ -67,7 +142,7 @@ jobs:
 
 ```yaml
 - name: Enterprise Security Scan
-  uses: harekrishnarai/flowlyt@v1
+  uses: harekrishnarai/flowlyt@v1.0.0
   with:
     # Path to configuration file
     config-file: '.flowlyt-enterprise.yml'
@@ -120,7 +195,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Security Scan - ${{ matrix.config }}
-        uses: harekrishnarai/flowlyt@v1
+        uses: harekrishnarai/flowlyt@v1.0.0
         with:
           config-file: '.flowlyt-${{ matrix.config }}.yml'
           output-format: 'sarif'
@@ -313,7 +388,7 @@ notifications:
 
 ```yaml
 - name: Security Gate
-  uses: harekrishnarai/flowlyt@v1
+  uses: harekrishnarai/flowlyt@v1.0.0
   with:
     fail-on-severity: 'CRITICAL'
     max-critical: '0'
@@ -324,7 +399,7 @@ notifications:
 
 ```yaml
 - name: Security Check
-  uses: harekrishnarai/flowlyt@v1
+  uses: harekrishnarai/flowlyt@v1.0.0
   with:
     fail-on-severity: 'HIGH'
     max-high: '3'
@@ -336,7 +411,7 @@ notifications:
 
 ```yaml
 - name: Compliance Check
-  uses: harekrishnarai/flowlyt@v1
+  uses: harekrishnarai/flowlyt@v1.0.0
   with:
     enable-policy-enforcement: 'true'
     compliance-frameworks: 'pci-dss,sox'

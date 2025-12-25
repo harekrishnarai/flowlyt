@@ -17,7 +17,7 @@ Flowlyt integrates with leading AI providers to enhance security analysis by aut
 - **Best for**: Fast, cost-effective analysis
 
 ### Anthropic Claude
-- **Models**: Claude 3 Opus, Claude 3 Sonnet, Claude 3 Haiku (default)
+- **Models**: Claude 3 Opus, Claude 3 Sonnet, Claude 3.5 Haiku (default)
 - **API**: Anthropic API
 - **Cost**: Token-based pricing
 - **Best for**: Detailed reasoning and nuanced analysis
@@ -64,7 +64,7 @@ AI analysis adds the following information to each finding:
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--ai` | AI provider (openai, gemini, claude, grok) | None |
+| `--ai` | AI provider (openai, gemini, claude, grok, perplexity) | None |
 | `--ai-key` | API key for the AI provider | AI_API_KEY env var |
 | `--ai-model` | Specific model to use | Provider default |
 | `--ai-base-url` | Custom API endpoint | Provider default |
@@ -92,7 +92,7 @@ Add AI settings to your `.flowlyt.yml`:
 ai:
   provider: openai
   api_key: your-api-key  # Not recommended for version control
-  model: gpt-4o-mini
+  model: claude-3-5-haiku-20241022
   timeout: 30
   max_tokens: 1000
   temperature: 0.3
@@ -109,6 +109,9 @@ flowlyt scan --repo . --ai openai --ai-model gpt-4
 
 # Use Gemini Pro for complex scenarios
 flowlyt scan --repo . --ai gemini --ai-model gemini-1.5-pro
+
+# Use Claude Haiku (default, fast and cost-effective)
+flowlyt scan --repo . --ai claude
 
 # Use Claude Opus for detailed reasoning
 flowlyt scan --repo . --ai claude --ai-model claude-3-opus-20240229
