@@ -695,16 +695,17 @@ func (c *Client) DiscoverOrganizationRepositories(orgName string, filter interfa
 			}
 
 			repoInfo := RepositoryInfo{
-				Name:        repo.GetName(),
-				FullName:    repo.GetFullName(),
-				URL:         repo.GetHTMLURL(),
-				CloneURL:    repo.GetCloneURL(),
-				IsPrivate:   repo.GetPrivate(),
-				IsFork:      repo.GetFork(),
-				IsArchived:  repo.GetArchived(),
-				Language:    repo.GetLanguage(),
-				Description: repo.GetDescription(),
-				UpdatedAt:   repo.GetUpdatedAt().Format(time.RFC3339),
+				Name:          repo.GetName(),
+				FullName:      repo.GetFullName(),
+				URL:           repo.GetHTMLURL(),
+				CloneURL:      repo.GetCloneURL(),
+				DefaultBranch: repo.GetDefaultBranch(),
+				IsPrivate:     repo.GetPrivate(),
+				IsFork:        repo.GetFork(),
+				IsArchived:    repo.GetArchived(),
+				Language:      repo.GetLanguage(),
+				Description:   repo.GetDescription(),
+				UpdatedAt:     repo.GetUpdatedAt().Format(time.RFC3339),
 			}
 
 			allRepos = append(allRepos, repoInfo)
@@ -726,16 +727,17 @@ func (c *Client) DiscoverOrganizationRepositories(orgName string, filter interfa
 
 // RepositoryInfo represents basic information about a repository
 type RepositoryInfo struct {
-	Name        string `json:"name"`
-	FullName    string `json:"full_name"`
-	URL         string `json:"url"`
-	CloneURL    string `json:"clone_url"`
-	IsPrivate   bool   `json:"is_private"`
-	IsFork      bool   `json:"is_fork"`
-	IsArchived  bool   `json:"is_archived"`
-	Language    string `json:"language,omitempty"`
-	Description string `json:"description,omitempty"`
-	UpdatedAt   string `json:"updated_at,omitempty"`
+	Name          string `json:"name"`
+	FullName      string `json:"full_name"`
+	URL           string `json:"url"`
+	CloneURL      string `json:"clone_url"`
+	DefaultBranch string `json:"default_branch,omitempty"`
+	IsPrivate     bool   `json:"is_private"`
+	IsFork        bool   `json:"is_fork"`
+	IsArchived    bool   `json:"is_archived"`
+	Language      string `json:"language,omitempty"`
+	Description   string `json:"description,omitempty"`
+	UpdatedAt     string `json:"updated_at,omitempty"`
 }
 
 // GetLatestRelease fetches the latest release tag for a GitHub Action (owner/repo)
