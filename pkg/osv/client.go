@@ -219,11 +219,15 @@ func (c *Client) EnhanceFindings(ctx context.Context, findings []rules.Finding) 
 
 // analyzeForVulnerabilities attempts to correlate findings with known vulnerabilities
 func (c *Client) analyzeForVulnerabilities(ctx context.Context, finding rules.Finding) *VulnerabilityInfo {
-	// Extract package information from evidence
+	// Extract package information from evidence (GitHub Actions with versions only)
 	packages := c.extractPackageInfo(finding.Evidence)
 
 	for _, pkg := range packages {
-		vulns, err := c.QueryVulnerability(ctx, pkg.Ecosystem, pkg.Name, "")
+		// Only query if we have a version (ensures accurate detection)
+		if pkg.Purl == "" {
+			continue
+		}
+		vulns, err := c.QueryVulnerability(ctx, pkg.Ecosystem, pkg.Name, pkg.Purl)
 		if err != nil {
 			continue // Skip on error, don't fail the entire process
 		}
@@ -250,59 +254,25 @@ func (c *Client) analyzeForVulnerabilities(ctx context.Context, finding rules.Fi
 }
 
 // extractPackageInfo extracts package information from evidence text
+// Only extracts GitHub Actions with explicit versions from uses: directives
 func (c *Client) extractPackageInfo(evidence string) []Package {
 	var packages []Package
 
-	// Common GitHub Actions patterns
-	if strings.Contains(evidence, "actions/") {
-		// Extract GitHub Actions
-		actionName := c.extractActionName(evidence)
-		if actionName != "" {
-			packages = append(packages, Package{
-				Ecosystem: "GitHub Actions",
-				Name:      actionName,
-			})
-		}
-	}
-
-	// Docker images
-	if strings.Contains(evidence, "docker pull") || strings.Contains(evidence, "FROM ") {
-		imageName := c.extractDockerImage(evidence)
-		if imageName != "" {
-			packages = append(packages, Package{
-				Ecosystem: "Docker",
-				Name:      imageName,
-			})
-		}
-	}
-
-	// Node.js packages
-	if strings.Contains(evidence, "npm install") || strings.Contains(evidence, "yarn add") {
-		npmPackages := c.extractNPMPackages(evidence)
-		for _, pkg := range npmPackages {
-			packages = append(packages, Package{
-				Ecosystem: "npm",
-				Name:      pkg,
-			})
-		}
-	}
-
-	// Python packages
-	if strings.Contains(evidence, "pip install") {
-		pypipPackages := c.extractPipPackages(evidence)
-		for _, pkg := range pypipPackages {
-			packages = append(packages, Package{
-				Ecosystem: "PyPI",
-				Name:      pkg,
-			})
-		}
+	// Only extract GitHub Actions with versions (uses: owner/action@version)
+	if strings.Contains(evidence, "uses:") {
+		actionPackages := c.extractActionWithVersion(evidence)
+		packages = append(packages, actionPackages...)
 	}
 
 	return packages
 }
 
-// extractActionName extracts GitHub Action name from evidence
-func (c *Client) extractActionName(evidence string) string {
+// extractActionWithVersion extracts GitHub Actions with versions from evidence
+// Only returns actions with explicit versions (e.g., uses: actions/checkout@v4)
+func (c *Client) extractActionWithVersion(evidence string) []Package {
+	var packages []Package
+	seen := make(map[string]bool) // Track unique packages to avoid duplicates
+	
 	// Pattern: uses: owner/action@version
 	lines := strings.Split(evidence, "\n")
 	for _, line := range lines {
@@ -310,105 +280,28 @@ func (c *Client) extractActionName(evidence string) string {
 		if strings.HasPrefix(line, "uses:") {
 			parts := strings.Fields(line)
 			if len(parts) >= 2 {
-				action := parts[1]
-				// Remove version/ref
-				if idx := strings.Index(action, "@"); idx != -1 {
-					action = action[:idx]
-				}
-				return action
-			}
-		}
-	}
-	return ""
-}
-
-// extractDockerImage extracts Docker image name from evidence
-func (c *Client) extractDockerImage(evidence string) string {
-	// Simple extraction for common patterns
-	lines := strings.Split(evidence, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "docker pull") {
-			parts := strings.Fields(line)
-			if len(parts) >= 3 {
-				image := parts[2]
-				// Remove tag
-				if idx := strings.Index(image, ":"); idx != -1 {
-					image = image[:idx]
-				}
-				return image
-			}
-		}
-		if strings.HasPrefix(line, "FROM ") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				image := parts[1]
-				// Remove tag
-				if idx := strings.Index(image, ":"); idx != -1 {
-					image = image[:idx]
-				}
-				return image
-			}
-		}
-	}
-	return ""
-}
-
-// extractNPMPackages extracts npm package names from evidence
-func (c *Client) extractNPMPackages(evidence string) []string {
-	var packages []string
-	lines := strings.Split(evidence, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "npm install") || strings.Contains(line, "yarn add") {
-			// Extract package names after install command
-			parts := strings.Fields(line)
-			for i, part := range parts {
-				if (part == "install" || part == "add") && i+1 < len(parts) {
-					// Collect remaining arguments as package names
-					for j := i + 1; j < len(parts); j++ {
-						pkg := parts[j]
-						if !strings.HasPrefix(pkg, "-") && pkg != "&&" {
-							// Remove version specifiers
-							if idx := strings.Index(pkg, "@"); idx != -1 {
-								pkg = pkg[:idx]
-							}
-							packages = append(packages, pkg)
-						}
+				actionFull := parts[1]
+				// Must have version separator @
+				if idx := strings.Index(actionFull, "@"); idx != -1 {
+					actionName := actionFull[:idx]
+					version := actionFull[idx+1:]
+					
+					// Skip if already seen
+					key := actionName + "@" + version
+					if seen[key] {
+						continue
 					}
-					break
-				}
-			}
-		}
-	}
-	return packages
-}
-
-// extractPipPackages extracts pip package names from evidence
-func (c *Client) extractPipPackages(evidence string) []string {
-	var packages []string
-	lines := strings.Split(evidence, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "pip install") {
-			parts := strings.Fields(line)
-			for i, part := range parts {
-				if part == "install" && i+1 < len(parts) {
-					// Collect remaining arguments as package names
-					for j := i + 1; j < len(parts); j++ {
-						pkg := parts[j]
-						if !strings.HasPrefix(pkg, "-") && pkg != "&&" {
-							// Remove version specifiers
-							if idx := strings.Index(pkg, "=="); idx != -1 {
-								pkg = pkg[:idx]
-							}
-							if idx := strings.Index(pkg, ">="); idx != -1 {
-								pkg = pkg[:idx]
-							}
-							packages = append(packages, pkg)
-						}
+					
+					// Only include if version is not empty and looks like a version tag
+					// Accept v1, v2, v1.0.0, etc. but skip SHAs and branch names
+					if version != "" && (strings.HasPrefix(version, "v") || strings.Contains(version, ".")) {
+						packages = append(packages, Package{
+							Ecosystem: "GitHub Actions",
+							Name:      actionName,
+							Purl:      version, // Store version in Purl field for OSV query
+						})
+						seen[key] = true
 					}
-					break
 				}
 			}
 		}
