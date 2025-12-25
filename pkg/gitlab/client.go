@@ -91,6 +91,11 @@ func IsGitLabURL(repoURL string) bool {
 
 // CloneRepository clones a GitLab repository to a temporary directory
 func (c *Client) CloneRepository(repoURL, tempDir string) (string, error) {
+	return c.CloneRepositoryWithBranch(repoURL, tempDir, "")
+}
+
+// CloneRepositoryWithBranch clones a specific branch of a GitLab repository
+func (c *Client) CloneRepositoryWithBranch(repoURL, tempDir, branch string) (string, error) {
 	_, _, repo, err := ParseRepositoryURL(repoURL)
 	if err != nil {
 		return "", err
@@ -107,30 +112,38 @@ func (c *Client) CloneRepository(repoURL, tempDir string) (string, error) {
 	repoPath := filepath.Join(tempDir, repo)
 
 	// Clone the repository using git
-	fmt.Printf("Cloning GitLab repository from %s...\n", repoURL)
+	if branch != "" {
+		fmt.Printf("Cloning GitLab repository from %s (branch: %s)...\n", repoURL, branch)
+	} else {
+		fmt.Printf("Cloning GitLab repository from %s...\n", repoURL)
+	}
 
 	// Check if git is available
 	if _, err := exec.LookPath("git"); err != nil {
 		return "", fmt.Errorf("git command not found. Please install git to clone repositories")
 	}
 
-	// Create clone command
-	cmd := exec.Command("git", "clone", "--depth", "1", repoURL, repoPath)
+	// Build clone command with optional branch
+	var cmd *exec.Cmd
+	cloneArgs := []string{"clone", "--depth", "1"}
+	if branch != "" {
+		cloneArgs = append(cloneArgs, "--branch", branch, "--single-branch")
+	}
 
-	// Set environment variables for authentication if token is available
+	// Set up authentication URL if token is available
+	cloneURL := repoURL
 	if c.token != "" {
-		// For HTTPS cloning with token, we can use git credential helper
-		// or modify the URL to include the token
-
 		// Parse the URL to inject token for authentication
 		u, parseErr := url.Parse(repoURL)
 		if parseErr == nil {
 			// Create authenticated URL: https://oauth2:token@gitlab.com/owner/repo.git
 			u.User = url.UserPassword("oauth2", c.token)
-			authenticatedURL := u.String()
-			cmd = exec.Command("git", "clone", "--depth", "1", authenticatedURL, repoPath)
+			cloneURL = u.String()
 		}
 	}
+
+	cloneArgs = append(cloneArgs, cloneURL, repoPath)
+	cmd = exec.Command("git", cloneArgs...)
 
 	// Execute the clone command
 	output, err := cmd.CombinedOutput()
@@ -264,6 +277,11 @@ func fetchGitLabDefaultBranch(instanceURL, owner, repo string) string {
 		return ""
 	}
 	return strings.TrimSpace(obj.DefaultBranch)
+}
+
+// FetchGitLabDefaultBranch is the public wrapper for fetching GitLab default branch
+func FetchGitLabDefaultBranch(instanceURL, owner, repo string) string {
+	return fetchGitLabDefaultBranch(instanceURL, owner, repo)
 }
 
 var netHttpClient http.Client

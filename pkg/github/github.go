@@ -170,8 +170,18 @@ func (c *Client) CloneRepository(repoURL, destDir string) (string, error) {
 	return c.CloneRepositoryWithProgress(repoURL, destDir, false, nil)
 }
 
+// CloneRepositoryWithBranch clones a specific branch of a GitHub repository
+func (c *Client) CloneRepositoryWithBranch(repoURL, destDir, branch string) (string, error) {
+	return c.CloneRepositoryWithProgressAndBranch(repoURL, destDir, branch, false, nil)
+}
+
 // CloneRepositoryWithProgress clones a GitHub repository with optional progress reporting
 func (c *Client) CloneRepositoryWithProgress(repoURL, destDir string, showProgress bool, progressCallback func(progress int, stage string)) (string, error) {
+	return c.CloneRepositoryWithProgressAndBranch(repoURL, destDir, "", showProgress, progressCallback)
+}
+
+// CloneRepositoryWithProgressAndBranch clones a GitHub repository with optional progress reporting and branch selection
+func (c *Client) CloneRepositoryWithProgressAndBranch(repoURL, destDir, branch string, showProgress bool, progressCallback func(progress int, stage string)) (string, error) {
 	owner, repo, err := ParseRepositoryURL(repoURL)
 	if err != nil {
 		return "", err
@@ -200,11 +210,17 @@ func (c *Client) CloneRepositoryWithProgress(repoURL, destDir string, showProgre
 
 	if showProgress && progressCallback != nil {
 		progressCallback(0, "Initializing clone")
-		return c.cloneWithProgress(cloneURL, destDir, progressCallback)
+		return c.cloneWithProgress(cloneURL, destDir, branch, progressCallback)
 	}
 
-	// Use the git command to clone the repository (original behavior)
-	cmd := exec.Command("git", "clone", cloneURL, destDir)
+	// Build git clone command with optional branch
+	var cmd *exec.Cmd
+	if branch != "" {
+		cmd = exec.Command("git", "clone", "--branch", branch, "--single-branch", cloneURL, destDir)
+	} else {
+		cmd = exec.Command("git", "clone", cloneURL, destDir)
+	}
+	
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("git clone failed: %w, output: %s", err, string(output))
@@ -214,9 +230,14 @@ func (c *Client) CloneRepositoryWithProgress(repoURL, destDir string, showProgre
 }
 
 // cloneWithProgress performs git clone with progress reporting
-func (c *Client) cloneWithProgress(cloneURL, destDir string, progressCallback func(progress int, stage string)) (string, error) {
-	// Use git clone with progress reporting
-	cmd := exec.Command("git", "clone", "--progress", cloneURL, destDir)
+func (c *Client) cloneWithProgress(cloneURL, destDir, branch string, progressCallback func(progress int, stage string)) (string, error) {
+	// Build git clone command with progress reporting and optional branch
+	var cmd *exec.Cmd
+	if branch != "" {
+		cmd = exec.Command("git", "clone", "--progress", "--branch", branch, "--single-branch", cloneURL, destDir)
+	} else {
+		cmd = exec.Command("git", "clone", "--progress", cloneURL, destDir)
+	}
 
 	// Create pipes to capture stderr (where git outputs progress)
 	stderr, err := cmd.StderrPipe()
@@ -580,6 +601,18 @@ func fetchGitHubDefaultBranch(owner, repo string) string {
 		return ""
 	}
 	return strings.TrimSpace(obj.DefaultBranch)
+}
+
+// GetDefaultBranch gets the default branch name for a repository
+func (c *Client) GetDefaultBranch(owner, repo string) (string, error) {
+	repository, _, err := c.client.Repositories.Get(c.ctx, owner, repo)
+	if err != nil {
+		return "", fmt.Errorf("failed to get repository info: %w", err)
+	}
+	if repository.DefaultBranch == nil || *repository.DefaultBranch == "" {
+		return "main", nil // Default fallback
+	}
+	return *repository.DefaultBranch, nil
 }
 
 // RepositoryFilter defines criteria for filtering repositories during organization analysis

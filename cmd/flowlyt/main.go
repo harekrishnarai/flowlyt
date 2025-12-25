@@ -98,8 +98,8 @@ func main() {
 					},
 					&cli.StringFlag{
 						Name:  "branch",
-						Usage: "Branch name to use for file links (defaults to 'main')",
-						Value: "main",
+						Usage: "Branch name to scan and use for file links (auto-detects default branch if not specified)",
+						Value: "",
 					},
 					&cli.StringFlag{
 						Name:  "output-file",
@@ -418,7 +418,12 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 		case constants.PlatformGitLab:
 			// For GitLab, we still need to use cloning for now as GitLab API implementation would be similar
 			// but requires separate implementation. This could be added in a future enhancement.
-			fmt.Printf("🔄 Cloning GitLab repository: %s (API-based fetching not yet implemented for GitLab)\n", repoURL)
+			branch := c.String("branch")
+			if branch != "" {
+				fmt.Printf("🔄 Cloning GitLab repository: %s (branch: %s)\n", repoURL, branch)
+			} else {
+				fmt.Printf("🔄 Cloning GitLab repository: %s (API-based fetching not yet implemented for GitLab)\n", repoURL)
+			}
 			gitlabInstance := c.String("gitlab-instance")
 			client, err := gitlab.NewClient(gitlabInstance)
 			if err != nil {
@@ -426,7 +431,7 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 			}
 
 			tempDir := c.String("temp-dir")
-			repoLocalPath, err := client.CloneRepository(repoURL, tempDir)
+			repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, branch)
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to clone GitLab repository: %w", err)
 			}
@@ -567,7 +572,22 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 	if repoURL != "" && github.IsGitHubRepository(repoURL) {
 		branch := c.String("branch")
 		if strings.TrimSpace(branch) == "" {
-			branch = "main"
+			// Auto-detect default branch
+			owner, repo, parseErr := github.ParseRepositoryURL(repoURL)
+			if parseErr == nil {
+				ghClient := github.NewClient()
+				if detectedBranch, err := ghClient.GetDefaultBranch(owner, repo); err == nil && detectedBranch != "" {
+					branch = detectedBranch
+					if c.Bool("verbose") {
+						fmt.Printf("🔍 Auto-detected default branch: %s\n", branch)
+					}
+				} else {
+					// Fallback to main if detection fails
+					branch = "main"
+				}
+			} else {
+				branch = "main"
+			}
 		}
 		for i := range findings {
 			findings[i].GitHubURL = github.GenerateFileURLWithBranch(repoURL, findings[i].FilePath, findings[i].LineNumber, branch)
@@ -578,7 +598,21 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 	if repoURL != "" && gitlab.IsGitLabURL(repoURL) {
 		branch := c.String("branch")
 		if strings.TrimSpace(branch) == "" {
-			branch = "main"
+			// Try to detect GitLab default branch
+			instanceURL, owner, repo, parseErr := gitlab.ParseRepositoryURL(repoURL)
+			if parseErr == nil {
+				if detectedBranch := gitlab.FetchGitLabDefaultBranch(instanceURL, owner, repo); detectedBranch != "" {
+					branch = detectedBranch
+					if c.Bool("verbose") {
+						fmt.Printf("🔍 Auto-detected default branch: %s\n", branch)
+					}
+				} else {
+					// GitLab typically uses 'main' or 'master'
+					branch = "main"
+				}
+			} else {
+				branch = "main"
+			}
 		}
 		for i := range findings {
 			findings[i].GitLabURL = gitlab.GenerateFileURLWithBranch(repoURL, findings[i].FilePath, findings[i].LineNumber, branch)
