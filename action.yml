@@ -51,6 +51,10 @@ inputs:
     description: 'Enable vulnerability intelligence from OSV.dev'
     required: false
     default: 'false'
+  enable-ast-analysis:
+    description: 'Enable Advanced Static Analysis with data flow tracking'
+    required: false
+    default: 'false'
   policy-config:
     description: 'Path to enterprise policy configuration file'
     required: false
@@ -219,6 +223,8 @@ runs:
     - name: Run Flowlyt Scan
       shell: bash
       id: scan
+      env:
+        GITHUB_TOKEN: ${{ inputs.token || github.token }}
       run: |
         set -o pipefail
         
@@ -242,6 +248,11 @@ runs:
         SCAN_CMD="$SCAN_CMD --output-file ${{ inputs.output-file }}"
         SCAN_CMD="$SCAN_CMD --min-severity ${{ inputs.min-severity }}"
         
+        # Pass GitHub token for API calls (stale action detection, etc.)
+        if [ -n "$GITHUB_TOKEN" ]; then
+          SCAN_CMD="$SCAN_CMD --github-token $GITHUB_TOKEN"
+        fi
+        
         # Add optional flags
         if [ "${{ inputs.enable-policy-enforcement }}" = "true" ]; then
           SCAN_CMD="$SCAN_CMD --enable-policy-enforcement"
@@ -249,6 +260,10 @@ runs:
         
         if [ "${{ inputs.enable-vuln-intel }}" = "true" ]; then
           SCAN_CMD="$SCAN_CMD --enable-vuln-intel"
+        fi
+        
+        if [ "${{ inputs.enable-ast-analysis }}" = "true" ]; then
+          SCAN_CMD="$SCAN_CMD --enable-ast-analysis"
         fi
         
         if [ -n "${{ inputs.policy-config }}" ]; then

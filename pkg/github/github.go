@@ -737,3 +737,20 @@ type RepositoryInfo struct {
 	Description string `json:"description,omitempty"`
 	UpdatedAt   string `json:"updated_at,omitempty"`
 }
+
+// GetLatestRelease fetches the latest release tag for a GitHub Action (owner/repo)
+func (c *Client) GetLatestRelease(owner, repo string) (string, time.Time, error) {
+	release, resp, err := c.client.Repositories.GetLatestRelease(c.ctx, owner, repo)
+	if err != nil {
+		// Check if it's a 404 - no releases
+		if resp != nil && resp.StatusCode == 404 {
+			return "", time.Time{}, fmt.Errorf("no releases found")
+		}
+		return "", time.Time{}, err
+	}
+
+	tagName := release.GetTagName()
+	publishedAt := release.GetPublishedAt().Time
+
+	return tagName, publishedAt, nil
+}

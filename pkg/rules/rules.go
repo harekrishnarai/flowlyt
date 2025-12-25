@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/harekrishnarai/flowlyt/pkg/constants"
+	"github.com/harekrishnarai/flowlyt/pkg/github"
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 )
@@ -3592,6 +3593,9 @@ func checkStaleActionRefs(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
 
+	// Create GitHub client for API calls
+	ghClient := github.NewClient()
+
 	for jobName, job := range workflow.Workflow.Jobs {
 		for stepIdx, step := range job.Steps {
 			if step.Uses == "" {
@@ -3604,76 +3608,64 @@ func checkStaleActionRefs(workflow parser.WorkflowFile) []Finding {
 			}
 
 			actionParts := strings.Split(step.Uses, "@")
-			if len(actionParts) > 1 {
-				actionName := actionParts[0]
-				version := actionParts[1]
+			if len(actionParts) != 2 {
+				continue
+			}
 
-				// Check for known outdated versions of popular actions
-				staleVersions := map[string][]string{
-					"actions/checkout":          {"v1", "v2.0.0", "v2.1.0", "v2.2.0"},
-					"actions/setup-node":        {"v1", "v2.0.0", "v2.1.0"},
-					"actions/setup-python":      {"v1", "v2.0.0", "v2.1.0"},
-					"actions/cache":             {"v1", "v2.0.0", "v2.0.1"},
-					"actions/upload-artifact":   {"v1", "v2.0.0"},
-					"actions/download-artifact": {"v1", "v2.0.0"},
+			actionName := actionParts[0]
+			currentVersion := actionParts[1]
+
+			// Skip local actions (e.g., ./.github/actions/my-action)
+			if strings.HasPrefix(actionName, "./") || strings.HasPrefix(actionName, "../") {
+				continue
+			}
+
+			// Parse owner/repo from action name
+			ownerRepoParts := strings.Split(actionName, "/")
+			if len(ownerRepoParts) < 2 {
+				continue
+			}
+			owner := ownerRepoParts[0]
+			repo := ownerRepoParts[1]
+
+			// Skip if version is a SHA (40 character hex string)
+			if len(currentVersion) == 40 && isHexString(currentVersion) {
+				continue
+			}
+
+			// Fetch latest release from GitHub API
+			latestVersion, publishedAt, err := ghClient.GetLatestRelease(owner, repo)
+			if err != nil {
+				// Skip if we can't fetch latest release (private repos, rate limits, etc.)
+				continue
+			}
+
+			// Compare versions - flag if current is significantly outdated
+			isOutdated, severity := compareVersions(currentVersion, latestVersion, publishedAt)
+			if isOutdated {
+				pattern := linenum.FindPattern{
+					Key:   "uses",
+					Value: step.Uses,
+				}
+				lineResult := lineMapper.FindLineNumber(pattern)
+				lineNumber := 0
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
 				}
 
-				if staleList, exists := staleVersions[actionName]; exists {
-					for _, staleVersion := range staleList {
-						if version == staleVersion {
-							pattern := linenum.FindPattern{
-								Key:   "uses",
-								Value: step.Uses,
-							}
-							lineResult := lineMapper.FindLineNumber(pattern)
-							lineNumber := 0
-							if lineResult != nil {
-								lineNumber = lineResult.LineNumber
-							}
-
-							findings = append(findings, Finding{
-								RuleID:      "STALE_ACTION_REFS",
-								RuleName:    "Stale Action References",
-								Description: "Action uses an outdated version that may have security vulnerabilities",
-								Severity:    Medium,
-								Category:    SupplyChain,
-								FilePath:    workflow.Path,
-								JobName:     jobName,
-								StepName:    stepName,
-								Evidence:    step.Uses,
-								Remediation: fmt.Sprintf("Update %s to the latest version", actionName),
-								LineNumber:  lineNumber,
-							})
-						}
-					}
-				}
-
-				// Check for very old version patterns (v1.x, v0.x)
-				if strings.HasPrefix(version, "v1.") || strings.HasPrefix(version, "v0.") {
-					pattern := linenum.FindPattern{
-						Key:   "uses",
-						Value: step.Uses,
-					}
-					lineResult := lineMapper.FindLineNumber(pattern)
-					lineNumber := 0
-					if lineResult != nil {
-						lineNumber = lineResult.LineNumber
-					}
-
-					findings = append(findings, Finding{
-						RuleID:      "STALE_ACTION_REFS",
-						RuleName:    "Stale Action References",
-						Description: "Action uses very old version that likely has security vulnerabilities",
-						Severity:    High,
-						Category:    SupplyChain,
-						FilePath:    workflow.Path,
-						JobName:     jobName,
-						StepName:    stepName,
-						Evidence:    step.Uses,
-						Remediation: fmt.Sprintf("Update %s to a recent version", actionName),
-						LineNumber:  lineNumber,
-					})
-				}
+				findings = append(findings, Finding{
+					RuleID:      "STALE_ACTION_REFS",
+					RuleName:    "Stale Action References",
+					Description: fmt.Sprintf("Action uses outdated version %s (latest: %s)", currentVersion, latestVersion),
+					Severity:    severity,
+					Category:    SupplyChain,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    stepName,
+					Evidence:    step.Uses,
+					Remediation: fmt.Sprintf("Update %s to %s", actionName, latestVersion),
+					LineNumber:  lineNumber,
+				})
 			}
 		}
 	}
