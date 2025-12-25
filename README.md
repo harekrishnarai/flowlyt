@@ -196,39 +196,60 @@ Found 4 real issues (1 Critical, 1 High, 2 Medium) | 8 false positives filtered 
 
 ## 🔧 GitHub Actions Integration
 
-### Basic Integration
+### Basic Workflow Scan
 ```yaml
-- name: Flowlyt Security Scan
-  uses: harekrishnarai/flowlyt@v1
-  with:
-    config-file: '.flowlyt.yml'
-    output-format: 'sarif'
-    enable-ast-analysis: true
+name: Security Scan
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write  # Required for SARIF upload
+      contents: read
     
-- name: Upload to GitHub Security
-  uses: github/codeql-action/upload-sarif@v2
-  with:
-    sarif_file: flowlyt-results.sarif
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Run Flowlyt Security Scan
+        uses: harekrishnarai/flowlyt@v1.0.1
+        with:
+          output-format: 'sarif'
+          output-file: 'flowlyt-results.sarif'
+          min-severity: 'MEDIUM'
+          fail-on-severity: 'HIGH'
+          
+      - name: Upload to GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: flowlyt-results.sarif
+          category: flowlyt
 ```
 
-### 🤖 AI-Enhanced Integration (BYOK)
+### Advanced Configuration with AST & Vulnerability Intel
 ```yaml
-- name: Flowlyt AI-Powered Security Scan
+- name: Advanced Flowlyt Scan
   uses: harekrishnarai/flowlyt@v1.0.1
   with:
     config-file: '.flowlyt.yml'
     output-format: 'sarif'
-    enable-ast-analysis: true
-    ai-provider: 'gemini'  # or 'openai', 'claude', 'grok'
-    ai-model: 'gemini-2.5-flash'
-  env:
-    AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}  # Your API key
+    output-file: 'flowlyt-results.sarif'
+    enable-ast-analysis: true        # Enable AST-based analysis
+    enable-vuln-intel: true           # Enable OSV.dev vulnerability intelligence
+    enable-policy-enforcement: true   # Enable enterprise policy checks
+    min-severity: 'LOW'
+    fail-on-severity: 'CRITICAL'
+    verbose: true
     
-- name: Upload Enhanced Results
-  uses: github/codeql-action/upload-sarif@v2
+- name: Upload Results
+  if: always()
+  uses: github/codeql-action/upload-sarif@v3
   with:
     sarif_file: flowlyt-results.sarif
 ```
+
+> **Note**: AI-powered analysis is currently available via CLI only. Use the action for automated scanning and CLI with `--ai` flag for AI-enhanced local analysis.
 
 ## 📚 Documentation
 
