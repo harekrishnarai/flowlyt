@@ -46,4 +46,4 @@ ENTRYPOINT ["flowlyt"]
 # Add labels for better container metadata
 LABEL org.opencontainers.image.source="https://github.com/harekrishnarai/flowlyt"
 LABEL org.opencontainers.image.description="GitHub Actions workflow security analyzer"
-LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.licenses="Apache-2.0"

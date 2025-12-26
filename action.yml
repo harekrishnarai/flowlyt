@@ -1,6 +1,7 @@
 name: 'Flowlyt Security Analyzer'
 description: 'Enterprise-grade security scanner for GitHub Actions workflows with policy enforcement'
 author: 'Flowlyt Team'
+license: 'Apache-2.0'
 
 branding:
   icon: 'shield'

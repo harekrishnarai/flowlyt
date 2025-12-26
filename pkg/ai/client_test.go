@@ -1,3 +1,19 @@
+/*
+Copyright 2025 Hare Krishna Rai
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package ai
 
 import (
@@ -226,8 +242,8 @@ func TestAnalyzer(t *testing.T) {
 		t.Errorf("Expected 2 enhanced findings, got %d", len(enhancedFindings))
 	}
 
-	// Test call count
-	expectedCalls := 3 // 1 from single + 2 from multiple
+	// Test call count (duplicates are cached, so only one call for the repeated finding)
+	expectedCalls := 2 // 1 from single + 1 from deduped multiple
 	if mockClient.callCount != expectedCalls {
 		t.Errorf("Expected %d API calls, got %d", expectedCalls, mockClient.callCount)
 	}
