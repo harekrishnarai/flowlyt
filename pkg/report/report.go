@@ -55,19 +55,23 @@ type ResultSummary struct {
 
 // Generator creates a formatted report from scan results
 type Generator struct {
-	Result   ScanResult
-	Format   string
-	Verbose  bool
-	FilePath string
+	Result              ScanResult
+	Format              string
+	Verbose             bool
+	FilePath            string
+	EnhancedFormatting  bool   // Use enhanced formatting for CLI output
+	CLIStyle            string // CLI style: "standard", "detailed", "compact", "boxed"
 }
 
 // NewGenerator creates a new report generator
 func NewGenerator(result ScanResult, format string, verbose bool, filePath string) *Generator {
 	return &Generator{
-		Result:   result,
-		Format:   format,
-		Verbose:  verbose,
-		FilePath: filePath,
+		Result:              result,
+		Format:              format,
+		Verbose:             verbose,
+		FilePath:            filePath,
+		EnhancedFormatting:  true, // Enable enhanced formatting by default
+		CLIStyle:            "detailed", // Use detailed style by default
 	}
 }
 
@@ -275,15 +279,10 @@ func (g *Generator) generateCLIReport() error {
 			rules.Low:      lowStyle,
 			rules.Info:     infoLevelStyle,
 		}
-		severityIcons := map[rules.Severity]string{
-			rules.Critical: "✗",
-			rules.High:     "⚠",
-			rules.Medium:   "⚠",
-			rules.Low:      "ℹ",
-			rules.Info:     "ℹ",
-		}
 
 		count := 0
+		formatter := NewEnhancedFormatter()
+
 		for _, severity := range severities {
 			severityFindings := findingsBySeverity[severity]
 			if len(severityFindings) == 0 {
@@ -294,40 +293,16 @@ func (g *Generator) generateCLIReport() error {
 			severityStyles[severity].Printf("■ %s SEVERITY FINDINGS\n", strings.ToUpper(string(severity)))
 			fmt.Println("─────────────────────────────────────────────────")
 
-			for i, finding := range severityFindings {
+			for _, finding := range severityFindings {
 				count++
-				fmt.Println()
-				severityStyles[severity].Printf("%s [%d] %s (%s)\n", severityIcons[severity], count, finding.RuleName, finding.RuleID)
 
-				// Format finding details in a visually appealing way
-				if finding.GitHubURL != "" {
-					infoStyle.Printf("  %-12s ", "GitHub URL:")
-					fmt.Println(finding.GitHubURL)
-				} else if finding.GitLabURL != "" {
-					infoStyle.Printf("  %-12s ", "GitLab URL:")
-					fmt.Println(finding.GitLabURL)
-				} else {
-					infoStyle.Printf("  %-12s ", "File:")
-					fmt.Println(finding.FilePath)
-				}
-
-				if finding.LineNumber > 0 {
-					infoStyle.Printf("  %-12s ", "Line:")
-					fmt.Println(finding.LineNumber)
-				}
-
-				if finding.JobName != "" {
-					infoStyle.Printf("  %-12s ", "Job:")
-					fmt.Println(finding.JobName)
-				}
-
-				if finding.StepName != "" {
-					infoStyle.Printf("  %-12s ", "Step:")
-					fmt.Println(finding.StepName)
-				}
-
-				infoStyle.Printf("  %-12s ", "Description:")
-				fmt.Println(finding.Description)
+				// Use enhanced formatter for better visuals
+				formatter.AddFinding(finding, count)
+				fmt.Print(formatter.FormatFinding(EnhancedFinding{
+					Finding:   finding,
+					FileLines: formatter.findings[len(formatter.findings)-1].FileLines,
+					Number:    count,
+				}))
 
 				// Add AI verification information if available
 				if finding.AIVerified {
@@ -369,11 +344,6 @@ func (g *Generator) generateCLIReport() error {
 					fmt.Println()
 					infoStyle.Printf("  %-12s ", "Remediation:")
 					fmt.Println(finding.Remediation)
-				}
-
-				// Add a separator line between findings
-				if i < len(severityFindings)-1 {
-					fmt.Println("\n  ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧ ‧")
 				}
 			}
 		}
