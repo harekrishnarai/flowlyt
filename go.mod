@@ -11,6 +11,7 @@ require (
 	github.com/owenrumney/go-sarif/v2 v2.3.3
 	github.com/urfave/cli/v2 v2.27.7
 	golang.org/x/oauth2 v0.30.0
+	golang.org/x/term v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 	mvdan.cc/sh/v3 v3.12.0
 )
@@ -65,7 +66,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.38.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/crypto v0.45.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
 	google.golang.org/protobuf v1.36.8 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )

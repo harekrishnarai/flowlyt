@@ -38,8 +38,8 @@ go build ./cmd/flowlyt
 ### Install via Go
 
 ```bash
-# Recommended method (bypasses proxy cache)
-GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 
 # Verify installation
 flowlyt --version
