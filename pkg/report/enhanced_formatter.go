@@ -120,12 +120,15 @@ func (ef *EnhancedFormatter) FormatFinding(enhanced EnhancedFinding) string {
 		severityStyle = lowStyle
 	}
 
+	// Clean up file path to show repository-relative path instead of temp directory
+	displayPath := cleanFilePath(enhanced.Finding.FilePath)
+
 	// Header with severity badge
 	output.WriteString("\n")
 	severityStr := fmt.Sprintf("[%s]", strings.ToUpper(string(enhanced.Finding.Severity)))
 	severityStyle.Fprint(&output, severityStr)
 	output.WriteString(" ")
-	pathStyle.Fprint(&output, enhanced.Finding.FilePath)
+	pathStyle.Fprint(&output, displayPath)
 	if enhanced.Finding.LineNumber > 0 {
 		output.WriteString(":")
 		lineNumStyle.Fprint(&output, fmt.Sprintf("%d", enhanced.Finding.LineNumber))
@@ -136,6 +139,19 @@ func (ef *EnhancedFormatter) FormatFinding(enhanced EnhancedFinding) string {
 	output.WriteString("Rule: ")
 	failStyle.Fprint(&output, enhanced.Finding.RuleID)
 	output.WriteString("\n")
+
+	// Direct link to repository (GitHub/GitLab)
+	if enhanced.Finding.GitHubURL != "" {
+		linkStyle := color.New(color.FgBlue, color.Underline)
+		output.WriteString("🔗 ")
+		linkStyle.Fprint(&output, enhanced.Finding.GitHubURL)
+		output.WriteString("\n")
+	} else if enhanced.Finding.GitLabURL != "" {
+		linkStyle := color.New(color.FgBlue, color.Underline)
+		output.WriteString("🔗 ")
+		linkStyle.Fprint(&output, enhanced.Finding.GitLabURL)
+		output.WriteString("\n")
+	}
 
 	// Code snippet if available
 	if len(enhanced.FileLines) > 0 {
@@ -205,9 +221,10 @@ func (ef *EnhancedFormatter) formatCodeSnippet(output *strings.Builder, enhanced
 			highlightStyle.Fprint(output, " ")
 			highlightStyle.Fprint(output, content)
 			output.WriteString("\n")
-			// Add arrow pointing to the issue
+			// Add arrow pointing to the issue on its own line
 			output.WriteString("      ")
 			highlightStyle.Fprint(output, "└─→ Potential Issue Here")
+			output.WriteString("\n")
 		} else {
 			output.WriteString("  ")
 			codeStyle.Fprint(output, content)
@@ -450,4 +467,52 @@ func (ef *EnhancedFormatter) FormatBoxedFinding(finding rules.Finding, number in
 	boxStyle.Fprint(&output, "┘\n")
 
 	return output.String()
+}
+
+// cleanFilePath removes temporary directory paths and returns a clean repository-relative path
+func cleanFilePath(filePath string) string {
+	// Normalize path separators
+	cleanPath := strings.ReplaceAll(filePath, "\\", "/")
+	
+	// Remove leading slash
+	cleanPath = strings.TrimPrefix(cleanPath, "/")
+	
+	// Extract the repository-relative portion
+	// Look for .github/workflows/ or .gitlab-ci.yml patterns
+	if idx := strings.Index(cleanPath, ".github/workflows/"); idx != -1 {
+		return cleanPath[idx:]
+	}
+	if idx := strings.Index(cleanPath, "/.github/workflows/"); idx != -1 {
+		return cleanPath[idx+1:]
+	}
+	if strings.HasSuffix(cleanPath, ".gitlab-ci.yml") {
+		return ".gitlab-ci.yml"
+	}
+	if strings.HasSuffix(cleanPath, ".gitlab-ci.yaml") {
+		return ".gitlab-ci.yaml"
+	}
+	
+	// If it contains a temp directory pattern, try to extract the meaningful part
+	// Pattern: /tmp/flowlyt-workflows-*/path/to/file
+	if strings.Contains(cleanPath, "/flowlyt-workflows-") {
+		parts := strings.Split(cleanPath, "/")
+		for i, part := range parts {
+			if strings.HasPrefix(part, "flowlyt-workflows-") && i+1 < len(parts) {
+				// Return everything after the temp dir
+				return strings.Join(parts[i+1:], "/")
+			}
+		}
+	}
+	
+	// If it contains tmp pattern, try to extract after tmp
+	if strings.HasPrefix(cleanPath, "tmp/") {
+		parts := strings.Split(cleanPath, "/")
+		if len(parts) > 2 {
+			// Skip tmp and the temp directory name
+			return strings.Join(parts[2:], "/")
+		}
+	}
+	
+	// Return as-is if we can't clean it further
+	return cleanPath
 }

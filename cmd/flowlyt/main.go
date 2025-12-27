@@ -37,6 +37,7 @@ import (
 	"github.com/harekrishnarai/flowlyt/pkg/policies"
 	"github.com/harekrishnarai/flowlyt/pkg/report"
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/pkg/terminal"
 	"github.com/harekrishnarai/flowlyt/pkg/validation"
 	"github.com/urfave/cli/v2"
 )
@@ -402,6 +403,9 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 
 		fmt.Printf("⚡ Fetching workflow files from %s...\n", repoURL)
 
+		// Use intelligent terminal for better output
+		term := terminal.Default()
+
 		var workflowContents map[string][]byte
 		var err error
 
@@ -431,43 +435,7 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 
 			fmt.Printf("✅ Successfully fetched %d workflow files\n", len(workflowContents))
 
-		case constants.PlatformGitLab:
-			// For GitLab, we still need to use cloning for now as GitLab API implementation would be similar
-			// but requires separate implementation. This could be added in a future enhancement.
-			branch := c.String("branch")
-			if branch != "" {
-				fmt.Printf("🔄 Cloning GitLab repository: %s (branch: %s)\n", repoURL, branch)
-			} else {
-				fmt.Printf("🔄 Cloning GitLab repository: %s (API-based fetching not yet implemented for GitLab)\n", repoURL)
-			}
-			gitlabInstance := c.String("gitlab-instance")
-			client, err := gitlab.NewClient(gitlabInstance)
-			if err != nil {
-				return "", nil, fmt.Errorf("failed to create GitLab client: %w", err)
-			}
-
-			tempDir := c.String("temp-dir")
-			repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, branch)
-			if err != nil {
-				return "", nil, fmt.Errorf("failed to clone GitLab repository: %w", err)
-			}
-
-			// Set up cleanup function if we created a temporary directory
-			tempDirFlag := c.String("temp-dir")
-			if tempDirFlag == "" {
-				cleanup = func() {
-					fmt.Printf("Cleaning up temporary directory %s...\n", repoLocalPath)
-					os.RemoveAll(repoLocalPath)
-				}
-			}
-
-			return repoLocalPath, cleanup, nil
-
-		default:
-			return "", nil, fmt.Errorf("repository fetching from URL is not supported for platform: %s", platform)
-		}
-
-		// Create a temporary directory to store the fetched workflows (GitHub only)
+		// Create a temporary directory to store the fetched workflows
 		tempDir, err := os.MkdirTemp("", "flowlyt-workflows-*")
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to create temporary directory: %w", err)
@@ -488,15 +456,51 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 
 		repoLocalPath = tempDir
 		cleanup = func() {
-			fmt.Printf("🧹 Cleaning up temporary directory %s...\n", repoLocalPath)
+			term.Info(fmt.Sprintf("Cleaning up temporary directory %s...", repoLocalPath))
 			os.RemoveAll(repoLocalPath)
 		}
 
-	} else if repoPath != "" {
-		repoLocalPath = repoPath
+	case constants.PlatformGitLab:
+		// For GitLab, we still need to use cloning for now as GitLab API implementation would be similar
+		// but requires separate implementation. This could be added in a future enhancement.
+		branch := c.String("branch")
+		if branch != "" {
+			term.Info(fmt.Sprintf("Cloning GitLab repository: %s (branch: %s)...", repoURL, branch))
+		} else {
+			term.Info(fmt.Sprintf("Cloning GitLab repository: %s...", repoURL))
+		}
+		gitlabInstance := c.String("gitlab-instance")
+		client, err := gitlab.NewClient(gitlabInstance)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to create GitLab client: %w", err)
+		}
+
+		tempDir := c.String("temp-dir")
+		repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, branch)
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to clone GitLab repository: %w", err)
+		}
+
+		// Set up cleanup function if we created a temporary directory
+		tempDirFlag := c.String("temp-dir")
+		if tempDirFlag == "" {
+			cleanup = func() {
+				term.Info(fmt.Sprintf("Cleaning up temporary directory %s...", repoLocalPath))
+				os.RemoveAll(repoLocalPath)
+			}
+		}
+
+		return repoLocalPath, cleanup, nil
+
+	default:
+		return "", nil, fmt.Errorf("repository fetching from URL is not supported for platform: %s", platform)
 	}
 
-	return repoLocalPath, cleanup, nil
+} else if repoPath != "" {
+	repoLocalPath = repoPath
+}
+
+return repoLocalPath, cleanup, nil
 }
 
 // findWorkflowFiles finds workflow files based on platform and input
@@ -722,7 +726,7 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 }
 
 // processAndGenerateReport filters findings, generates reports, and prints summary
-func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, outputFormat, outputFile string, startTime time.Time, workflowsCount, rulesCount int, repoLocalPath string, enableVulnIntel bool, astStats *astutil.Stats) error {
+func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, outputFormat, outputFile string, startTime time.Time, workflowsCount, rulesCount int, repoLocalPath string, repoURL string, enableVulnIntel bool, verbose bool, astStats *astutil.Stats) error {
 	// Filter findings based on configuration
 	filteredFindings := []rules.Finding{}
 	for _, finding := range allFindings {
@@ -753,8 +757,14 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 		generatedCount = astStats.GeneratedDataFlows
 	}
 
+	// Prefer remote URL for display when scanning a remote repository
+	displayRepo := repoLocalPath
+	if strings.TrimSpace(repoURL) != "" {
+		displayRepo = repoURL
+	}
+
 	result := report.ScanResult{
-		Repository:      repoLocalPath,
+		Repository:      displayRepo,
 		ScanTime:        startTime,
 		Duration:        time.Since(startTime),
 		WorkflowsCount:  workflowsCount,
@@ -789,17 +799,17 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 
 	// Use intelligence-enhanced reporting if enabled
 	if enableVulnIntel {
-		intelGenerator := report.NewIntelligenceGenerator(result, actualOutputFormat, false, actualOutputFile, true)
+		intelGenerator := report.NewIntelligenceGenerator(result, actualOutputFormat, verbose, actualOutputFile, true)
 		if err := intelGenerator.GenerateWithIntelligence(); err != nil {
 			// Fall back to standard reporting on error
 			fmt.Printf("Warning: Intelligence-enhanced reporting failed, falling back to standard report: %v\n", err)
-			reportGenerator := report.NewGenerator(result, actualOutputFormat, false, actualOutputFile)
+			reportGenerator := report.NewGenerator(result, actualOutputFormat, verbose, actualOutputFile)
 			if err := reportGenerator.Generate(); err != nil {
 				return fmt.Errorf("failed to generate report: %w", err)
 			}
 		}
 	} else {
-		reportGenerator := report.NewGenerator(result, actualOutputFormat, false, actualOutputFile)
+		reportGenerator := report.NewGenerator(result, actualOutputFormat, verbose, actualOutputFile)
 		if err := reportGenerator.Generate(); err != nil {
 			return fmt.Errorf("failed to generate report: %w", err)
 		}
@@ -1002,7 +1012,7 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	}
 
 	// Process results and generate report
-	return processAndGenerateReport(allFindings, cfg, outputFormat, outputFile, startTime, len(workflowFiles), len(standardRules), repoLocalPath, c.Bool("enable-vuln-intel"), astStats)
+	return processAndGenerateReport(allFindings, cfg, outputFormat, outputFile, startTime, len(workflowFiles), len(standardRules), repoLocalPath, repoURL, c.Bool("enable-vuln-intel"), c.Bool("verbose"), astStats)
 }
 
 // shouldIncludeSeverity checks if a finding should be included based on minimum severity

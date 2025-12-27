@@ -27,6 +27,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/pkg/terminal"
 	"github.com/olekukonko/tablewriter"
 )
 
@@ -61,6 +62,7 @@ type Generator struct {
 	FilePath            string
 	EnhancedFormatting  bool   // Use enhanced formatting for CLI output
 	CLIStyle            string // CLI style: "standard", "detailed", "compact", "boxed"
+	term                *terminal.Terminal // Intelligent terminal for xterm output
 }
 
 // NewGenerator creates a new report generator
@@ -72,6 +74,7 @@ func NewGenerator(result ScanResult, format string, verbose bool, filePath strin
 		FilePath:            filePath,
 		EnhancedFormatting:  true, // Enable enhanced formatting by default
 		CLIStyle:            "detailed", // Use detailed style by default
+		term:                terminal.Default(), // Initialize intelligent terminal
 	}
 }
 
@@ -93,6 +96,9 @@ func (g *Generator) Generate() error {
 
 // generateCLIReport creates a modern, visually appealing CLI report
 func (g *Generator) generateCLIReport() error {
+	// Use intelligent terminal for xterm output
+	t := g.term
+
 	// Define color styles
 	titleStyle := color.New(color.FgHiCyan, color.Bold)
 	subtitleStyle := color.New(color.FgCyan, color.Bold)
@@ -104,11 +110,15 @@ func (g *Generator) generateCLIReport() error {
 	lowStyle := color.New(color.FgBlue)
 	infoLevelStyle := color.New(color.FgHiBlue)
 
-	// Header with logo and version
+	// Header with logo and version using terminal banner
 	fmt.Println()
-	titleStyle.Println("╔═══════════════════════════════════════════╗")
-	titleStyle.Println("║             FLOWLYT SCAN RESULTS          ║")
-	titleStyle.Println("╚═══════════════════════════════════════════╝")
+	if t.IsTTY() && t.ColorLevel() >= terminal.ColorLevel256 {
+		t.Banner("FLOWLYT SCAN RESULTS", 45)
+	} else {
+		titleStyle.Println("╔═══════════════════════════════════════════╗")
+		titleStyle.Println("║             FLOWLYT SCAN RESULTS          ║")
+		titleStyle.Println("╚═══════════════════════════════════════════╝")
+	}
 
 	// Print scan information
 	fmt.Println()
@@ -363,7 +373,18 @@ func (g *Generator) generateCLIReport() error {
 
 // generateJSONReport creates a JSON report
 func (g *Generator) generateJSONReport() error {
-	data, err := json.MarshalIndent(g.Result, "", "  ")
+	// Sanitize file paths to avoid temp/local prefixes
+	sanitized := g.Result
+	if len(g.Result.Findings) > 0 {
+		sanitizedFindings := make([]rules.Finding, 0, len(g.Result.Findings))
+		for _, f := range g.Result.Findings {
+			f.FilePath = cleanFilePath(f.FilePath)
+			sanitizedFindings = append(sanitizedFindings, f)
+		}
+		sanitized.Findings = sanitizedFindings
+	}
+
+	data, err := json.MarshalIndent(sanitized, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
@@ -447,12 +468,13 @@ func (g *Generator) generateMarkdownReport() error {
 
 			for i, finding := range severityFindings {
 				markdownBuilder.WriteString(fmt.Sprintf("#### %d. %s (%s)\n\n", i+1, finding.RuleName, finding.RuleID))
+				displayPath := cleanFilePath(finding.FilePath)
 				if finding.GitHubURL != "" {
-					markdownBuilder.WriteString(fmt.Sprintf("- **GitHub URL:** [%s](%s)\n", finding.FilePath, finding.GitHubURL))
+					markdownBuilder.WriteString(fmt.Sprintf("- **GitHub URL:** [%s](%s)\n", displayPath, finding.GitHubURL))
 				} else if finding.GitLabURL != "" {
-					markdownBuilder.WriteString(fmt.Sprintf("- **GitLab URL:** [%s](%s)\n", finding.FilePath, finding.GitLabURL))
+					markdownBuilder.WriteString(fmt.Sprintf("- **GitLab URL:** [%s](%s)\n", displayPath, finding.GitLabURL))
 				} else {
-					markdownBuilder.WriteString(fmt.Sprintf("- **File:** `%s`\n", finding.FilePath))
+					markdownBuilder.WriteString(fmt.Sprintf("- **File:** `%s`\n", displayPath))
 				}
 				if finding.JobName != "" {
 					markdownBuilder.WriteString(fmt.Sprintf("- **Job:** `%s`\n", finding.JobName))
