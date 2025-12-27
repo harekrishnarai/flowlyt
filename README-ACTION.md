@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run Flowlyt Security Scan
-        uses: harekrishnarai/flowlyt@v1.0.3
+        uses: harekrishnarai/flowlyt@v1.0.5
         with:
           fail-on-severity: 'CRITICAL'
           upload-sarif: 'true'
@@ -49,7 +49,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Flowlyt Security Scan
-        uses: harekrishnarai/flowlyt@v1.0.3
+        uses: harekrishnarai/flowlyt@v1.0.5
         with:
           # Do not pass config-file or enable-ast-analysis here
           repository: .
@@ -126,7 +126,7 @@ Notes:
 
 ```yaml
 - name: Security Scan
-  uses: harekrishnarai/flowlyt@v1.0.3
+  uses: harekrishnarai/flowlyt@v1.0.5
   with:
     # Minimum severity to report (INFO, LOW, MEDIUM, HIGH, CRITICAL)
     min-severity: 'MEDIUM'
@@ -142,7 +142,7 @@ Notes:
 
 ```yaml
 - name: Enterprise Security Scan
-  uses: harekrishnarai/flowlyt@v1.0.3
+  uses: harekrishnarai/flowlyt@v1.0.5
   with:
     # Path to configuration file
     config-file: '.flowlyt-enterprise.yml'
@@ -195,7 +195,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Security Scan - ${{ matrix.config }}
-        uses: harekrishnarai/flowlyt@v1.0.3
+        uses: harekrishnarai/flowlyt@v1.0.5
         with:
           config-file: '.flowlyt-${{ matrix.config }}.yml'
           output-format: 'sarif'
@@ -388,7 +388,7 @@ notifications:
 
 ```yaml
 - name: Security Gate
-  uses: harekrishnarai/flowlyt@v1.0.3
+  uses: harekrishnarai/flowlyt@v1.0.5
   with:
     fail-on-severity: 'CRITICAL'
     max-critical: '0'
@@ -399,7 +399,7 @@ notifications:
 
 ```yaml
 - name: Security Check
-  uses: harekrishnarai/flowlyt@v1.0.3
+  uses: harekrishnarai/flowlyt@v1.0.5
   with:
     fail-on-severity: 'HIGH'
     max-high: '3'
@@ -411,7 +411,7 @@ notifications:
 
 ```yaml
 - name: Compliance Check
-  uses: harekrishnarai/flowlyt@v1.0.3
+  uses: harekrishnarai/flowlyt@v1.0.5
   with:
     enable-policy-enforcement: 'true'
     compliance-frameworks: 'pci-dss,sox'

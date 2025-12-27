@@ -60,13 +60,13 @@ go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 Install specific version directly:
 ```bash
 # Install specific latest version
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v1.0.3
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v1.0.5
 ```
 
 **Verification**: Check that you have the correct version:
 ```bash
 flowlyt --version
-# Should output: flowlyt version 1.0.3
+# Should output: flowlyt version 1.0.5
 ```
 
 
@@ -192,7 +192,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run Flowlyt Security Scan
-        uses: harekrishnarai/flowlyt@v1.0.3
+        uses: harekrishnarai/flowlyt@v1.0.5
         with:
           output-format: 'sarif'
           output-file: 'flowlyt-results.sarif'
@@ -210,7 +210,7 @@ jobs:
 ### Advanced Configuration with AST & Vulnerability Intel
 ```yaml
 - name: Advanced Flowlyt Scan
-  uses: harekrishnarai/flowlyt@v1.0.3
+  uses: harekrishnarai/flowlyt@v1.0.5
   with:
     config-file: '.flowlyt.yml'
     output-format: 'sarif'
