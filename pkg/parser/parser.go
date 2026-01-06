@@ -27,10 +27,11 @@ import (
 
 // WorkflowFile represents a GitHub Actions workflow file
 type WorkflowFile struct {
-	Path     string
-	Name     string
-	Content  []byte
-	Workflow Workflow
+	Path            string
+	Name            string
+	Content         []byte
+	Workflow        Workflow
+	RepositoryOwner string // Owner/Organization of the repository
 }
 
 // Workflow represents the parsed structure of a GitHub Actions workflow file

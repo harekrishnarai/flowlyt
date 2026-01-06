@@ -85,8 +85,7 @@ type OSVVulnerability struct {
 	DatabaseSpecific interface{} `json:"database_specific"`
 }
 
-// KnownVulnerableActions contains a hardcoded list of known vulnerable actions
-// This is based on Poutine's vulnerability database
+
 var KnownVulnerableActions = map[string][]ActionVulnerability{
 	"actions/checkout": {
 		{
@@ -116,8 +115,7 @@ var KnownVulnerableActions = map[string][]ActionVulnerability{
 	},
 }
 
-// UnpinnableActions contains actions that cannot be pinned to specific versions
-// Based on Poutine's unpinnable_actions.txt
+
 var UnpinnableActions = []string{
 	"0daryo/labelcommit",
 	"0h-n0/flet-action-windows",
@@ -128,7 +126,7 @@ var UnpinnableActions = []string{
 	"10up/action-wordpress-plugin-build-zip",
 	"10up/action-wordpress-plugin-deploy",
 	"10up/wpcs-action",
-	// ... (truncated for brevity, full list available in Poutine's file)
+	
 }
 
 // TrustedPublishers contains a list of trusted action publishers

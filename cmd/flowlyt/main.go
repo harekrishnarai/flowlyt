@@ -503,6 +503,23 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 return repoLocalPath, cleanup, nil
 }
 
+// extractRepositoryOwnerFromURL extracts the repository owner/organization from a repository URL
+func extractRepositoryOwnerFromURL(repoURL, platform string) string {
+	switch platform {
+	case constants.PlatformGitHub:
+		owner, _, err := github.ParseRepositoryURL(repoURL)
+		if err == nil {
+			return owner
+		}
+	case constants.PlatformGitLab:
+		_, owner, _, err := gitlab.ParseRepositoryURL(repoURL)
+		if err == nil {
+			return owner
+		}
+	}
+	return ""
+}
+
 // findWorkflowFiles finds workflow files based on platform and input
 func findWorkflowFiles(workflowFile, repoLocalPath, platform string) ([]parser.WorkflowFile, error) {
 	var workflowFiles []parser.WorkflowFile
@@ -951,6 +968,19 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	}
 
 	fmt.Printf("Found %d workflow files.\n", len(workflowFiles))
+
+	// Extract and set repository owner from URL if available
+	if repoURL != "" {
+		owner := extractRepositoryOwnerFromURL(repoURL, platform)
+		if owner != "" {
+			for i := range workflowFiles {
+				workflowFiles[i].RepositoryOwner = owner
+			}
+			if c.Bool("verbose") {
+				fmt.Printf("🔍 Repository owner detected: %s\n", owner)
+			}
+		}
+	}
 
 	// Analyze workflows
 	var allFindings []rules.Finding

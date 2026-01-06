@@ -262,10 +262,11 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 		}
 
 		workflowFiles = append(workflowFiles, parser.WorkflowFile{
-			Path:     filename,
-			Name:     filename,
-			Content:  []byte(content),
-			Workflow: workflow,
+			Path:            filename,
+			Name:            filename,
+			Content:         []byte(content),
+			Workflow:        workflow,
+			RepositoryOwner: owner, // Set the repository owner for internal action detection
 		})
 	}
 

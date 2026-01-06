@@ -1021,6 +1021,22 @@ func checkUnpinnedAction(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
+			// Extract action owner to check if it's an internal action
+			actionParts := strings.Split(step.Uses, "@")
+			actionName := actionParts[0]
+			actionOwner := ""
+			if strings.Contains(actionName, "/") {
+				parts := strings.Split(actionName, "/")
+				if len(parts) >= 2 {
+					actionOwner = parts[0]
+				}
+			}
+
+			// Skip internal organization actions - they're trusted and don't need SHA pinning
+			if workflow.RepositoryOwner != "" && actionOwner != "" && actionOwner == workflow.RepositoryOwner {
+				continue
+			}
+
 			// Allow trusted semantic version pins for well-known publishers
 			if isTrustedSemverReference(step.Uses) {
 				continue
@@ -3019,6 +3035,12 @@ func checkRepoJacking(workflow parser.WorkflowFile) []Finding {
 					repo := matches[2]
 					ref := matches[3]
 
+					// Check if action is from the same organization as the repository
+					// If it is, consider it internal and trusted - skip repo-jacking check
+					if workflow.RepositoryOwner != "" && org == workflow.RepositoryOwner {
+						continue
+					}
+
 					// Check for potential repo-jacking indicators
 					suspiciousPatterns := []*regexp.Regexp{
 						regexp.MustCompile(`^\d+$`),                   // Numeric usernames
@@ -3460,6 +3482,22 @@ func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 				actionParts := strings.Split(step.Uses, "@")
 				if len(actionParts) > 1 {
 					ref := actionParts[1]
+
+					// Extract action owner to check if it's an internal action
+					actionName := actionParts[0]
+					actionOwner := ""
+					if strings.Contains(actionName, "/") {
+						parts := strings.Split(actionName, "/")
+						if len(parts) >= 2 {
+							actionOwner = parts[0]
+						}
+					}
+
+					// Skip internal organization actions - they're trusted and using @main is acceptable
+					if workflow.RepositoryOwner != "" && actionOwner != "" && actionOwner == workflow.RepositoryOwner {
+						continue
+					}
+
 					// Check for potentially confusing refs
 					if ref == "master" || ref == "main" || ref == "develop" ||
 						strings.HasPrefix(ref, "v") && len(ref) < 6 { // Short version tags

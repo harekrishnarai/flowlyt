@@ -240,6 +240,22 @@ func checkUntrustedActionSources(workflow parser.WorkflowFile) []Finding {
 			actionParts := strings.Split(step.Uses, "@")
 			actionName := actionParts[0]
 
+			// Extract action owner from action name (format: owner/repo)
+			actionOwner := ""
+			if strings.Contains(actionName, "/") {
+				parts := strings.Split(actionName, "/")
+				if len(parts) >= 2 {
+					actionOwner = parts[0]
+				}
+			}
+
+			// Check if action is from the same organization as the repository
+			// If it is, consider it internal and trusted
+			if workflow.RepositoryOwner != "" && actionOwner != "" && actionOwner == workflow.RepositoryOwner {
+				// This is an internal organization action, skip flagging
+				continue
+			}
+
 			// Check if action is from an untrusted source
 			if !vdb.IsTrustedPublisher(actionName) {
 				// Additional checks for suspicious patterns
