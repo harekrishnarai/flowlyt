@@ -44,6 +44,27 @@ type ScanResult struct {
 	GeneratedByAST  int             `json:"astGeneratedCount"`
 }
 
+// FindingReport augments a finding with code context for report outputs.
+type FindingReport struct {
+	rules.Finding
+	CodeContext *CodeContext `json:"codeContext,omitempty"`
+}
+
+// ScanResultReport represents the JSON report with enriched findings.
+type ScanResultReport struct {
+	Repository      string          `json:"repository"`
+	ScanTime        time.Time       `json:"scanTime"`
+	Duration        time.Duration   `json:"duration"`
+	DurationNs      int64           `json:"durationNs"`
+	DurationMs      int64           `json:"durationMs"`
+	WorkflowsCount  int             `json:"workflowsCount"`
+	RulesCount      int             `json:"rulesCount"`
+	Findings        []FindingReport `json:"findings"`
+	Summary         ResultSummary   `json:"summary"`
+	SuppressedCount int             `json:"suppressedCount"`
+	GeneratedByAST  int             `json:"astGeneratedCount"`
+}
+
 // ResultSummary provides a summary of the scan findings by severity
 type ResultSummary struct {
 	Critical int `json:"critical"`
@@ -374,17 +395,34 @@ func (g *Generator) generateCLIReport() error {
 // generateJSONReport creates a JSON report
 func (g *Generator) generateJSONReport() error {
 	// Sanitize file paths to avoid temp/local prefixes
-	sanitized := g.Result
-	if len(g.Result.Findings) > 0 {
-		sanitizedFindings := make([]rules.Finding, 0, len(g.Result.Findings))
-		for _, f := range g.Result.Findings {
-			f.FilePath = cleanFilePath(f.FilePath)
-			sanitizedFindings = append(sanitizedFindings, f)
-		}
-		sanitized.Findings = sanitizedFindings
+	report := ScanResultReport{
+		Repository:      g.Result.Repository,
+		ScanTime:        g.Result.ScanTime,
+		Duration:        g.Result.Duration,
+		DurationNs:      g.Result.Duration.Nanoseconds(),
+		DurationMs:      g.Result.Duration.Milliseconds(),
+		WorkflowsCount:  g.Result.WorkflowsCount,
+		RulesCount:      g.Result.RulesCount,
+		Summary:         g.Result.Summary,
+		SuppressedCount: g.Result.SuppressedCount,
+		GeneratedByAST:  g.Result.GeneratedByAST,
 	}
 
-	data, err := json.MarshalIndent(sanitized, "", "  ")
+	if len(g.Result.Findings) > 0 {
+		deduped := deduplicateFindings(g.Result.Findings, cleanFilePath)
+		enhancedFindings := make([]FindingReport, 0, len(deduped))
+		for _, f := range deduped {
+			codeContext := buildCodeContext(f.FilePath, f.LineNumber)
+			f.FilePath = cleanFilePath(f.FilePath)
+			enhancedFindings = append(enhancedFindings, FindingReport{
+				Finding:     f,
+				CodeContext: codeContext,
+			})
+		}
+		report.Findings = enhancedFindings
+	}
+
+	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed to marshal JSON: %w", err)
 	}
@@ -400,6 +438,45 @@ func (g *Generator) generateJSONReport() error {
 	}
 
 	return nil
+}
+
+type findingKey struct {
+	ruleID     string
+	filePath   string
+	jobName    string
+	stepName   string
+	lineNumber int
+	githubURL  string
+	gitlabURL  string
+}
+
+func deduplicateFindings(findings []rules.Finding, normalizePath func(string) string) []rules.Finding {
+	if len(findings) == 0 {
+		return nil
+	}
+	seen := make(map[findingKey]struct{}, len(findings))
+	deduped := make([]rules.Finding, 0, len(findings))
+	for _, f := range findings {
+		path := f.FilePath
+		if normalizePath != nil {
+			path = normalizePath(path)
+		}
+		key := findingKey{
+			ruleID:     f.RuleID,
+			filePath:   path,
+			jobName:    f.JobName,
+			stepName:   f.StepName,
+			lineNumber: f.LineNumber,
+			githubURL:  f.GitHubURL,
+			gitlabURL:  f.GitLabURL,
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		deduped = append(deduped, f)
+	}
+	return deduped
 }
 
 // generateMarkdownReport creates a Markdown report
