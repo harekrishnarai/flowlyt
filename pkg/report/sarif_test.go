@@ -213,14 +213,14 @@ func TestSeverityToSARIFLevel(t *testing.T) {
 func TestGetSecuritySeverityScore(t *testing.T) {
 	tests := []struct {
 		severity     rules.Severity
-		expected     string
+		expected     float64
 		description  string
 	}{
-		{rules.Critical, "9.0", "Critical should map to 9.0 (9.0-10.0 range)"},
-		{rules.High, "8.0", "High should map to 8.0 (7.0-8.9 range)"},
-		{rules.Medium, "5.0", "Medium should map to 5.0 (4.0-6.9 range)"},
-		{rules.Low, "3.0", "Low should map to 3.0 (0.1-3.9 range)"},
-		{rules.Info, "0.0", "Info should map to 0.0"},
+		{rules.Critical, 9.0, "Critical should map to 9.0 (9.0-10.0 range)"},
+		{rules.High, 8.0, "High should map to 8.0 (7.0-8.9 range)"},
+		{rules.Medium, 5.0, "Medium should map to 5.0 (4.0-6.9 range)"},
+		{rules.Low, 3.0, "Low should map to 3.0 (0.1-3.9 range)"},
+		{rules.Info, 0.0, "Info should map to 0.0"},
 	}
 
 	result := ScanResult{}
@@ -230,7 +230,7 @@ func TestGetSecuritySeverityScore(t *testing.T) {
 		t.Run(string(tt.severity), func(t *testing.T) {
 			score := generator.getSecuritySeverityScore(tt.severity)
 			if score != tt.expected {
-				t.Errorf("Expected security-severity '%s' for severity '%s', got '%s'. %s", 
+				t.Errorf("Expected security-severity '%v' for severity '%s', got '%v'. %s",
 					tt.expected, tt.severity, score, tt.description)
 			}
 		})

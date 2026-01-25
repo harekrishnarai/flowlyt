@@ -242,8 +242,8 @@ func TestAnalyzer(t *testing.T) {
 		t.Errorf("Expected 2 enhanced findings, got %d", len(enhancedFindings))
 	}
 
-	// Test call count (duplicates are cached, so only one call for the repeated finding)
-	expectedCalls := 2 // 1 from single + 1 from deduped multiple
+	// Test call count (cache is reused across single + batch analysis)
+	expectedCalls := 1
 	if mockClient.callCount != expectedCalls {
 		t.Errorf("Expected %d API calls, got %d", expectedCalls, mockClient.callCount)
 	}

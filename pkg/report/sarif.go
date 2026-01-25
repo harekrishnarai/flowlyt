@@ -87,8 +87,9 @@ func (g *Generator) createSARIFReport() (*sarif.Report, error) {
 	}
 
 	// Create rule definitions from findings
+	dedupedFindings := deduplicateFindings(g.Result.Findings, g.normalizeFilePath)
 	ruleMap := make(map[string]bool)
-	for _, finding := range g.Result.Findings {
+	for _, finding := range dedupedFindings {
 		if !ruleMap[finding.RuleID] {
 			g.addSARIFRule(run, finding)
 			ruleMap[finding.RuleID] = true
@@ -96,12 +97,12 @@ func (g *Generator) createSARIFReport() (*sarif.Report, error) {
 	}
 
 	// Add results from findings
-	for _, finding := range g.Result.Findings {
+	for _, finding := range dedupedFindings {
 		g.addSARIFResult(run, finding)
 	}
 
 	// Add artifacts (files) referenced in the scan
-	g.addSARIFArtifacts(run)
+	g.addSARIFArtifacts(run, dedupedFindings)
 
 	report.AddRun(run)
 	return report, nil
@@ -148,8 +149,17 @@ func (g *Generator) addSARIFResult(run *sarif.Run, finding rules.Finding) {
 		WithArtifactLocation(sarif.NewSimpleArtifactLocation(normalizedPath))
 
 	if finding.LineNumber > 0 {
-		region := sarif.NewSimpleRegion(finding.LineNumber, finding.LineNumber)
-		location.WithRegion(region)
+		codeContext := buildCodeContext(finding.FilePath, finding.LineNumber)
+		if codeContext != nil {
+			region := sarif.NewRegion().
+				WithStartLine(codeContext.StartLine).
+				WithEndLine(codeContext.EndLine).
+				WithSnippet(sarif.NewArtifactContent().WithText(formatSnippetRaw(codeContext.Lines)))
+			location.WithRegion(region)
+		} else {
+			region := sarif.NewSimpleRegion(finding.LineNumber, finding.LineNumber)
+			location.WithRegion(region)
+		}
 	}
 
 	result.AddLocation(sarif.NewLocation().WithPhysicalLocation(location))
@@ -224,10 +234,10 @@ func (g *Generator) addSARIFResult(run *sarif.Run, finding rules.Finding) {
 }
 
 // addSARIFArtifacts adds artifact entries for analyzed files
-func (g *Generator) addSARIFArtifacts(run *sarif.Run) {
+func (g *Generator) addSARIFArtifacts(run *sarif.Run, findings []rules.Finding) {
 	artifactMap := make(map[string]bool)
 
-	for _, finding := range g.Result.Findings {
+	for _, finding := range findings {
 		normalizedPath := g.normalizeFilePath(finding.FilePath)
 
 		if !artifactMap[normalizedPath] {
@@ -281,20 +291,20 @@ func (g *Generator) severityToSARIFLevel(severity rules.Severity) string {
 // 7.0-8.9: High
 // 4.0-6.9: Medium
 // 0.1-3.9: Low
-func (g *Generator) getSecuritySeverityScore(severity rules.Severity) string {
+func (g *Generator) getSecuritySeverityScore(severity rules.Severity) float64 {
 	switch severity {
 	case rules.Critical:
-		return "9.0" // Critical: 9.0-10.0 range
+		return 9.0 // Critical: 9.0-10.0 range
 	case rules.High:
-		return "8.0" // High: 7.0-8.9 range
+		return 8.0 // High: 7.0-8.9 range
 	case rules.Medium:
-		return "5.0" // Medium: 4.0-6.9 range
+		return 5.0 // Medium: 4.0-6.9 range
 	case rules.Low:
-		return "3.0" // Low: 0.1-3.9 range
+		return 3.0 // Low: 0.1-3.9 range
 	case rules.Info:
-		return "0.0" // Info: 0.0 for informational
+		return 0.0 // Info: 0.0 for informational
 	default:
-		return "5.0" // Default to medium
+		return 5.0 // Default to medium
 	}
 }
 

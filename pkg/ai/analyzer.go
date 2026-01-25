@@ -383,13 +383,31 @@ func (a *Analyzer) AnalyzeSingleFinding(ctx context.Context, finding rules.Findi
 
 	enhanced := &EnhancedFinding{Finding: finding}
 
+	fp := fingerprintFinding(finding)
+	if cached, ok := a.cache.Load(fp); ok {
+		switch v := cached.(type) {
+		case *VerificationResult:
+			enhanced.AIVerification = v
+			return enhanced, nil
+		case error:
+			enhanced.AIError = v.Error()
+			return enhanced, nil
+		case string:
+			enhanced.AIError = v
+			return enhanced, nil
+		}
+	}
+
 	verification, err := a.client.VerifyFinding(analyzeCtx, finding)
 	if err != nil {
 		enhanced.AIError = err.Error()
+		a.cache.Store(fp, err.Error())
 		return enhanced, nil // Return the enhanced finding with error, don't fail completely
 	}
 
 	enhanced.AIVerification = verification
+	a.cache.Store(fp, verification)
+	a.stagePersist(fp, verification)
 	return enhanced, nil
 }
 
