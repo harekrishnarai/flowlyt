@@ -61,9 +61,9 @@ func (g *Generator) createSARIFReport() (*sarif.Report, error) {
 
 	// Add run to the report
 	run := sarif.NewRunWithInformationURI("Flowlyt", "https://github.com/harekrishnarai/flowlyt")
-	run.Tool.Driver.WithVersion("1.0.5")
+	run.Tool.Driver.WithVersion("1.0.7")
 	run.Tool.Driver.WithFullName("Flowlyt - CI/CD Security Analyzer")
-	run.Tool.Driver.WithSemanticVersion("1.0.5")
+	run.Tool.Driver.WithSemanticVersion("1.0.7")
 
 	// Set invocation information
 	run.AddInvocation(true).
