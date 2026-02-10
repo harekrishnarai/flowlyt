@@ -125,7 +125,7 @@ func (g *Generator) addSARIFRule(run *sarif.Run, finding rules.Finding) {
 	rule.WithProperties(sarif.Properties{
 		"category":          string(finding.Category),
 		"severity":          string(finding.Severity),
-		"security-severity": g.getSecuritySeverityScore(finding.Severity),
+		"security-severity": fmt.Sprintf("%.1f", g.getSecuritySeverityScore(finding.Severity)),
 		"tags":              []string{"security", "ci-cd", string(finding.Category)},
 		"precision":         "high",
 		"problem.severity":  string(finding.Severity),
