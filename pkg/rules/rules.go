@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/harekrishnarai/flowlyt/pkg/analysis/context"
 	"github.com/harekrishnarai/flowlyt/pkg/constants"
 	"github.com/harekrishnarai/flowlyt/pkg/github"
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
@@ -36,17 +37,34 @@ type ConfigInterface interface {
 
 // RuleEngine handles rule execution with configuration support
 type RuleEngine struct {
-	config ConfigInterface
+	config          ConfigInterface
+	contextAnalyzer *context.ContextAnalyzer
+	contextAware    bool
 }
 
 // NewRuleEngine creates a new rule engine with configuration
 func NewRuleEngine(config ConfigInterface) *RuleEngine {
-	return &RuleEngine{config: config}
+	return &RuleEngine{
+		config:          config,
+		contextAnalyzer: context.NewContextAnalyzer(),
+		contextAware:    true, // Enable context-aware analysis by default
+	}
+}
+
+// SetContextAware enables or disables context-aware analysis
+func (re *RuleEngine) SetContextAware(enabled bool) {
+	re.contextAware = enabled
 }
 
 // ExecuteRules runs rules against a workflow with configuration filtering
 func (re *RuleEngine) ExecuteRules(workflow parser.WorkflowFile, rules []Rule) []Finding {
 	var allFindings []Finding
+
+	// Analyze workflow context once for all rules
+	var ctx *context.WorkflowContext
+	if re.contextAware {
+		ctx = re.contextAnalyzer.Analyze(&workflow.Workflow)
+	}
 
 	for _, rule := range rules {
 		// Check if rule is enabled in configuration
@@ -56,12 +74,33 @@ func (re *RuleEngine) ExecuteRules(workflow parser.WorkflowFile, rules []Rule) [
 
 		findings := rule.Check(workflow)
 
-		// Apply configuration-based filtering
+		// Apply configuration-based filtering and context-aware adjustments
 		var filteredFindings []Finding
 		for _, finding := range findings {
-			if re.config == nil || !re.config.ShouldIgnoreForRule(finding.RuleID, finding.Evidence, workflow.Path) {
-				filteredFindings = append(filteredFindings, finding)
+			// Check if should be ignored by configuration
+			if re.config != nil && re.config.ShouldIgnoreForRule(finding.RuleID, finding.Evidence, workflow.Path) {
+				continue
 			}
+
+			// Apply context-aware analysis
+			if re.contextAware && ctx != nil {
+				// Check if finding should be suppressed
+				if re.contextAnalyzer.ShouldSuppress(finding.RuleID, ctx) {
+					continue
+				}
+
+				// Adjust severity based on context
+				originalSeverity := string(finding.Severity)
+				adjustedSeverity := re.contextAnalyzer.AdjustSeverity(finding.RuleID, originalSeverity, ctx)
+				finding.Severity = Severity(adjustedSeverity)
+
+				// Add context information to evidence
+				if originalSeverity != adjustedSeverity {
+					finding.Evidence = fmt.Sprintf("[Context-adjusted from %s to %s] %s", originalSeverity, adjustedSeverity, finding.Evidence)
+				}
+			}
+
+			filteredFindings = append(filteredFindings, finding)
 		}
 
 		allFindings = append(allFindings, filteredFindings...)

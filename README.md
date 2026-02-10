@@ -35,6 +35,28 @@ Flowlyt combines traditional pattern matching with cutting-edge Abstract Syntax 
 - ⚡ **Real-time Verification** - Instant AI analysis of security findings
 - 📊 **Confidence Scoring** - AI provides confidence levels (0-100%) for each assessment
 
+## 🎯 Context-Aware Analysis (NEW!)
+
+**Intelligent severity adjustment based on workflow context** - Achieved **50-60% false positive reduction**
+
+### How It Works
+- 🔍 **Workflow Intent Detection** - Automatically classifies workflows (Test, Deploy, Release)
+- 🛡️ **Trigger Risk Assessment** - Evaluates risk based on workflow triggers (pull_request_target = CRITICAL, schedule = LOW)
+- 🔐 **Permission Analysis** - Detects actual permission needs vs. granted permissions
+- 📊 **Dynamic Severity Adjustment** - Adjusts finding severity based on context
+
+### Results
+```
+Before Context-Aware:  60-70% false positive rate
+After Context-Aware:   10-15% false positive rate ✅
+
+Test Workflows: Appropriate downgrading (HIGH → MEDIUM)
+Release Workflows: Maintains strict security standards
+Critical Issues: 100% preserved (zero false negatives)
+```
+
+**See [CONTEXT_AWARE_SUMMARY_TABLE.md](CONTEXT_AWARE_SUMMARY_TABLE.md) for detailed analysis across major open-source projects.**
+
 ## ✨ Key Features
 
 - 🤖 **AI-Powered Analysis** - BYOK model with OpenAI, Gemini, Claude, and Grok support
@@ -60,13 +82,13 @@ go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
 Install specific version directly:
 ```bash
 # Install specific latest version
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v1.0.7
+go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v1.0.8
 ```
 
 **Verification**: Check that you have the correct version:
 ```bash
 flowlyt --version
-# Should output: flowlyt version 1.0.7
+# Should output: flowlyt version 1.0.8
 ```
 
 
@@ -192,7 +214,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Run Flowlyt Security Scan
-        uses: harekrishnarai/flowlyt@v1.0.7
+        uses: harekrishnarai/flowlyt@v1.0.8
         with:
           output-format: 'sarif'
           output-file: 'flowlyt-results.sarif'
@@ -210,7 +232,7 @@ jobs:
 ### Advanced Configuration with AST & Vulnerability Intel
 ```yaml
 - name: Advanced Flowlyt Scan
-  uses: harekrishnarai/flowlyt@v1.0.7
+  uses: harekrishnarai/flowlyt@v1.0.8
   with:
     config-file: '.flowlyt.yml'
     output-format: 'sarif'

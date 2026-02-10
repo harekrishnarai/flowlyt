@@ -7,27 +7,37 @@ on:
   release:
     types: [published]
 
+# Minimal permissions at workflow level
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-and-push:
+    name: Build and Push Docker Image
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     permissions:
       contents: read
       packages: write
-      id-token: write
+      id-token: write  # For cosign signing
+      attestations: write  # For provenance attestations
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349 # v3.7.1
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -35,7 +45,7 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@8e5442c4ef9f78752691e2d8f8d19755c6f78e81 # v5.5.1
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -45,9 +55,14 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Flowlyt
+            org.opencontainers.image.description=Multi-Platform CI/CD Security Analyzer
+            org.opencontainers.image.vendor=Flowlyt Team
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        id: build-and-push
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75 # v6.9.0
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
@@ -56,6 +71,31 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+
+      - name: Install Cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@dc72c7d5c4d10cd6bcb8cf6e3fd625a9e5e537da # v3.7.0
+
+      - name: Sign container image with Cosign
+        if: github.event_name != 'pull_request'
+        env:
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          echo "Signing ${TAGS}@${DIGEST}"
+          cosign sign --yes --recursive "${TAGS}@${DIGEST}"
+
+      - name: Generate SBOM attestation
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-sbom@5026d3663739160db546203eeaffa6aa1c51a4d6 # v1.4.1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.build-and-push.outputs.digest }}
+          sbom-path: 'sbom.spdx.json'
+          push-to-registry: true
 
       - name: Image digest
-        run: echo ${{ steps.meta.outputs.digest }}
+        run: |
+          echo "Image digest: ${{ steps.build-and-push.outputs.digest }}"
