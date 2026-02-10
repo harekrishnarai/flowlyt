@@ -260,20 +260,23 @@ func (v *Validator) ValidateOutputFile(outputPath string) error {
 	return nil
 }
 
-// ValidateSeverity validates severity level input
+// ValidateSeverity validates severity level input (case-insensitive)
 func (v *Validator) ValidateSeverity(severity string) error {
 	if severity == "" {
 		return nil // Empty severity will use default
 	}
 
+	// Convert to uppercase for case-insensitive comparison
+	severityUpper := strings.ToUpper(severity)
+
 	// Check if severity level is valid
-	if _, exists := constants.SeverityLevels[severity]; !exists {
+	if _, exists := constants.SeverityLevels[severityUpper]; !exists {
 		validSeverities := make([]string, 0, len(constants.SeverityLevels))
 		for sev := range constants.SeverityLevels {
 			validSeverities = append(validSeverities, sev)
 		}
 		return errors.NewValidationError(fmt.Sprintf("Invalid severity level: %s", severity), "severity", severity,
-			fmt.Sprintf("Use one of: %s", strings.Join(validSeverities, ", ")),
+			fmt.Sprintf("Use one of: %s (case-insensitive)", strings.Join(validSeverities, ", ")),
 		)
 	}
 

@@ -364,9 +364,9 @@ func loadAndOverrideConfig(c *cli.Context, outputFormat, outputFile string) (*co
 		)
 	}
 
-	// Override config with CLI flags
+	// Override config with CLI flags (normalize severity to uppercase)
 	if c.String("min-severity") != constants.DefaultMinSeverity {
-		cfg.Output.MinSeverity = c.String("min-severity")
+		cfg.Output.MinSeverity = strings.ToUpper(c.String("min-severity"))
 	}
 	if c.String("output") != constants.DefaultOutputFormat {
 		cfg.Output.Format = c.String("output")
