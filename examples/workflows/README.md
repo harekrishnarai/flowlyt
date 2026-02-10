@@ -1,42 +1,44 @@
-# 🛡️ Flowlyt Action Usage Examples
+# GitHub Actions Workflow Examples
 
-This directory contains example workflows showing how to integrate Flowlyt Security Scanner into your GitHub Actions pipelines.
+Example workflows showing how to integrate Flowlyt Security Scanner into your GitHub Actions pipelines.
 
-## 📋 Examples
+## Available Examples
 
 ### [Basic Security Scan](./basic-security-scan.yml)
 Simple security scanning with SARIF upload to GitHub Security tab.
 
+**Use case**: Quick security check for every pull request and push to main branch.
+
+**Features**:
+- Scans repository workflows
+- Uploads SARIF results to GitHub Security tab
+- Minimal configuration
+
 ### [Enterprise Security Pipeline](./enterprise-pipeline.yml)
-Comprehensive enterprise security pipeline with policy enforcement, compliance checking, and automated remediation.
+Comprehensive enterprise security pipeline with advanced features.
 
-### [Multi-Environment Scanning](./multi-environment.yml)
-Security scanning across different environments (dev, staging, production) with environment-specific policies.
+**Use case**: Production-grade security scanning for enterprise environments.
 
-### [Pull Request Security Gate](./pr-security-gate.yml)
-Automated security gate for pull requests with inline comments and blocking on critical issues.
+**Features**:
+- Policy enforcement
+- Compliance checking
+- Multiple output formats
+- Automated notifications
 
-### [Compliance Monitoring](./compliance-monitoring.yml)
-Continuous compliance monitoring with automated reporting and audit trails.
+## Quick Start
 
-### [Security Dashboard Integration](./dashboard-integration.yml)
-Integration with external security dashboards and notification systems.
-
-## 🚀 Quick Start
-
-Copy any example workflow to your `.github/workflows/` directory and customize the configuration:
+Copy any example workflow to your `.github/workflows/` directory:
 
 ```bash
 # Copy basic security scan
 curl -o .github/workflows/security-scan.yml \
   https://raw.githubusercontent.com/harekrishnarai/flowlyt/main/examples/workflows/basic-security-scan.yml
 
-# Copy enterprise pipeline
-curl -o .github/workflows/security-pipeline.yml \
-  https://raw.githubusercontent.com/harekrishnarai/flowlyt/main/examples/workflows/enterprise-pipeline.yml
+# Or manually copy
+cp examples/workflows/basic-security-scan.yml .github/workflows/security-scan.yml
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 Each example includes:
 - **Pre-configured inputs** - Common security scanning configurations
@@ -44,9 +46,17 @@ Each example includes:
 - **Comments** - Explanation of each configuration option
 - **Customization notes** - How to adapt for your needs
 
-## 📚 Documentation
+## Documentation
 
-- [Action Documentation](../README-ACTION.md) - Complete action reference
-- [Configuration Guide](../CONFIGURATION.md) - Configuration file examples
-- [Security Rules](../docs/security-rules.md) - Available security rules
-- [Enterprise Features](../docs/enterprise-features.md) - Advanced capabilities
+For more information, see:
+- [Main README](../../README.md) - Project overview and features
+- [CLI Reference](../../docs/reference/cli-reference.md) - All command options
+- [Configuration Guide](../../docs/reference/configuration.md) - Configuration file examples
+- [Security Rules](../../docs/reference/security-rules.md) - Available security rules
+- [GitHub Actions Integration](../../docs/integrations/github-actions-integration.md) - Integration guide
+
+## Contributing
+
+Have a useful workflow example? Please submit a pull request!
+
+See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines.

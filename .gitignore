@@ -11,6 +11,8 @@
 
 # Output of the go coverage tool
 *.out
+coverage/
+coverage.html
 
 # Dependency directories
 /vendor/

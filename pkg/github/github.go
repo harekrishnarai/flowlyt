@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -218,10 +217,19 @@ func (c *Client) CloneRepositoryWithProgressAndBranch(repoURL, destDir, branch s
 		}
 	}
 
-	// Determine if we should use authenticated URL
-	cloneURL := fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
+	// Determine clone URL
+	var cloneURL string
 	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		cloneURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", url.QueryEscape(token), owner, repo)
+		// Use secure credential helper approach
+		cloneURL = getSecureCloneURL(owner, repo)
+		if err := setupGitCredentialHelper(token); err != nil {
+			// Log warning but continue - might work without auth for public repos
+			// Don't expose the error details as they might contain sensitive info
+		}
+		defer cleanupGitCredentials()
+	} else {
+		// Public repo without credentials
+		cloneURL = fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
 	}
 
 	if showProgress && progressCallback != nil {
@@ -236,10 +244,10 @@ func (c *Client) CloneRepositoryWithProgressAndBranch(repoURL, destDir, branch s
 	} else {
 		cmd = exec.Command("git", "clone", cloneURL, destDir)
 	}
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("git clone failed: %w, output: %s", err, string(output))
+		return "", sanitizeGitError(output, err)
 	}
 
 	return destDir, nil
@@ -323,7 +331,7 @@ func (c *Client) cloneWithProgress(cloneURL, destDir, branch string, progressCal
 	// Wait for the command to complete
 	err = cmd.Wait()
 	if err != nil {
-		return "", fmt.Errorf("git clone failed: %w", err)
+		return "", sanitizeGitError(nil, err)
 	}
 
 	// Give the progress goroutine a moment to finish

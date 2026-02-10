@@ -17,8 +17,10 @@ limitations under the License.
 package ast
 
 import (
+	contextpkg "context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // PluginManager manages analyzer plugins and extensions
@@ -29,6 +31,7 @@ type PluginManager struct {
 	reporters         map[string]ReporterPlugin
 	middlewares       []MiddlewarePlugin
 	config            *PluginConfig
+	securityPolicy    *PluginSecurityPolicy
 	lifecycleHooks    map[LifecycleEvent][]LifecycleHook
 	extensionRegistry *ExtensionRegistry
 }
@@ -251,6 +254,13 @@ func NewPluginManager(config *PluginConfig) *PluginManager {
 		reporters:         make(map[string]ReporterPlugin),
 		middlewares:       []MiddlewarePlugin{},
 		config:            config,
+		securityPolicy: &PluginSecurityPolicy{
+			AllowFileAccess:    false,
+			AllowNetworkAccess: false,
+			AllowedDomains:     []string{},
+			RestrictedCommands: []string{},
+			MaxExecutionTime:   30, // 30 seconds default
+		},
 		lifecycleHooks:    make(map[LifecycleEvent][]LifecycleHook),
 		extensionRegistry: NewExtensionRegistry(),
 	}
@@ -523,13 +533,96 @@ func (pm *PluginManager) Cleanup() error {
 // Helper methods
 
 func (pm *PluginManager) runAnalyzerSafely(name string, analyzer AnalyzerPlugin, workflow *WorkflowAST, context *AnalysisContext) (*PluginResult, error) {
-	// TODO: Add timeout, memory limits, and security checks
-	return analyzer.Analyze(workflow, context)
+	// Validate inputs
+	if analyzer == nil {
+		return nil, fmt.Errorf("analyzer is nil")
+	}
+	if workflow == nil {
+		return nil, fmt.Errorf("workflow is nil")
+	}
+
+	// Create timeout context
+	timeout := 30 * time.Second // Default timeout
+	if pm.securityPolicy.MaxExecutionTime > 0 {
+		timeout = time.Duration(pm.securityPolicy.MaxExecutionTime) * time.Second
+	}
+
+	ctx, cancel := contextpkg.WithTimeout(contextpkg.Background(), timeout)
+	defer cancel()
+
+	// Channel for results
+	type analyzerResult struct {
+		result *PluginResult
+		err    error
+	}
+	resultChan := make(chan analyzerResult, 1)
+
+	// Run plugin in goroutine with panic recovery
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				resultChan <- analyzerResult{
+					err: fmt.Errorf("plugin %s panicked: %v", name, r),
+				}
+			}
+		}()
+
+		result, err := analyzer.Analyze(workflow, context)
+		resultChan <- analyzerResult{result: result, err: err}
+	}()
+
+	// Wait for result or timeout
+	select {
+	case result := <-resultChan:
+		return result.result, result.err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("plugin %s execution timeout exceeded (%v)", name, timeout)
+	}
 }
 
 func (pm *PluginManager) evaluateRuleSafely(rule RulePlugin, node interface{}, context *RuleContext) (*RuleResult, error) {
-	// TODO: Add timeout and security checks
-	return rule.Evaluate(node, context)
+	// Validate inputs
+	if rule == nil {
+		return nil, fmt.Errorf("rule is nil")
+	}
+
+	// Create timeout context
+	timeout := 10 * time.Second // Shorter timeout for rule evaluation
+	if pm.securityPolicy.MaxExecutionTime > 0 {
+		timeout = time.Duration(pm.securityPolicy.MaxExecutionTime/3) * time.Second
+	}
+
+	ctx, cancel := contextpkg.WithTimeout(contextpkg.Background(), timeout)
+	defer cancel()
+
+	// Channel for results
+	type ruleResult struct {
+		result *RuleResult
+		err    error
+	}
+	resultChan := make(chan ruleResult, 1)
+
+	// Run plugin in goroutine with panic recovery
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				resultChan <- ruleResult{
+					err: fmt.Errorf("rule plugin panicked: %v", r),
+				}
+			}
+		}()
+
+		result, err := rule.Evaluate(node, context)
+		resultChan <- ruleResult{result: result, err: err}
+	}()
+
+	// Wait for result or timeout
+	select {
+	case result := <-resultChan:
+		return result.result, result.err
+	case <-ctx.Done():
+		return nil, fmt.Errorf("rule evaluation timeout exceeded (%v)", timeout)
+	}
 }
 
 func (pm *PluginManager) extractNodes(workflow *WorkflowAST) []interface{} {

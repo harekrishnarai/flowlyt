@@ -137,30 +137,32 @@ runs:
     - name: Setup Flowlyt Scanner
       shell: bash
       run: |
+        set -euo pipefail
+
         echo "🔍 Setting up Flowlyt Security Scanner..."
         echo "Repository: ${{ inputs.repository }}"
         echo "Config: ${{ inputs.config-file }}"
         echo "Output Format: ${{ inputs.output-format }}"
         echo "Fail on Severity: ${{ inputs.fail-on-severity }}"
         echo "Policy Enforcement: ${{ inputs.enable-policy-enforcement }}"
-        
+
         # Auto-detect platform and architecture
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
         ARCH=$(uname -m)
-        
+
         case "$OS" in
           linux) PLATFORM="linux" ;;
           darwin) PLATFORM="darwin" ;;
           mingw*|msys*|cygwin*) PLATFORM="windows" ;;
           *) echo "❌ Unsupported OS: $OS" && exit 1 ;;
         esac
-        
+
         case "$ARCH" in
           x86_64|amd64) ARCHITECTURE="amd64" ;;
           arm64|aarch64) ARCHITECTURE="arm64" ;;
           *) echo "❌ Unsupported architecture: $ARCH" && exit 1 ;;
         esac
-        
+
         # Determine binary name and extension
         BINARY_NAME="flowlyt-${PLATFORM}-${ARCHITECTURE}"
         if [ "$PLATFORM" = "windows" ]; then
@@ -169,158 +171,157 @@ runs:
         else
           FLOWLYT_BINARY="flowlyt"
         fi
-        
+
         echo "Detected platform: $PLATFORM-$ARCHITECTURE"
         echo "Binary to download: $BINARY_NAME"
-        
+
         # Check if binary already exists (from cache or previous step)
         if [ -x "./$FLOWLYT_BINARY" ]; then
           echo "✅ Flowlyt binary already available"
           ./$FLOWLYT_BINARY --version
         else
           echo "📥 Downloading Flowlyt binary..."
-          
+
           # Get latest release version
-          LATEST_VERSION=$(curl -s https://api.github.com/repos/harekrishnarai/flowlyt/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+          LATEST_VERSION=$(curl -sS --max-time 30 https://api.github.com/repos/harekrishnarai/flowlyt/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' || echo "")
+
           if [ -z "$LATEST_VERSION" ]; then
-            echo "⚠️ Could not determine latest version, using 'latest' tag"
-            LATEST_VERSION="latest"
+            echo "❌ Could not determine latest version"
+            exit 1
           fi
-          
+
           echo "Latest version: $LATEST_VERSION"
-          
+
           # Download binary from GitHub releases
-          DOWNLOAD_URL="https://github.com/harekrishnarai/flowlyt/releases/latest/download/${BINARY_NAME}"
+          DOWNLOAD_URL="https://github.com/harekrishnarai/flowlyt/releases/download/${LATEST_VERSION}/${BINARY_NAME}"
           echo "Downloading from: $DOWNLOAD_URL"
-          
-          if curl -L -f -o "$FLOWLYT_BINARY" "$DOWNLOAD_URL"; then
-            chmod +x "$FLOWLYT_BINARY"
-            echo "✅ Downloaded and installed Flowlyt binary"
-            ./$FLOWLYT_BINARY --version
-          else
-            echo "❌ Failed to download binary from releases"
-            echo "🔄 Attempting to build from source as fallback..."
-            
-            # Fallback: Install Go and build from source
-            if ! command -v go >/dev/null 2>&1; then
-              echo "Installing Go..."
-              curl -L -o go.tar.gz "https://go.dev/dl/go1.23.0.linux-amd64.tar.gz"
-              sudo tar -C /usr/local -xzf go.tar.gz
-              export PATH=$PATH:/usr/local/go/bin
-            fi
-            
-            echo "Building Flowlyt from source..."
-            go build -o "$FLOWLYT_BINARY" ./cmd/flowlyt
-            chmod +x "$FLOWLYT_BINARY"
-            echo "✅ Built Flowlyt from source"
-            ./$FLOWLYT_BINARY --version
+
+          if ! curl -sSL --max-time 300 --retry 3 -f -o "$FLOWLYT_BINARY" "$DOWNLOAD_URL"; then
+            echo "❌ Failed to download binary"
+            exit 1
           fi
+
+          # Download checksums
+          CHECKSUM_URL="https://github.com/harekrishnarai/flowlyt/releases/download/${LATEST_VERSION}/checksums.txt"
+          if ! curl -sSL --max-time 30 --retry 3 -f -o "checksums.txt" "$CHECKSUM_URL"; then
+            echo "❌ Failed to download checksums"
+            exit 1
+          fi
+
+          # Verify checksum
+          echo "🔐 Verifying binary checksum..."
+          if command -v sha256sum >/dev/null 2>&1; then
+            if ! grep "$BINARY_NAME" checksums.txt | sha256sum -c --status; then
+              echo "❌ Checksum verification failed!"
+              exit 1
+            fi
+          elif command -v shasum >/dev/null 2>&1; then
+            EXPECTED_HASH=$(grep "$BINARY_NAME" checksums.txt | awk '{print $1}')
+            ACTUAL_HASH=$(shasum -a 256 "$FLOWLYT_BINARY" | awk '{print $1}')
+            if [ "$EXPECTED_HASH" != "$ACTUAL_HASH" ]; then
+              echo "❌ Checksum verification failed!"
+              echo "Expected: $EXPECTED_HASH"
+              echo "Got: $ACTUAL_HASH"
+              exit 1
+            fi
+          else
+            echo "⚠️ Warning: Could not verify checksum (sha256sum/shasum not available)"
+          fi
+
+          chmod +x "$FLOWLYT_BINARY"
+          echo "✅ Downloaded and verified Flowlyt binary"
+          ./$FLOWLYT_BINARY --version
         fi
-        
+
         # Make binary available for subsequent steps
         echo "FLOWLYT_BINARY=./$FLOWLYT_BINARY" >> $GITHUB_ENV
         echo "FLOWLYT_INSTALLED=true" >> $GITHUB_ENV
-        
+
     - name: Run Flowlyt Scan
       shell: bash
       id: scan
       env:
         GITHUB_TOKEN: ${{ inputs.token || github.token }}
+        FLOWLYT_CONFIG: ${{ inputs.config-file }}
+        FLOWLYT_OUTPUT_FORMAT: ${{ inputs.output-format }}
+        FLOWLYT_OUTPUT_FILE: ${{ inputs.output-file }}
+        FLOWLYT_MIN_SEVERITY: ${{ inputs.min-severity }}
       run: |
         set -o pipefail
-        
+
         # Verify Flowlyt is installed
         if [ "$FLOWLYT_INSTALLED" != "true" ] || [ ! -x "$FLOWLYT_BINARY" ]; then
           echo "❌ Flowlyt binary not found or not executable"
-          echo "Setup step may have failed"
           exit 1
         fi
-        
+
         echo "Using Flowlyt binary: $FLOWLYT_BINARY"
-        
-        # Build scan command
-        SCAN_CMD="$FLOWLYT_BINARY scan"
-        SCAN_CMD="$SCAN_CMD --repo $(pwd)"
-        # Only pass --config when a non-empty path was provided
-        if [ -n "${{ inputs.config-file }}" ]; then
-          SCAN_CMD="$SCAN_CMD --config \"${{ inputs.config-file }}\""
+
+        # Build scan command with proper escaping
+        SCAN_ARGS=(
+          "scan"
+          "--repo" "$(pwd)"
+          "--output" "$FLOWLYT_OUTPUT_FORMAT"
+          "--output-file" "$FLOWLYT_OUTPUT_FILE"
+          "--min-severity" "$FLOWLYT_MIN_SEVERITY"
+        )
+
+        # Only add config if specified
+        if [ -n "$FLOWLYT_CONFIG" ]; then
+          SCAN_ARGS+=("--config" "$FLOWLYT_CONFIG")
         fi
-        SCAN_CMD="$SCAN_CMD --output ${{ inputs.output-format }}"
-        SCAN_CMD="$SCAN_CMD --output-file ${{ inputs.output-file }}"
-        SCAN_CMD="$SCAN_CMD --min-severity ${{ inputs.min-severity }}"
-        
-        # Pass GitHub token for API calls (stale action detection, etc.)
-        if [ -n "$GITHUB_TOKEN" ]; then
-          SCAN_CMD="$SCAN_CMD --github-token $GITHUB_TOKEN"
-        fi
-        
+
         # Add optional flags
         if [ "${{ inputs.enable-policy-enforcement }}" = "true" ]; then
-          SCAN_CMD="$SCAN_CMD --enable-policy-enforcement"
+          SCAN_ARGS+=("--enable-policy-enforcement")
         fi
-        
+
         if [ "${{ inputs.enable-vuln-intel }}" = "true" ]; then
-          SCAN_CMD="$SCAN_CMD --enable-vuln-intel"
+          SCAN_ARGS+=("--enable-vuln-intel")
         fi
-        
+
         if [ "${{ inputs.enable-ast-analysis }}" = "true" ]; then
-          SCAN_CMD="$SCAN_CMD --enable-ast-analysis"
+          SCAN_ARGS+=("--enable-ast-analysis")
         fi
-        
+
         if [ -n "${{ inputs.policy-config }}" ]; then
-          SCAN_CMD="$SCAN_CMD --policy-config ${{ inputs.policy-config }}"
+          SCAN_ARGS+=("--policy-config" "${{ inputs.policy-config }}")
         fi
-        
+
         if [ -n "${{ inputs.compliance-frameworks }}" ]; then
-          SCAN_CMD="$SCAN_CMD --compliance-frameworks ${{ inputs.compliance-frameworks }}"
+          SCAN_ARGS+=("--compliance-frameworks" "${{ inputs.compliance-frameworks }}")
         fi
-        
+
         if [ "${{ inputs.verbose }}" = "true" ]; then
-          SCAN_CMD="$SCAN_CMD --verbose"
+          SCAN_ARGS+=("--verbose")
         fi
-        
-        echo "Executing: $SCAN_CMD"
-        
+
+        echo "Executing: $FLOWLYT_BINARY ${SCAN_ARGS[*]}"
+
         # Run scan and capture output
-        if $SCAN_CMD 2>&1 | tee scan_output.log; then
+        if "$FLOWLYT_BINARY" "${SCAN_ARGS[@]}" 2>&1 | tee scan_output.log; then
           SCAN_EXIT_CODE=0
         else
           SCAN_EXIT_CODE=$?
         fi
-        
+
         echo "exit-code=$SCAN_EXIT_CODE" >> $GITHUB_OUTPUT
-        
-        # Debug: Check current directory and files
-        echo "📁 Current working directory: $(pwd)"
-        echo "📁 Listing current directory:"
-        ls -la
-        echo "📄 Checking for output file: ${{ inputs.output-file }}"
-        if [ -f "${{ inputs.output-file }}" ]; then
-          echo "✅ Output file exists: $(ls -la "${{ inputs.output-file }}")"
-        else
-          echo "❌ Output file not found: ${{ inputs.output-file }}"
-          echo "📄 Files matching pattern:"
-          ls -la *sarif* 2>/dev/null || echo "No SARIF files found"
-          ls -la test-* 2>/dev/null || echo "No test-* files found"
-        fi
-        
+
         # Parse scan output for metrics
-        if [ -f "${{ inputs.output-file }}" ]; then
-          # Extract counts from SARIF or JSON output
-          if [ "${{ inputs.output-format }}" = "sarif" ]; then
-            TOTAL_FINDINGS=$(jq '.runs[0].results | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            CRITICAL_COUNT=$(jq '[.runs[0].results[] | select(.level == "error" and (.properties.severity // "HIGH") == "CRITICAL")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            HIGH_COUNT=$(jq '[.runs[0].results[] | select(.level == "error" and (.properties.severity // "HIGH") == "HIGH")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            MEDIUM_COUNT=$(jq '[.runs[0].results[] | select(.level == "warning")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            LOW_COUNT=$(jq '[.runs[0].results[] | select(.level == "note")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-          elif [ "${{ inputs.output-format }}" = "json" ]; then
-            TOTAL_FINDINGS=$(jq '.findings | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            CRITICAL_COUNT=$(jq '[.findings[] | select(.Severity == "CRITICAL")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            HIGH_COUNT=$(jq '[.findings[] | select(.Severity == "HIGH")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            MEDIUM_COUNT=$(jq '[.findings[] | select(.Severity == "MEDIUM")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            LOW_COUNT=$(jq '[.findings[] | select(.Severity == "LOW")] | length' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
+        if [ -f "$FLOWLYT_OUTPUT_FILE" ]; then
+          if [ "$FLOWLYT_OUTPUT_FORMAT" = "sarif" ]; then
+            TOTAL_FINDINGS=$(jq '.runs[0].results | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            CRITICAL_COUNT=$(jq '[.runs[0].results[] | select(.level == "error" and (.properties.severity // "HIGH") == "CRITICAL")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            HIGH_COUNT=$(jq '[.runs[0].results[] | select(.level == "error" and (.properties.severity // "HIGH") == "HIGH")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            MEDIUM_COUNT=$(jq '[.runs[0].results[] | select(.level == "warning")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            LOW_COUNT=$(jq '[.runs[0].results[] | select(.level == "note")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+          elif [ "$FLOWLYT_OUTPUT_FORMAT" = "json" ]; then
+            TOTAL_FINDINGS=$(jq '.findings | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            CRITICAL_COUNT=$(jq '[.findings[] | select(.Severity == "CRITICAL")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            HIGH_COUNT=$(jq '[.findings[] | select(.Severity == "HIGH")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            MEDIUM_COUNT=$(jq '[.findings[] | select(.Severity == "MEDIUM")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            LOW_COUNT=$(jq '[.findings[] | select(.Severity == "LOW")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
           else
-            # Parse from CLI output
             TOTAL_FINDINGS=$(grep -E "Found [0-9]+ issues" scan_output.log | sed -E 's/.*Found ([0-9]+) issues.*/\1/' || echo "0")
             CRITICAL_COUNT=$(grep -E "[0-9]+ Critical" scan_output.log | sed -E 's/.*([0-9]+) Critical.*/\1/' || echo "0")
             HIGH_COUNT=$(grep -E "[0-9]+ High" scan_output.log | sed -E 's/.*([0-9]+) High.*/\1/' || echo "0")
@@ -334,30 +335,29 @@ runs:
           MEDIUM_COUNT=0
           LOW_COUNT=0
         fi
-        
+
         # Output metrics
         echo "findings-count=$TOTAL_FINDINGS" >> $GITHUB_OUTPUT
         echo "critical-count=$CRITICAL_COUNT" >> $GITHUB_OUTPUT
         echo "high-count=$HIGH_COUNT" >> $GITHUB_OUTPUT
         echo "medium-count=$MEDIUM_COUNT" >> $GITHUB_OUTPUT
         echo "low-count=$LOW_COUNT" >> $GITHUB_OUTPUT
-        echo "results-file=${{ inputs.output-file }}" >> $GITHUB_OUTPUT
-        
-        # Create SARIF file output regardless of format
-        if [ "${{ inputs.output-format }}" = "sarif" ]; then
-          echo "sarif-file=${{ inputs.output-file }}" >> $GITHUB_OUTPUT
+        echo "results-file=$FLOWLYT_OUTPUT_FILE" >> $GITHUB_OUTPUT
+
+        if [ "$FLOWLYT_OUTPUT_FORMAT" = "sarif" ]; then
+          echo "sarif-file=$FLOWLYT_OUTPUT_FILE" >> $GITHUB_OUTPUT
         else
           echo "sarif-file=" >> $GITHUB_OUTPUT
         fi
-        
+
         # Generate summary
         cat > summary.md << EOF
         ## 🛡️ Flowlyt Security Scan Results
-        
-        **Repository:** \`${{ inputs.repository }}\`  
-        **Scan Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')  
-        **Configuration:** \`${{ inputs.config-file }}\`
-        
+
+        **Repository:** \`${{ inputs.repository }}\`
+        **Scan Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+        **Configuration:** \`$FLOWLYT_CONFIG\`
+
         ### 📊 Findings Summary
         | Severity | Count |
         |----------|-------|
@@ -366,46 +366,43 @@ runs:
         | 🟠 Medium | $MEDIUM_COUNT |
         | 🟢 Low | $LOW_COUNT |
         | **Total** | **$TOTAL_FINDINGS** |
-        
         EOF
-        
+
         # Add policy information if enabled
         if [ "${{ inputs.enable-policy-enforcement }}" = "true" ]; then
           POLICY_VIOLATIONS=0
           BLOCKING_VIOLATIONS=0
           COMPLIANCE_STATUS="true"
-          
-          # Try to extract policy information from JSON output
-          if [ "${{ inputs.output-format }}" = "json" ] && [ -f "${{ inputs.output-file }}" ]; then
-            POLICY_VIOLATIONS=$(jq '.policy_evaluation.policy_violations // 0' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            BLOCKING_VIOLATIONS=$(jq '.policy_evaluation.blocking_violations // 0' "${{ inputs.output-file }}" 2>/dev/null || echo "0")
-            COMPLIANCE_STATUS=$(jq '.compliance_report.compliant // true' "${{ inputs.output-file }}" 2>/dev/null || echo "true")
+
+          if [ "$FLOWLYT_OUTPUT_FORMAT" = "json" ] && [ -f "$FLOWLYT_OUTPUT_FILE" ]; then
+            POLICY_VIOLATIONS=$(jq '.policy_evaluation.policy_violations // 0' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            BLOCKING_VIOLATIONS=$(jq '.policy_evaluation.blocking_violations // 0' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            COMPLIANCE_STATUS=$(jq '.compliance_report.compliant // true' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "true")
           fi
-          
+
           echo "policy-violations=$POLICY_VIOLATIONS" >> $GITHUB_OUTPUT
           echo "blocking-violations=$BLOCKING_VIOLATIONS" >> $GITHUB_OUTPUT
           echo "compliance-status=$COMPLIANCE_STATUS" >> $GITHUB_OUTPUT
-          
+
           cat >> summary.md << EOF
-        
+
         ### 🏛️ Policy Enforcement
         | Metric | Value |
         |--------|-------|
         | Policy Violations | $POLICY_VIOLATIONS |
         | Blocking Violations | $BLOCKING_VIOLATIONS |
         | Compliance Status | $([ "$COMPLIANCE_STATUS" = "true" ] && echo "✅ Compliant" || echo "❌ Non-Compliant") |
-        
         EOF
         fi
-        
+
         echo "summary<<EOF" >> $GITHUB_OUTPUT
         cat summary.md >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
-        
+
         # Determine if we should fail
         SHOULD_FAIL=false
         FAIL_REASON=""
-        
+
         # Check fail-on-severity threshold
         if [ -n "${{ inputs.fail-on-severity }}" ]; then
           case "${{ inputs.fail-on-severity }}" in
@@ -435,29 +432,28 @@ runs:
               ;;
           esac
         fi
-        
+
         # Check maximum limits
         if [ "${{ inputs.max-critical }}" -gt 0 ] && [ "$CRITICAL_COUNT" -gt "${{ inputs.max-critical }}" ]; then
           SHOULD_FAIL=true
           FAIL_REASON="Critical findings ($CRITICAL_COUNT) exceed limit (${{ inputs.max-critical }})"
         fi
-        
+
         if [ "${{ inputs.max-high }}" -gt 0 ] && [ "$HIGH_COUNT" -gt "${{ inputs.max-high }}" ]; then
           SHOULD_FAIL=true
           FAIL_REASON="High severity findings ($HIGH_COUNT) exceed limit (${{ inputs.max-high }})"
         fi
-        
+
         # Check blocking policy violations
         if [ "${{ inputs.enable-policy-enforcement }}" = "true" ] && [ "${BLOCKING_VIOLATIONS:-0}" -gt 0 ]; then
           SHOULD_FAIL=true
           FAIL_REASON="Found $BLOCKING_VIOLATIONS blocking policy violations"
         fi
-        
+
         # Output final decision
         if [ "$SHOULD_FAIL" = "true" ]; then
           echo "🚨 Security scan failed: $FAIL_REASON"
-          echo "❌ Pipeline will be marked as failed due to security policy violations"
-          
+
           if [ "${{ inputs.continue-on-error }}" != "true" ]; then
             exit 1
           else
@@ -466,40 +462,39 @@ runs:
         else
           echo "✅ Security scan passed - no critical issues found"
         fi
-        
+
     - name: Upload SARIF to GitHub Security
       if: inputs.upload-sarif == 'true' && inputs.output-format == 'sarif' && always()
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@662472033e021d55d94146f66f6058822b0b39fd # v3.27.0
       with:
         sarif_file: ${{ inputs.output-file }}
         category: ${{ inputs.sarif-category }}
       continue-on-error: true
-        
+
     - name: Comment on PR
       if: inputs.comment-on-pr == 'true' && github.event_name == 'pull_request' && always()
-      uses: actions/github-script@v7
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
       with:
         github-token: ${{ inputs.token }}
         script: |
           const fs = require('fs');
           const summary = `${{ steps.scan.outputs.summary }}`;
-          
-          // Find existing comment
+
           const comments = await github.rest.issues.listComments({
             owner: context.repo.owner,
             repo: context.repo.repo,
             issue_number: context.issue.number
           });
-          
-          const existingComment = comments.data.find(comment => 
+
+          const existingComment = comments.data.find(comment =>
             comment.body.includes('🛡️ Flowlyt Security Scan Results')
           );
-          
+
           const commentBody = `${summary}
-          
+
           ---
           *This comment was automatically generated by [Flowlyt Security Analyzer](https://github.com/harekrishnarai/flowlyt)*`;
-          
+
           if (existingComment) {
             await github.rest.issues.updateComment({
               owner: context.repo.owner,
@@ -516,43 +511,43 @@ runs:
             });
           }
       continue-on-error: true
-      
+
     - name: Create Issue for Critical Violations
       if: inputs.create-issue == 'true' && steps.scan.outputs.critical-count > 0
-      uses: actions/github-script@v7
+      uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
       with:
         github-token: ${{ inputs.token }}
         script: |
           const critical = '${{ steps.scan.outputs.critical-count }}';
           const blocking = '${{ steps.scan.outputs.blocking-violations }}';
           const labels = '${{ inputs.issue-labels }}'.split(',').map(l => l.trim()).filter(l => l);
-          
+
           const title = `🚨 Critical Security Issues Found - ${critical} Critical Findings`;
           const body = `## 🛡️ Critical Security Violations Detected
-          
-          **Repository:** \`${{ github.repository }}\`  
-          **Branch:** \`${{ github.ref_name }}\`  
-          **Commit:** \`${{ github.sha }}\`  
+
+          **Repository:** \`${{ github.repository }}\`
+          **Branch:** \`${{ github.ref_name }}\`
+          **Commit:** \`${{ github.sha }}\`
           **Scan Time:** ${new Date().toISOString()}
-          
+
           ### Summary
           - 🔴 **Critical Findings:** ${critical}
           - 🚫 **Blocking Violations:** ${blocking || 0}
-          
+
           ### Action Required
           These critical security issues must be resolved immediately:
-          
+
           1. Review the [workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for detailed findings
           2. Address each critical vulnerability according to the remediation guidance
           3. Re-run the security scan to verify fixes
-          
+
           ### Files Scanned
           - Workflow files in \`.github/workflows/\`
           - Configuration: \`${{ inputs.config-file }}\`
-          
+
           ---
           *This issue was automatically created by [Flowlyt Security Analyzer](https://github.com/harekrishnarai/flowlyt)*`;
-          
+
           await github.rest.issues.create({
             owner: context.repo.owner,
             repo: context.repo.repo,

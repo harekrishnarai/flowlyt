@@ -7,8 +7,8 @@
         "driver": {
           "name": "Flowlyt",
           "fullName": "Flowlyt - CI/CD Security Analyzer",
-          "version": "0.1.0",
-          "semanticVersion": "0.1.0",
+          "version": "1.0.8",
+          "semanticVersion": "1.0.8",
           "informationUri": "https://github.com/harekrishnarai/flowlyt",
           "rules": [
             {
