@@ -49,6 +49,8 @@ func GetInjectionPatterns() InjectionPatterns {
 			// User-controlled GitHub context variables that can contain malicious input
 			`\$\{\{\s*(github\.head_ref|github\.event\.workflow_run\.(head_branch|head_repository\.description|head_repository\.owner\.email|pull_requests[^}]+?(head\.ref|head\.repo\.name)))\s*\}\}`,
 			`\$\{\{\s*github\.event\.(issue\.(title|body)|pull_request\.(title|body)|comment\.body|review\.body|review_comment\.body|pages\.[^}]+?\.page_name|head_commit\.message|head_commit\.author\.(email|name)|commits[^}]+?\.author\.(email|name)|pull_request\.head\.(ref|label)|pull_request\.head\.repo\.default_branch|(inputs|client_payload)[^}]+?)\s*\}\}`,
+			// Additional untrusted sources: release, discussion, PR head repo, workflow_run commit info
+			`\$\{\{\s*github\.event\.(release\.(body|name)|discussion\.(body|title)|pull_request\.head\.repo\.full_name|workflow_run\.head_commit\.(message|author\.(email|name)))\s*\}\}`,
 		},
 		GitLab: []string{
 			// GitLab CI variables with expand_vars that can be dangerous
