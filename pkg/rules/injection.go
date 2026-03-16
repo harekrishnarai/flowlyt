@@ -20,6 +20,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/harekrishnarai/flowlyt/pkg/analysis/ast"
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 )
@@ -106,6 +107,10 @@ func checkGitHubInjection(workflow parser.WorkflowFile, patterns []*regexp.Regex
 
 			// Check 'run' field for shell injection
 			if step.Run != "" {
+				// Skip if expressions are safely routed through the env: block (env-var indirection)
+				if isSafeViaEnvIndirection(step.Run, step.Env) {
+					continue
+				}
 				if injections := findInjections(step.Run, patterns); len(injections) > 0 {
 					pattern := linenum.FindPattern{
 						Key:   "run",
@@ -488,6 +493,22 @@ func findImplicitExecutionRisks(steps []parser.Step, checkoutIdx int) []riskySte
 	}
 
 	return riskySteps
+}
+
+// isSafeViaEnvIndirection returns true when all untrusted ${{ }} expressions
+// in the run block are safely routed through the step's env: block.
+// This prevents false positives for GitHub's recommended safe pattern:
+//
+//	env:
+//	  TITLE: ${{ github.event.pull_request.title }}
+//	run: echo "$TITLE"
+func isSafeViaEnvIndirection(run string, env map[string]string) bool {
+	tracker := ast.NewExprTaintTracker()
+	paths, err := tracker.PathsForStep(run, env)
+	if err != nil {
+		return false
+	}
+	return !ast.HasUnsafePaths(paths)
 }
 
 // Helper functions
