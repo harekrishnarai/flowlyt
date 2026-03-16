@@ -95,8 +95,10 @@ var UntrustedExpressions = []string{
 	"github.event.comment.body",
 	"github.event.review.body",
 	"github.event.review_comment.body",
-	// Commit content
-	"github.event.commits",
+	// Commit content — expand array sub-expressions so regex matches them
+	"github.event.commits[0].message",
+	"github.event.commits[0].author.email",
+	"github.event.commits[0].author.name",
 	"github.event.head_commit.message",
 	"github.event.head_commit.author.email",
 	"github.event.head_commit.author.name",
@@ -123,7 +125,9 @@ func init() {
 	for i, expr := range UntrustedExpressions {
 		parts[i] = regexp.QuoteMeta(expr)
 	}
-	pattern := `\$\{\{\s*(?:` + strings.Join(parts, "|") + `)\s*\}\}`
+	// Use [^}]* instead of \s* to allow minor expression variants (e.g. array
+	// index suffixes) while still requiring the closing }}.
+	pattern := `\$\{\{\s*(?:` + strings.Join(parts, "|") + `)[^}]*\}\}`
 	untrustedExprRe = regexp.MustCompile(pattern)
 }
 
@@ -153,29 +157,34 @@ func (t *ExprTaintTracker) PathsForStep(stepRun string, stepEnv map[string]strin
 		return nil, nil
 	}
 
-	// Build a set of expressions that appear in env: block values.
-	envExprs := make(map[string]bool)
-	for _, val := range stepEnv {
-		matches := untrustedExprRe.FindAllString(val, -1)
-		for _, m := range matches {
-			envExprs[m] = true
-		}
-	}
-
 	var paths []TaintPath
 
 	// --- Direct interpolation in run: (always unsafe) ---
+	// Collect run-block matches first so we can reference them for dedup below.
+	var runMatches []string
 	if stepRun != "" {
-		runMatches := untrustedExprRe.FindAllStringIndex(stepRun, -1)
-		for _, loc := range runMatches {
+		locs := untrustedExprRe.FindAllStringIndex(stepRun, -1)
+		lines := strings.Split(stepRun, "\n")
+		for _, loc := range locs {
 			rawExpr := stepRun[loc[0]:loc[1]]
+			runMatches = append(runMatches, rawExpr)
 			inner := extractInner(rawExpr)
 			category := classifyExpression(inner)
 
-			// Detect $GITHUB_ENV sink: expression followed (anywhere in run) by >> $GITHUB_ENV
+			// Detect $GITHUB_ENV sink: check only the specific line the match
+			// is on, not the whole run block, to avoid polluting unrelated lines.
 			sinkType := SinkShellInterpolation
-			if strings.Contains(stepRun, ">> $GITHUB_ENV") || strings.Contains(stepRun, ">>$GITHUB_ENV") {
-				sinkType = SinkGitHubEnv
+			// Determine which line offset loc[0] falls on.
+			offset := 0
+			for _, line := range lines {
+				lineEnd := offset + len(line)
+				if loc[0] >= offset && loc[0] <= lineEnd {
+					if strings.Contains(line, ">> $GITHUB_ENV") || strings.Contains(line, ">>$GITHUB_ENV") {
+						sinkType = SinkGitHubEnv
+					}
+					break
+				}
+				offset = lineEnd + 1 // +1 for the '\n' consumed by Split
 			}
 
 			paths = append(paths, TaintPath{
@@ -199,10 +208,19 @@ func (t *ExprTaintTracker) PathsForStep(stepRun string, stepEnv map[string]strin
 		matches := untrustedExprRe.FindAllString(val, -1)
 		for _, rawExpr := range matches {
 			inner := extractInner(rawExpr)
-			// If this same raw expression is already captured as unsafe (present
-			// in run:), do not emit an additional safe path — the unsafe path
-			// already represents the full story.
-			if untrustedExprRe.MatchString(stepRun) && strings.Contains(stepRun, rawExpr) {
+			// If the same inner expression is already captured as an unsafe
+			// run-block path, skip emitting a redundant safe path.  Compare
+			// inner expressions (whitespace-normalised via extractInner) rather
+			// than raw strings to avoid false mismatches caused by spacing
+			// differences between the env value and the run block.
+			alreadyUnsafe := false
+			for _, runRaw := range runMatches {
+				if extractInner(runRaw) == inner {
+					alreadyUnsafe = true
+					break
+				}
+			}
+			if alreadyUnsafe {
 				continue
 			}
 			category := classifyExpression(inner)
@@ -222,7 +240,6 @@ func (t *ExprTaintTracker) PathsForStep(stepRun string, stepEnv map[string]strin
 		}
 	}
 
-	_ = envExprs // used implicitly via the per-value loop above
 	return paths, nil
 }
 
@@ -251,7 +268,8 @@ func UnsafePaths(paths []TaintPath) []TaintPath {
 // keywords it contains.
 func classifyExpression(expr string) TaintCategory {
 	switch {
-	case strings.Contains(expr, "pull_request"):
+	case strings.Contains(expr, "pull_request") ||
+		strings.Contains(expr, "head_ref"):
 		return TaintPRContent
 	case strings.Contains(expr, "issue") ||
 		strings.Contains(expr, "comment") ||
