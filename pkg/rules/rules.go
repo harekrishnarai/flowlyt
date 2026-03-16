@@ -1002,6 +1002,43 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
+// prtCheckoutRisk classifies the risk level of a pull_request_target + checkout combination.
+type prtCheckoutRisk int
+
+const (
+	prtNoCheckout   prtCheckoutRisk = iota // no checkout step at all
+	prtBaseCheckout                        // checkout without an untrusted ref (defaults to base branch)
+	prtHeadCheckout                        // checkout of head.sha or head.ref — CRITICAL
+)
+
+// untrustedHeadRefPat matches expressions that resolve to the attacker-controlled PR head.
+var untrustedHeadRefPat = regexp.MustCompile(
+	`\$\{\{\s*(github\.event\.pull_request\.head\.(sha|ref)|github\.head_ref)\s*\}\}`,
+)
+
+// classifyPRTCheckout scans the steps of a job and returns the highest checkout risk seen.
+func classifyPRTCheckout(steps []parser.Step) prtCheckoutRisk {
+	risk := prtNoCheckout
+	for _, step := range steps {
+		if !strings.HasPrefix(step.Uses, "actions/checkout") {
+			continue
+		}
+		// Found a checkout step — at least base-checkout risk.
+		if risk < prtBaseCheckout {
+			risk = prtBaseCheckout
+		}
+		// Check whether the ref parameter points at the untrusted PR head.
+		if step.With != nil {
+			if ref, ok := step.With["ref"].(string); ok {
+				if untrustedHeadRefPat.MatchString(ref) {
+					return prtHeadCheckout
+				}
+			}
+		}
+	}
+	return risk
+}
+
 // checkInsecurePullRequestTarget checks for insecure pull_request_target usage
 func checkInsecurePullRequestTarget(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -1027,43 +1064,46 @@ func checkInsecurePullRequestTarget(workflow parser.WorkflowFile) []Finding {
 		return findings
 	}
 
-	// Check for code checkout in pull_request_target context
+	// Evaluate risk per job and emit one finding per job.
 	for jobName, job := range workflow.Workflow.Jobs {
+		risk := classifyPRTCheckout(job.Steps)
+
+		var severity Severity
+		var evidence string
+
+		switch risk {
+		case prtHeadCheckout:
+			severity = Critical
+			evidence = "pull_request_target with checkout of untrusted PR head ref (head.sha/head.ref/github.head_ref)"
+		case prtBaseCheckout:
+			severity = Medium
+			evidence = "pull_request_target with checkout (no untrusted ref — checks out base branch)"
+		case prtNoCheckout:
+			severity = Info
+			evidence = "pull_request_target trigger with no checkout step (e.g. labeling/commenting workflow)"
+		}
+
+		// Find a representative line number (first checkout step, or step 0).
+		lineNumber := 0
 		for _, step := range job.Steps {
-			if step.Uses == "" {
-				continue
-			}
-
-			// Check if step uses checkout action
-			if strings.HasPrefix(step.Uses, "actions/checkout@") {
-				// Check if PR ref is used
-				if step.With != nil {
-					if ref, ok := step.With["ref"].(string); ok {
-						if strings.Contains(ref, "github.event.pull_request.head.ref") ||
-							strings.Contains(ref, "github.head_ref") {
-
-							// Find the line number
-							stepStr := "uses: " + step.Uses
-							lineNumber := findLineNumberWithMapper(workflow, step.Name, stepStr)
-
-							findings = append(findings, Finding{
-								RuleID:      "INSECURE_PULL_REQUEST_TARGET",
-								RuleName:    "Insecure pull_request_target usage",
-								Description: "Workflow uses pull_request_target event and checks out PR code, which can lead to code execution",
-								Severity:    Critical,
-								Category:    Misconfiguration,
-								FilePath:    workflow.Path,
-								JobName:     jobName,
-								StepName:    step.Name,
-								Evidence:    "pull_request_target with checkout ref: " + ref,
-								LineNumber:  lineNumber,
-								Remediation: "Use pull_request event instead, or don't checkout PR code with pull_request_target",
-							})
-						}
-					}
-				}
+			if strings.HasPrefix(step.Uses, "actions/checkout") {
+				lineNumber = findLineNumberWithMapper(workflow, step.Name, "uses: "+step.Uses)
+				break
 			}
 		}
+
+		findings = append(findings, Finding{
+			RuleID:      "INSECURE_PULL_REQUEST_TARGET",
+			RuleName:    "Insecure pull_request_target usage",
+			Description: "Workflow uses pull_request_target event and checks out PR code, which can lead to code execution with write permissions",
+			Severity:    severity,
+			Category:    Misconfiguration,
+			FilePath:    workflow.Path,
+			JobName:     jobName,
+			LineNumber:  lineNumber,
+			Evidence:    evidence,
+			Remediation: "Use pull_request event instead, or don't checkout PR code with pull_request_target",
+		})
 	}
 
 	return findings
