@@ -505,7 +505,16 @@ func StandardRules() []Rule {
 			Severity:    High,
 			Category:    SupplyChain,
 			Platform:    PlatformGitHub,
-			Check:       checkCachePoisoning,
+			Check:       CheckCachePoisoning,
+		},
+		{
+			ID:          "CACHE_RESTORE_KEYS_TOO_BROAD",
+			Name:        "Cache restore-keys Too Broad",
+			Description: "Broad restore-keys without content hash enables cache poisoning from PR branches",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       CheckCachePoisoning,
 		},
 		{
 			ID:          "REF_CONFUSION",
@@ -605,6 +614,24 @@ func StandardRules() []Rule {
 			Category:    SupplyChain,
 			Platform:    PlatformAll,
 			Check:       checkArtipackedVulnerability,
+		},
+		{
+			ID:          "WORKFLOW_RUN_ARTIFACT_UNTRUSTED",
+			Name:        "Untrusted Artifact Download in workflow_run",
+			Description: "workflow_run downloads artifacts without constraining run_id, enabling supply chain attacks (CVE-2025-30066 pattern)",
+			Severity:    Critical,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       CheckWorkflowRunTrust,
+		},
+		{
+			ID:          "OIDC_WORKFLOW_LEVEL_PERMISSION",
+			Name:        "OIDC id-token:write at Workflow Level",
+			Description: "id-token: write at workflow level exposes all jobs to OIDC token access, enabling privilege escalation via expression injection",
+			Severity:    High,
+			Category:    PrivilegeEscalation,
+			Platform:    PlatformGitHub,
+			Check:       CheckOIDCAbuse,
 		},
 	}
 }
@@ -3432,66 +3459,6 @@ func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
 						LineNumber:  lineNumber,
 						Remediation: "Consider limiting id-token permissions to specific jobs that need OIDC",
 					})
-				}
-			}
-		}
-	}
-
-	return findings
-}
-
-// checkCachePoisoning detects cache poisoning attack vectors
-func checkCachePoisoning(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
-	lineMapper := linenum.NewLineMapper(workflow.Content)
-
-	for jobName, job := range workflow.Workflow.Jobs {
-		for stepIdx, step := range job.Steps {
-			if step.Uses == "" {
-				continue
-			}
-
-			stepName := step.Name
-			if stepName == "" {
-				stepName = fmt.Sprintf("Step %d", stepIdx+1)
-			}
-
-			// Check for actions/cache usage patterns that could enable cache poisoning
-			if strings.Contains(step.Uses, "actions/cache") {
-				// Check if cache key is predictable or based on user-controlled data
-				if step.With != nil {
-					if key, exists := step.With["key"]; exists {
-						keyStr := fmt.Sprintf("%v", key)
-						// Check for potentially dangerous cache key patterns
-						if strings.Contains(keyStr, "${{ github.event") ||
-							strings.Contains(keyStr, "${{ env") ||
-							strings.Contains(keyStr, "${{ matrix") {
-
-							pattern := linenum.FindPattern{
-								Key:   "key",
-								Value: keyStr,
-							}
-							lineResult := lineMapper.FindLineNumber(pattern)
-							lineNumber := 0
-							if lineResult != nil {
-								lineNumber = lineResult.LineNumber
-							}
-
-							findings = append(findings, Finding{
-								RuleID:      "CACHE_POISONING",
-								RuleName:    "Cache Poisoning Vulnerability",
-								Description: "Cache key uses user-controlled input that could enable cache poisoning attacks",
-								Severity:    High,
-								Category:    SupplyChain,
-								FilePath:    workflow.Path,
-								JobName:     jobName,
-								StepName:    stepName,
-								Evidence:    fmt.Sprintf("cache key: %s", keyStr),
-								Remediation: "Use secure, predictable cache keys not based on user input",
-								LineNumber:  lineNumber,
-							})
-						}
-					}
 				}
 			}
 		}
