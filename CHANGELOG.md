@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.9] - 2026-03-17
+
+### 🎉 Major Features
+
+**Expression Taint Analysis + 11 New Rules** — 2024-2025 attack class coverage
+
+- **Expression Taint Engine** (`pkg/analysis/ast/taint.go`): Tracks `${{ expr }}` through source → transform → sink. Env-var indirection is now correctly classified as safe, eliminating the root cause of injection false positives.
+- **`workflow_run` trust boundary rules** (`WRT-001/002/003`): Detects artifact trust violations — the exact pattern used in the March 2025 tj-actions/reviewdog supply chain attack (CVE-2025-30066)
+- **OIDC token abuse rules** (`OA-001/002`): Workflow-level `id-token: write` exposure and missing deployment environment scope
+- **Cache poisoning rules** (`CP-001/002`): Broad `restore-keys` without `hashFiles` and cache writes in PR workflows
+- **New injection sub-rules** (`EI-001/002/003`): `$GITHUB_ENV` untrusted write, memdump.py exfiltration signature, indirect PPE via build tools
+- **`pull_request_target` 3-tier severity**: CRITICAL (head checkout) / MEDIUM (base checkout) / no finding (no checkout)
+
+### ✨ Added
+
+- `pkg/analysis/ast/taint.go` — ExprTaintTracker with 24 untrusted expression sources
+- `pkg/rules/workflow_run_trust.go` — WRT-001/002/003
+- `pkg/rules/oidc_abuse.go` — OA-001/002
+- `pkg/rules/cache_poisoning.go` — CP-001/002
+- Integration test fixtures (`testdata/workflows/`) with FP regression and detection tests
+
+### 🐛 Fixed
+
+- Env-var indirection false positive eliminated (taint engine)
+- `pull_request_target` labelers/commenters no longer fire CRITICAL
+- Duplicate cache findings (2× every finding) fixed
+- EI-001/002/003 wired into StandardRules (were previously unreachable via normal scan)
+- `classifyExpression` precedence for `workflow_run.head_commit.*` expressions
+
+[Full Details](changelogs/CHANGELOG-v1.0.9.md)
+
+---
+
 ## [1.0.8] - 2026-02-10
 
 ### 🎉 Major Features
