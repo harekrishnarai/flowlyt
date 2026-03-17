@@ -2324,6 +2324,11 @@ func checkPRTargetAbuse(workflow parser.WorkflowFile) []Finding {
 			if step.With != nil {
 				for key, valueInterface := range step.With {
 					if value, ok := valueInterface.(string); ok {
+						// GITHUB_TOKEN is an auto-provisioned built-in token, not a user secret —
+						// using it in a labeler or commenter workflow is standard practice.
+						if strings.Contains(value, "${{ secrets.GITHUB_TOKEN") {
+							continue
+						}
 						if strings.Contains(value, "${{ secrets.") {
 							lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 								Key:   key,

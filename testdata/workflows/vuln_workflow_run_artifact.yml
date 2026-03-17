@@ -1,0 +1,14 @@
+name: Deploy
+on:
+  workflow_run:
+    workflows: ["Build"]
+    types: [completed]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: dawidd6/action-download-artifact@v2
+      - run: cat artifact/env-vars >> $GITHUB_ENV
+      - run: bash artifact/deploy.sh
