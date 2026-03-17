@@ -95,7 +95,10 @@ func checkWRT002(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
-			if writesToGitHubEnvOrPath(step.Run) {
+			// Only flag when the write looks like it involves dynamic content
+			// (cat, shell substitution, or variable expansion). A static
+			// `echo "KEY=value" >> $GITHUB_ENV` is not an artifact injection risk.
+			if writesToGitHubEnvOrPath(step.Run) && looksLikeDynamicEnvWrite(step.Run) {
 				findings = append(findings, Finding{
 					RuleID:      "WORKFLOW_RUN_ENV_INJECTION",
 					RuleName:    "Environment Variable Injection via Artifact in workflow_run",
@@ -192,6 +195,37 @@ func isArtifactDownloadStep(step parser.Step) bool {
 	for _, action := range artifactDownloadActions {
 		if strings.HasPrefix(step.Uses, action) {
 			return true
+		}
+	}
+	return false
+}
+
+// looksLikeDynamicEnvWrite returns true when the run script appears to write
+// dynamic (potentially attacker-controlled) content to $GITHUB_ENV or
+// $GITHUB_PATH, rather than a hard-coded literal string.
+// The heuristic: at least one line that writes to GITHUB_ENV/GITHUB_PATH also
+// contains a shell expansion ($(...)), a variable reference ($VAR), backtick
+// substitution, or a file-reading command (cat/tee), which are the patterns
+// that appear when artifact content drives the write.
+func looksLikeDynamicEnvWrite(run string) bool {
+	dynamicIndicators := []string{
+		"$(", "`", "cat ", "tee ",
+	}
+	for _, line := range strings.Split(run, "\n") {
+		if !strings.Contains(line, "$GITHUB_ENV") && !strings.Contains(line, "$GITHUB_PATH") {
+			continue
+		}
+		for _, indicator := range dynamicIndicators {
+			if strings.Contains(line, indicator) {
+				return true
+			}
+		}
+		// A bare variable like `$ARTIFACT_CONTENT >> $GITHUB_ENV` (no parens/cat)
+		// also counts — check for a $ that is not followed by GITHUB_
+		for i := 0; i < len(line)-1; i++ {
+			if line[i] == '$' && !strings.HasPrefix(line[i:], "$GITHUB_") {
+				return true
+			}
 		}
 	}
 	return false

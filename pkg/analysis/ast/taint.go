@@ -275,14 +275,16 @@ func classifyExpression(expr string) TaintCategory {
 		strings.Contains(expr, "comment") ||
 		strings.Contains(expr, "review"):
 		return TaintIssueContent
+	case strings.Contains(expr, "workflow_run"):
+		// Must precede "commit" — workflow_run.head_commit.* contains "commit"
+		// but belongs to the workflow_run category.
+		return TaintWorkflowRun
 	case strings.Contains(expr, "commit"):
 		return TaintCommitContent
 	case strings.Contains(expr, "release"):
 		return TaintReleaseContent
 	case strings.Contains(expr, "discussion"):
 		return TaintDiscussion
-	case strings.Contains(expr, "workflow_run"):
-		return TaintWorkflowRun
 	default:
 		return TaintUnknown
 	}

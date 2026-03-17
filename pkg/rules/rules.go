@@ -497,16 +497,7 @@ func StandardRules() []Rule {
 			Check:       checkDebugOidcActions,
 		},
 
-		// New critical security rules from zizmor analysis
-		{
-			ID:          "CACHE_POISONING",
-			Name:        "Cache Poisoning Vulnerability",
-			Description: "Detects cache poisoning attack vectors through actions/cache misuse",
-			Severity:    High,
-			Category:    SupplyChain,
-			Platform:    PlatformGitHub,
-			Check:       CheckCachePoisoning,
-		},
+		// Cache poisoning rules (CP-001 and CP-002 — each entry calls a distinct function)
 		{
 			ID:          "CACHE_RESTORE_KEYS_TOO_BROAD",
 			Name:        "Cache restore-keys Too Broad",
@@ -514,7 +505,16 @@ func StandardRules() []Rule {
 			Severity:    Medium,
 			Category:    SupplyChain,
 			Platform:    PlatformGitHub,
-			Check:       CheckCachePoisoning,
+			Check:       checkBroadRestoreKeys,
+		},
+		{
+			ID:          "CACHE_WRITE_IN_PR_WORKFLOW",
+			Name:        "Cache Write in Pull Request Workflow",
+			Description: "Writing to the cache from a pull_request workflow can allow untrusted code to poison the cache for future runs",
+			Severity:    Low,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkCacheWriteInPR,
 		},
 		{
 			ID:          "REF_CONFUSION",
@@ -632,6 +632,35 @@ func StandardRules() []Rule {
 			Category:    PrivilegeEscalation,
 			Platform:    PlatformGitHub,
 			Check:       CheckOIDCAbuse,
+		},
+		// EI-001/002/003: injection sub-rules registered independently so they
+		// can be enabled/disabled without affecting INJECTION_VULNERABILITY.
+		{
+			ID:          "GITHUB_ENV_UNTRUSTED_WRITE",
+			Name:        "Untrusted Expression Written to GITHUB_ENV",
+			Description: "User-controlled data written to $GITHUB_ENV enables arbitrary env-var injection into subsequent steps",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub,
+			Check:       checkGithubEnvUntrustedWrite,
+		},
+		{
+			ID:          "MEMDUMP_EXFILTRATION_SIGNATURE",
+			Name:        "Process Memory Dump / Exfiltration Signature",
+			Description: "Detects memdump.py and similar process-memory exfiltration tools used to steal runner secrets",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll,
+			Check:       checkMemdumpExfiltration,
+		},
+		{
+			ID:          "INDIRECT_PPE_BUILD_TOOL",
+			Name:        "Indirect Poisoned Pipeline Execution via Build Tool",
+			Description: "Workflow checks out untrusted PR code and runs a build tool that processes attacker-controlled manifests",
+			Severity:    High,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll,
+			Check:       checkIndirectPPEBuildTool,
 		},
 	}
 }
@@ -1079,8 +1108,9 @@ func checkInsecurePullRequestTarget(workflow parser.WorkflowFile) []Finding {
 			severity = Medium
 			evidence = "pull_request_target with checkout (no untrusted ref — checks out base branch)"
 		case prtNoCheckout:
-			severity = Info
-			evidence = "pull_request_target trigger with no checkout step (e.g. labeling/commenting workflow)"
+			// No-checkout PRT workflows (labelers, commenters) are safe by design.
+			// Emitting an Info finding per job pollutes reports without actionable value.
+			continue
 		}
 
 		// Find a representative line number (first checkout step, or step 0).

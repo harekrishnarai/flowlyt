@@ -17,6 +17,7 @@ limitations under the License.
 package rules
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -75,7 +76,7 @@ func checkGithubEnvUntrustedWrite(workflow parser.WorkflowFile) []Finding {
 
 			stepName := step.Name
 			if stepName == "" {
-				stepName = "Step " + string(rune('1'+stepIdx))
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
 			pat := linenum.FindPattern{Key: "run", Value: step.Run}
@@ -119,7 +120,7 @@ func checkMemdumpExfiltration(workflow parser.WorkflowFile) []Finding {
 				if re.MatchString(step.Run) {
 					stepName := step.Name
 					if stepName == "" {
-						stepName = "Step " + string(rune('1'+stepIdx))
+						stepName = fmt.Sprintf("Step %d", stepIdx+1)
 					}
 
 					pat := linenum.FindPattern{Key: "run", Value: step.Run}
@@ -167,7 +168,6 @@ func checkIndirectPPEBuildTool(workflow parser.WorkflowFile) []Finding {
 		"npm ci",
 		"pip install -e",
 		"make ",
-		"make\n",
 		"mvn ",
 		"gradle ",
 		"yarn install",
@@ -202,10 +202,15 @@ func checkIndirectPPEBuildTool(workflow parser.WorkflowFile) []Finding {
 
 			// Check if any build tool pattern is present
 			for _, tool := range buildToolPatterns {
-				if strings.Contains(step.Run, tool) {
+				match := strings.Contains(step.Run, tool)
+				// "make " is a substring of "cmake"; skip cmake invocations.
+				if tool == "make " && strings.Contains(step.Run, "cmake") {
+					match = false
+				}
+				if match {
 					stepName := step.Name
 					if stepName == "" {
-						stepName = "Step " + string(rune('1'+stepIdx))
+						stepName = fmt.Sprintf("Step %d", stepIdx+1)
 					}
 
 					pat := linenum.FindPattern{Key: "run", Value: step.Run}
@@ -304,7 +309,7 @@ func checkGitHubInjection(workflow parser.WorkflowFile, patterns []*regexp.Regex
 		for stepIdx, step := range job.Steps {
 			stepName := step.Name
 			if stepName == "" {
-				stepName = "Step " + string(rune('1'+stepIdx))
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
 			// Check 'run' field for shell injection

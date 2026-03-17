@@ -171,9 +171,10 @@ jobs:
 	}
 }
 
-// TestPRT_InfoForNoCheckout verifies that pull_request_target without any checkout step
-// yields an INFO finding (labeling/commenting workflows).
-func TestPRT_InfoForNoCheckout(t *testing.T) {
+// TestPRT_NoFindingForNoCheckout verifies that pull_request_target without any checkout
+// step produces zero findings. Labeling/commenting workflows are safe by design and
+// should not pollute reports.
+func TestPRT_NoFindingForNoCheckout(t *testing.T) {
 	wf := buildPRTWorkflowFile(t, `
 name: PR Labeler
 on: pull_request_target
@@ -196,16 +197,14 @@ jobs:
 
 	findings := prtFindingsForRule(wf)
 
-	if len(findings) == 0 {
-		t.Fatal("expected at least one INSECURE_PULL_REQUEST_TARGET finding (INFO level), got none")
-	}
 	for _, f := range findings {
 		if f.Severity == rules.Critical {
-			t.Errorf("expected non-CRITICAL severity for no-checkout workflow, got CRITICAL")
+			t.Errorf("false positive CRITICAL on no-checkout PRT workflow: %s", f.Evidence)
 		}
-		if f.Severity != rules.Info {
-			t.Errorf("expected INFO severity for no-checkout workflow, got %s", f.Severity)
-		}
+	}
+	// No findings expected at all — no-checkout PRT is safe.
+	if len(findings) > 0 {
+		t.Errorf("expected zero findings for no-checkout PRT labeler, got %d: %v", len(findings), findings)
 	}
 }
 

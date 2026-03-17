@@ -17,6 +17,7 @@ limitations under the License.
 package rules
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
@@ -30,12 +31,6 @@ func CheckCachePoisoning(workflow parser.WorkflowFile) []Finding {
 	findings = append(findings, checkBroadRestoreKeys(workflow)...)
 	findings = append(findings, checkCacheWriteInPR(workflow)...)
 	return findings
-}
-
-// checkCachePoisoning is the unexported alias used by the CACHE_POISONING
-// StandardRules entry (which predates the CP-001/002 split).
-func checkCachePoisoning(workflow parser.WorkflowFile) []Finding {
-	return CheckCachePoisoning(workflow)
 }
 
 // isCacheAction returns true if the uses value refers to any actions/cache variant
@@ -112,7 +107,7 @@ func checkBroadRestoreKeys(workflow parser.WorkflowFile) []Finding {
 
 			stepName := step.Name
 			if stepName == "" {
-				stepName = "Step " + string(rune('1'+stepIdx))
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
 			restoreKeysRaw, ok := step.With["restore-keys"]
@@ -210,7 +205,7 @@ func checkCacheWriteInPR(workflow parser.WorkflowFile) []Finding {
 
 			stepName := step.Name
 			if stepName == "" {
-				stepName = "Step " + string(rune('1'+stepIdx))
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
 			pattern := linenum.FindPattern{
