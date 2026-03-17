@@ -59,6 +59,7 @@ type Job struct {
 	Services        map[string]interface{} `yaml:"services,omitempty"`
 	Strategy        map[string]interface{} `yaml:"strategy,omitempty"`
 	Outputs         map[string]string      `yaml:"outputs,omitempty"`
+	Environment     interface{}            `yaml:"environment,omitempty"`
 }
 
 // Step represents a step in a GitHub Actions job

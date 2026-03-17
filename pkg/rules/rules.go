@@ -497,15 +497,24 @@ func StandardRules() []Rule {
 			Check:       checkDebugOidcActions,
 		},
 
-		// New critical security rules from zizmor analysis
+		// Cache poisoning rules (CP-001 and CP-002 — each entry calls a distinct function)
 		{
-			ID:          "CACHE_POISONING",
-			Name:        "Cache Poisoning Vulnerability",
-			Description: "Detects cache poisoning attack vectors through actions/cache misuse",
-			Severity:    High,
+			ID:          "CACHE_RESTORE_KEYS_TOO_BROAD",
+			Name:        "Cache restore-keys Too Broad",
+			Description: "Broad restore-keys without content hash enables cache poisoning from PR branches",
+			Severity:    Medium,
 			Category:    SupplyChain,
 			Platform:    PlatformGitHub,
-			Check:       checkCachePoisoning,
+			Check:       checkBroadRestoreKeys,
+		},
+		{
+			ID:          "CACHE_WRITE_IN_PR_WORKFLOW",
+			Name:        "Cache Write in Pull Request Workflow",
+			Description: "Writing to the cache from a pull_request workflow can allow untrusted code to poison the cache for future runs",
+			Severity:    Low,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkCacheWriteInPR,
 		},
 		{
 			ID:          "REF_CONFUSION",
@@ -605,6 +614,53 @@ func StandardRules() []Rule {
 			Category:    SupplyChain,
 			Platform:    PlatformAll,
 			Check:       checkArtipackedVulnerability,
+		},
+		{
+			ID:          "WORKFLOW_RUN_ARTIFACT_UNTRUSTED",
+			Name:        "Untrusted Artifact Download in workflow_run",
+			Description: "workflow_run downloads artifacts without constraining run_id, enabling supply chain attacks (CVE-2025-30066 pattern)",
+			Severity:    Critical,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       CheckWorkflowRunTrust,
+		},
+		{
+			ID:          "OIDC_WORKFLOW_LEVEL_PERMISSION",
+			Name:        "OIDC id-token:write at Workflow Level",
+			Description: "id-token: write at workflow level exposes all jobs to OIDC token access, enabling privilege escalation via expression injection",
+			Severity:    High,
+			Category:    PrivilegeEscalation,
+			Platform:    PlatformGitHub,
+			Check:       CheckOIDCAbuse,
+		},
+		// EI-001/002/003: injection sub-rules registered independently so they
+		// can be enabled/disabled without affecting INJECTION_VULNERABILITY.
+		{
+			ID:          "GITHUB_ENV_UNTRUSTED_WRITE",
+			Name:        "Untrusted Expression Written to GITHUB_ENV",
+			Description: "User-controlled data written to $GITHUB_ENV enables arbitrary env-var injection into subsequent steps",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub,
+			Check:       checkGithubEnvUntrustedWrite,
+		},
+		{
+			ID:          "MEMDUMP_EXFILTRATION_SIGNATURE",
+			Name:        "Process Memory Dump / Exfiltration Signature",
+			Description: "Detects memdump.py and similar process-memory exfiltration tools used to steal runner secrets",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll,
+			Check:       checkMemdumpExfiltration,
+		},
+		{
+			ID:          "INDIRECT_PPE_BUILD_TOOL",
+			Name:        "Indirect Poisoned Pipeline Execution via Build Tool",
+			Description: "Workflow checks out untrusted PR code and runs a build tool that processes attacker-controlled manifests",
+			Severity:    High,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll,
+			Check:       checkIndirectPPEBuildTool,
 		},
 	}
 }
@@ -975,6 +1031,43 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
+// prtCheckoutRisk classifies the risk level of a pull_request_target + checkout combination.
+type prtCheckoutRisk int
+
+const (
+	prtNoCheckout   prtCheckoutRisk = iota // no checkout step at all
+	prtBaseCheckout                        // checkout without an untrusted ref (defaults to base branch)
+	prtHeadCheckout                        // checkout of head.sha or head.ref — CRITICAL
+)
+
+// untrustedHeadRefPat matches expressions that resolve to the attacker-controlled PR head.
+var untrustedHeadRefPat = regexp.MustCompile(
+	`\$\{\{\s*(github\.event\.pull_request\.head\.(sha|ref)|github\.head_ref)\s*\}\}`,
+)
+
+// classifyPRTCheckout scans the steps of a job and returns the highest checkout risk seen.
+func classifyPRTCheckout(steps []parser.Step) prtCheckoutRisk {
+	risk := prtNoCheckout
+	for _, step := range steps {
+		if !strings.HasPrefix(step.Uses, "actions/checkout") {
+			continue
+		}
+		// Found a checkout step — at least base-checkout risk.
+		if risk < prtBaseCheckout {
+			risk = prtBaseCheckout
+		}
+		// Check whether the ref parameter points at the untrusted PR head.
+		if step.With != nil {
+			if ref, ok := step.With["ref"].(string); ok {
+				if untrustedHeadRefPat.MatchString(ref) {
+					return prtHeadCheckout
+				}
+			}
+		}
+	}
+	return risk
+}
+
 // checkInsecurePullRequestTarget checks for insecure pull_request_target usage
 func checkInsecurePullRequestTarget(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -1000,43 +1093,47 @@ func checkInsecurePullRequestTarget(workflow parser.WorkflowFile) []Finding {
 		return findings
 	}
 
-	// Check for code checkout in pull_request_target context
+	// Evaluate risk per job and emit one finding per job.
 	for jobName, job := range workflow.Workflow.Jobs {
+		risk := classifyPRTCheckout(job.Steps)
+
+		var severity Severity
+		var evidence string
+
+		switch risk {
+		case prtHeadCheckout:
+			severity = Critical
+			evidence = "pull_request_target with checkout of untrusted PR head ref (head.sha/head.ref/github.head_ref)"
+		case prtBaseCheckout:
+			severity = Medium
+			evidence = "pull_request_target with checkout (no untrusted ref — checks out base branch)"
+		case prtNoCheckout:
+			// No-checkout PRT workflows (labelers, commenters) are safe by design.
+			// Emitting an Info finding per job pollutes reports without actionable value.
+			continue
+		}
+
+		// Find a representative line number (first checkout step, or step 0).
+		lineNumber := 0
 		for _, step := range job.Steps {
-			if step.Uses == "" {
-				continue
-			}
-
-			// Check if step uses checkout action
-			if strings.HasPrefix(step.Uses, "actions/checkout@") {
-				// Check if PR ref is used
-				if step.With != nil {
-					if ref, ok := step.With["ref"].(string); ok {
-						if strings.Contains(ref, "github.event.pull_request.head.ref") ||
-							strings.Contains(ref, "github.head_ref") {
-
-							// Find the line number
-							stepStr := "uses: " + step.Uses
-							lineNumber := findLineNumberWithMapper(workflow, step.Name, stepStr)
-
-							findings = append(findings, Finding{
-								RuleID:      "INSECURE_PULL_REQUEST_TARGET",
-								RuleName:    "Insecure pull_request_target usage",
-								Description: "Workflow uses pull_request_target event and checks out PR code, which can lead to code execution",
-								Severity:    Critical,
-								Category:    Misconfiguration,
-								FilePath:    workflow.Path,
-								JobName:     jobName,
-								StepName:    step.Name,
-								Evidence:    "pull_request_target with checkout ref: " + ref,
-								LineNumber:  lineNumber,
-								Remediation: "Use pull_request event instead, or don't checkout PR code with pull_request_target",
-							})
-						}
-					}
-				}
+			if strings.HasPrefix(step.Uses, "actions/checkout") {
+				lineNumber = findLineNumberWithMapper(workflow, step.Name, "uses: "+step.Uses)
+				break
 			}
 		}
+
+		findings = append(findings, Finding{
+			RuleID:      "INSECURE_PULL_REQUEST_TARGET",
+			RuleName:    "Insecure pull_request_target usage",
+			Description: "Workflow uses pull_request_target event and checks out PR code, which can lead to code execution with write permissions",
+			Severity:    severity,
+			Category:    Misconfiguration,
+			FilePath:    workflow.Path,
+			JobName:     jobName,
+			LineNumber:  lineNumber,
+			Evidence:    evidence,
+			Remediation: "Use pull_request event instead, or don't checkout PR code with pull_request_target",
+		})
 	}
 
 	return findings
@@ -2257,6 +2354,11 @@ func checkPRTargetAbuse(workflow parser.WorkflowFile) []Finding {
 			if step.With != nil {
 				for key, valueInterface := range step.With {
 					if value, ok := valueInterface.(string); ok {
+						// GITHUB_TOKEN is an auto-provisioned built-in token, not a user secret —
+						// using it in a labeler or commenter workflow is standard practice.
+						if strings.Contains(value, "${{ secrets.GITHUB_TOKEN") {
+							continue
+						}
 						if strings.Contains(value, "${{ secrets.") {
 							lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 								Key:   key,
@@ -3432,66 +3534,6 @@ func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
 						LineNumber:  lineNumber,
 						Remediation: "Consider limiting id-token permissions to specific jobs that need OIDC",
 					})
-				}
-			}
-		}
-	}
-
-	return findings
-}
-
-// checkCachePoisoning detects cache poisoning attack vectors
-func checkCachePoisoning(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
-	lineMapper := linenum.NewLineMapper(workflow.Content)
-
-	for jobName, job := range workflow.Workflow.Jobs {
-		for stepIdx, step := range job.Steps {
-			if step.Uses == "" {
-				continue
-			}
-
-			stepName := step.Name
-			if stepName == "" {
-				stepName = fmt.Sprintf("Step %d", stepIdx+1)
-			}
-
-			// Check for actions/cache usage patterns that could enable cache poisoning
-			if strings.Contains(step.Uses, "actions/cache") {
-				// Check if cache key is predictable or based on user-controlled data
-				if step.With != nil {
-					if key, exists := step.With["key"]; exists {
-						keyStr := fmt.Sprintf("%v", key)
-						// Check for potentially dangerous cache key patterns
-						if strings.Contains(keyStr, "${{ github.event") ||
-							strings.Contains(keyStr, "${{ env") ||
-							strings.Contains(keyStr, "${{ matrix") {
-
-							pattern := linenum.FindPattern{
-								Key:   "key",
-								Value: keyStr,
-							}
-							lineResult := lineMapper.FindLineNumber(pattern)
-							lineNumber := 0
-							if lineResult != nil {
-								lineNumber = lineResult.LineNumber
-							}
-
-							findings = append(findings, Finding{
-								RuleID:      "CACHE_POISONING",
-								RuleName:    "Cache Poisoning Vulnerability",
-								Description: "Cache key uses user-controlled input that could enable cache poisoning attacks",
-								Severity:    High,
-								Category:    SupplyChain,
-								FilePath:    workflow.Path,
-								JobName:     jobName,
-								StepName:    stepName,
-								Evidence:    fmt.Sprintf("cache key: %s", keyStr),
-								Remediation: "Use secure, predictable cache keys not based on user input",
-								LineNumber:  lineNumber,
-							})
-						}
-					}
 				}
 			}
 		}

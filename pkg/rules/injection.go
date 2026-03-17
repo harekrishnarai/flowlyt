@@ -17,12 +17,22 @@ limitations under the License.
 package rules
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/harekrishnarai/flowlyt/pkg/analysis/ast"
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 )
+
+// memdumpPatterns are compiled once at package level for efficiency.
+var memdumpPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`nikitastupin.*memdump\.py`),
+	regexp.MustCompile(`(?m)curl[^\n]+\|\s*sudo\s+python3?\s*$`),
+	regexp.MustCompile(`/proc/[0-9*/]+/mem`),
+	regexp.MustCompile(`ptrace.*PTRACE_PEEKDATA`),
+}
 
 // CheckInjectionVulnerabilities is the main entry point for injection vulnerability checks
 func CheckInjectionVulnerabilities(workflow parser.WorkflowFile) []Finding {
@@ -30,6 +40,204 @@ func CheckInjectionVulnerabilities(workflow parser.WorkflowFile) []Finding {
 
 	findings = append(findings, checkInjectionVulnerabilities(workflow)...)
 	findings = append(findings, checkUntrustedCheckoutExecution(workflow)...)
+	findings = append(findings, checkGithubEnvUntrustedWrite(workflow)...)
+	findings = append(findings, checkMemdumpExfiltration(workflow)...)
+	findings = append(findings, checkIndirectPPEBuildTool(workflow)...)
+
+	return findings
+}
+
+// checkGithubEnvUntrustedWrite detects untrusted ${{ }} expressions or LD_PRELOAD written to $GITHUB_ENV (EI-001)
+func checkGithubEnvUntrustedWrite(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	ldPreloadRe := regexp.MustCompile(`LD_PRELOAD\s*=`)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			if step.Run == "" {
+				continue
+			}
+
+			// Check if the step writes to $GITHUB_ENV
+			writesToGithubEnv := strings.Contains(step.Run, ">> $GITHUB_ENV") ||
+				strings.Contains(step.Run, ">>$GITHUB_ENV") ||
+				strings.Contains(step.Run, `>> "$GITHUB_ENV"`)
+
+			if !writesToGithubEnv {
+				continue
+			}
+
+			// Flag if it also contains an untrusted ${{ }} expression or LD_PRELOAD
+			if !strings.Contains(step.Run, "${{") && !ldPreloadRe.MatchString(step.Run) {
+				continue
+			}
+
+			stepName := step.Name
+			if stepName == "" {
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
+			}
+
+			pat := linenum.FindPattern{Key: "run", Value: step.Run}
+			lineResult := lineMapper.FindLineNumber(pat)
+			lineNumber := 0
+			if lineResult != nil {
+				lineNumber = lineResult.LineNumber
+			}
+
+			findings = append(findings, Finding{
+				RuleID:      "GITHUB_ENV_UNTRUSTED_WRITE",
+				RuleName:    "Untrusted Expression Written to GITHUB_ENV",
+				Description: "User-controlled data is written directly to $GITHUB_ENV. An attacker can inject arbitrary environment variables including LD_PRELOAD, enabling code execution in all subsequent steps.",
+				Severity:    Critical,
+				Category:    InjectionAttack,
+				FilePath:    workflow.Path,
+				JobName:     jobName,
+				StepName:    stepName,
+				Evidence:    step.Run,
+				Remediation: "Validate and sanitize all data before writing to $GITHUB_ENV. Never write untrusted ${{ }} expressions directly to $GITHUB_ENV.",
+				LineNumber:  lineNumber,
+			})
+		}
+	}
+
+	return findings
+}
+
+// checkMemdumpExfiltration detects signatures of the memdump.py technique (CVE-2025-30066) (EI-002)
+func checkMemdumpExfiltration(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			if step.Run == "" {
+				continue
+			}
+
+			for _, re := range memdumpPatterns {
+				if re.MatchString(step.Run) {
+					stepName := step.Name
+					if stepName == "" {
+						stepName = fmt.Sprintf("Step %d", stepIdx+1)
+					}
+
+					pat := linenum.FindPattern{Key: "run", Value: step.Run}
+					lineResult := lineMapper.FindLineNumber(pat)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "MEMDUMP_EXFILTRATION_SIGNATURE",
+						RuleName:    "Process Memory Dump Exfiltration Signature",
+						Description: "Workflow contains patterns matching the memdump.py technique used in the March 2025 supply chain attack (CVE-2025-30066) to dump GitHub Actions runner memory and exfiltrate all secrets.",
+						Severity:    Critical,
+						Category:    MaliciousPattern,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    step.Run,
+						Remediation: "Remove this step immediately. This pattern is associated with known supply chain attacks targeting GitHub Actions secrets.",
+						LineNumber:  lineNumber,
+					})
+					break // one finding per step is enough
+				}
+			}
+		}
+	}
+
+	return findings
+}
+
+// checkIndirectPPEBuildTool detects Indirect Poisoned Pipeline Execution via build tools (EI-003)
+func checkIndirectPPEBuildTool(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	untrustedHeadRefs := []string{
+		"${{ github.event.pull_request.head.sha }}",
+		"${{ github.event.pull_request.head.ref }}",
+		"${{ github.head_ref }}",
+	}
+
+	buildToolPatterns := []string{
+		"npm install",
+		"npm ci",
+		"pip install -e",
+		"make ",
+		"mvn ",
+		"gradle ",
+		"yarn install",
+		"pnpm install",
+		"poetry install",
+		"bundle install",
+		"cargo build",
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		seenUntrustedCheckout := false
+
+		for stepIdx, step := range job.Steps {
+			// Check for untrusted-head checkout
+			if strings.HasPrefix(step.Uses, "actions/checkout") {
+				if step.With != nil {
+					if ref, ok := step.With["ref"].(string); ok {
+						for _, untrusted := range untrustedHeadRefs {
+							if strings.Contains(ref, untrusted) {
+								seenUntrustedCheckout = true
+								break
+							}
+						}
+					}
+				}
+				continue
+			}
+
+			if !seenUntrustedCheckout || step.Run == "" {
+				continue
+			}
+
+			// Check if any build tool pattern is present
+			for _, tool := range buildToolPatterns {
+				match := strings.Contains(step.Run, tool)
+				// "make " is a substring of "cmake"; skip cmake invocations.
+				if tool == "make " && strings.Contains(step.Run, "cmake") {
+					match = false
+				}
+				if match {
+					stepName := step.Name
+					if stepName == "" {
+						stepName = fmt.Sprintf("Step %d", stepIdx+1)
+					}
+
+					pat := linenum.FindPattern{Key: "run", Value: step.Run}
+					lineResult := lineMapper.FindLineNumber(pat)
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+
+					findings = append(findings, Finding{
+						RuleID:      "INDIRECT_PPE_BUILD_TOOL",
+						RuleName:    "Indirect Poisoned Pipeline Execution via Build Tool",
+						Description: "Workflow checks out untrusted PR code and then runs a build tool that processes attacker-controlled manifests (npm preinstall hooks, setup.py, Makefile targets). An attacker can execute arbitrary code without modifying workflow YAML.",
+						Severity:    High,
+						Category:    InjectionAttack,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    stepName,
+						Evidence:    tool,
+						Remediation: "Use the two-workflow architecture: an unprivileged pull_request workflow builds artifacts only; a privileged workflow_run workflow accesses secrets but never executes untrusted code.",
+						LineNumber:  lineNumber,
+					})
+					break // one finding per step
+				}
+			}
+		}
+	}
 
 	return findings
 }
@@ -49,6 +257,8 @@ func GetInjectionPatterns() InjectionPatterns {
 			// User-controlled GitHub context variables that can contain malicious input
 			`\$\{\{\s*(github\.head_ref|github\.event\.workflow_run\.(head_branch|head_repository\.description|head_repository\.owner\.email|pull_requests[^}]+?(head\.ref|head\.repo\.name)))\s*\}\}`,
 			`\$\{\{\s*github\.event\.(issue\.(title|body)|pull_request\.(title|body)|comment\.body|review\.body|review_comment\.body|pages\.[^}]+?\.page_name|head_commit\.message|head_commit\.author\.(email|name)|commits[^}]+?\.author\.(email|name)|pull_request\.head\.(ref|label)|pull_request\.head\.repo\.default_branch|(inputs|client_payload)[^}]+?)\s*\}\}`,
+			// Additional untrusted sources: release, discussion, PR head repo, workflow_run commit info
+			`\$\{\{\s*github\.event\.(release\.(body|name)|discussion\.(body|title)|pull_request\.head\.repo\.full_name|workflow_run\.head_commit\.(message|author\.(email|name)))\s*\}\}`,
 		},
 		GitLab: []string{
 			// GitLab CI variables with expand_vars that can be dangerous
@@ -99,11 +309,15 @@ func checkGitHubInjection(workflow parser.WorkflowFile, patterns []*regexp.Regex
 		for stepIdx, step := range job.Steps {
 			stepName := step.Name
 			if stepName == "" {
-				stepName = "Step " + string(rune('1'+stepIdx))
+				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
 			// Check 'run' field for shell injection
 			if step.Run != "" {
+				// Skip if expressions are safely routed through the env: block (env-var indirection)
+				if isSafeViaEnvIndirection(step.Run, step.Env) {
+					continue
+				}
 				if injections := findInjections(step.Run, patterns); len(injections) > 0 {
 					pattern := linenum.FindPattern{
 						Key:   "run",
@@ -486,6 +700,22 @@ func findImplicitExecutionRisks(steps []parser.Step, checkoutIdx int) []riskySte
 	}
 
 	return riskySteps
+}
+
+// isSafeViaEnvIndirection returns true when all untrusted ${{ }} expressions
+// in the run block are safely routed through the step's env: block.
+// This prevents false positives for GitHub's recommended safe pattern:
+//
+//	env:
+//	  TITLE: ${{ github.event.pull_request.title }}
+//	run: echo "$TITLE"
+func isSafeViaEnvIndirection(run string, env map[string]string) bool {
+	tracker := ast.NewExprTaintTracker()
+	paths, err := tracker.PathsForStep(run, env)
+	if err != nil {
+		return false
+	}
+	return !ast.HasUnsafePaths(paths)
 }
 
 // Helper functions
