@@ -44,14 +44,17 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Run tests
-        run: |
-          echo "Running tests"
-          curl -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" https://api.example.com/data
+        run: echo "Running tests"
         env:
           API_TOKEN: ${{ secrets.API_TOKEN }}
-      
+
+      - name: Deploy
+        uses: some-org/deploy-action@v1
+        with:
+          token: ${{ env.API_TOKEN }}
+
       - name: Conditional step
         if: github.event_name == 'push'
         run: echo "This only runs on push"

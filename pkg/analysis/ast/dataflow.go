@@ -274,9 +274,6 @@ func (dfa *DataFlowAnalyzer) areDataTypesCompatible(source *DataSource, sink *Da
 
 // pathInvolvesSameData checks if the path actually involves the same data
 func (dfa *DataFlowAnalyzer) pathInvolvesSameData(source *DataSource, sink *DataSink, path []string) bool {
-	// For now, implement basic heuristics
-	// In production, this would analyze variable usage along the path
-
 	// If source and sink have similar names, likely related
 	if strings.Contains(strings.ToLower(sink.Name), strings.ToLower(source.Name)) ||
 		strings.Contains(strings.ToLower(source.Name), strings.ToLower(sink.Name)) {
@@ -293,8 +290,9 @@ func (dfa *DataFlowAnalyzer) pathInvolvesSameData(source *DataSource, sink *Data
 		return true
 	}
 
-	// If path is very short (direct connection), more likely to be real
-	return len(path) <= 3
+	// Note: path length alone is not a reliable indicator — two unrelated env vars
+	// in the same step share a path of length 1, which would produce false positives.
+	return false
 }
 
 // withinSameContext checks if source and sink are in related contexts
@@ -332,6 +330,22 @@ func (dfa *DataFlowAnalyzer) extractJobFromNodeID(nodeID string) string {
 
 // isObviousFalsePositive filters out clearly unrelated flows
 func (dfa *DataFlowAnalyzer) isObviousFalsePositive(source *DataSource, sink *DataSink) bool {
+	// Don't flag a variable flowing to itself — assigning ${{ secrets.X }} to an
+	// env var named X is the recommended safe pattern, not a vulnerability.
+	if source.NodeID == sink.NodeID && strings.EqualFold(source.Name, sink.Name) {
+		return true
+	}
+
+	// Don't create flows between unrelated env vars in the same step.
+	// Each step's env vars are independent assignments; co-location does not
+	// imply a data dependency between them.
+	if source.Type == "env" && sink.Type == "env" &&
+		source.NodeID == sink.NodeID &&
+		!strings.Contains(strings.ToLower(sink.Name), strings.ToLower(source.Name)) &&
+		!strings.Contains(strings.ToLower(source.Name), strings.ToLower(sink.Name)) {
+		return true
+	}
+
 	// Don't create flows between different unrelated environment variables
 	if source.Type == "env" && sink.Type == "env" &&
 		source.NodeID != sink.NodeID &&

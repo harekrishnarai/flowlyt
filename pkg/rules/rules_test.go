@@ -237,3 +237,303 @@ func TestExfiltrationWorkflowDetection(t *testing.T) {
 		}
 	}
 }
+
+// TestRefConfusionIsMutableRef verifies that REF_CONFUSION fires on mutable
+// branch refs but is suppressed for stable semver tags.
+func TestRefConfusionIsMutableRef(t *testing.T) {
+	rule := findRule(t, "REF_CONFUSION")
+
+	// firesOn returns true if the rule produces a REF_CONFUSION finding
+	// for `uses: actions/checkout@<ref>`.
+	firesOn := func(ref string) bool {
+		t.Helper()
+		wf := makeWorkflow(t, `
+name: test
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@`+ref+`
+`)
+		findings := rule.Check(wf)
+		for _, f := range findings {
+			if f.RuleID == "REF_CONFUSION" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Must fire — mutable branch refs
+	mustFire := []string{"main", "master", "develop", "trunk", "latest", "my-feature", "hotfix-1"}
+	for _, ref := range mustFire {
+		if !firesOn(ref) {
+			t.Errorf("REF_CONFUSION should fire on @%s but did not", ref)
+		}
+	}
+
+	// Must NOT fire — stable semver tags
+	mustNotFire := []string{"v1", "v2", "v4", "v1.2", "v1.2.3", "v10.0.1"}
+	for _, ref := range mustNotFire {
+		if firesOn(ref) {
+			t.Errorf("REF_CONFUSION should NOT fire on @%s but did", ref)
+		}
+	}
+}
+
+// TestExternalTriggerPermissions verifies that EXTERNAL_TRIGGER_DEBUG only fires
+// on workflow_dispatch when the workflow has (or defaults to) write permissions.
+func TestExternalTriggerPermissions(t *testing.T) {
+	rule := findRule(t, "EXTERNAL_TRIGGER_DEBUG")
+
+	firesOn := func(yamlContent string) bool {
+		t.Helper()
+		wf := makeWorkflow(t, yamlContent)
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "EXTERNAL_TRIGGER_DEBUG" && f.Evidence == "workflow_dispatch" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Must fire — no permissions block (GitHub default = write-all)
+	noPerms := `
+name: test
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if !firesOn(noPerms) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with no permissions block")
+	}
+
+	// Must fire — explicit write scope
+	writePerms := `
+name: test
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if !firesOn(writePerms) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with contents: write")
+	}
+
+	// Must NOT fire — read-all shorthand
+	readAll := `
+name: test
+on: workflow_dispatch
+permissions: read-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if firesOn(readAll) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: read-all")
+	}
+
+	// Must NOT fire — explicit read-only scope map
+	readOnly := `
+name: test
+on: workflow_dispatch
+permissions:
+  contents: read
+  issues: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if firesOn(readOnly) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with all-read permissions")
+	}
+
+	// Must NOT fire — empty permissions map
+	emptyPerms := `
+name: test
+on: workflow_dispatch
+permissions: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if firesOn(emptyPerms) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: {}")
+	}
+
+	// Must NOT fire — permissions: none shorthand
+	nonePerms := `
+name: test
+on: workflow_dispatch
+permissions: none
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if firesOn(nonePerms) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: none")
+	}
+
+	// Must fire — permissions: write-all string shorthand
+	writeAll := `
+name: test
+on: workflow_dispatch
+permissions: write-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if !firesOn(writeAll) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with permissions: write-all")
+	}
+
+	// Unrelated triggers (issue_comment) must still fire regardless of permissions
+	issueComment := `
+name: test
+on: issue_comment
+permissions: read-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	hasIssueCommentFinding := false
+	wf := makeWorkflow(t, issueComment)
+	for _, f := range rule.Check(wf) {
+		if f.RuleID == "EXTERNAL_TRIGGER_DEBUG" && f.Evidence == "issue_comment" {
+			hasIssueCommentFinding = true
+		}
+	}
+	if !hasIssueCommentFinding {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should still fire on issue_comment regardless of permissions")
+	}
+
+	// Regression: flowlyt-scan.yml — has security-events: write but also contents: read.
+	// permsImplyWrite must return true (any write scope → write), so this MUST fire.
+	scsFeedFlowlytScan := `
+name: Flowlyt manual scan
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+`
+	if !firesOn(scsFeedFlowlytScan) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch when security-events: write is present (flowlyt-scan.yml regression)")
+	}
+
+	// Regression: daily-supply-chain-reports.yml — has contents: write and pull-requests: write.
+	// This MUST fire.
+	scsFeedDailyReports := `
+name: Daily Supply Chain Security Reports
+on:
+  schedule:
+    - cron: '30 18 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+  pull-requests: write
+jobs:
+  fetch-supply-chain-reports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+`
+	if !firesOn(scsFeedDailyReports) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch when contents: write is present (daily-supply-chain-reports.yml regression)")
+	}
+}
+
+// TestShellScriptLocalVars verifies that SHELL_SCRIPT_ISSUES does not fire
+// on locally-assigned variables in safe positions, and does fire on variables
+// in dangerous positions.
+func TestShellScriptLocalVars(t *testing.T) {
+	rule := findRule(t, "SHELL_SCRIPT_ISSUES")
+
+	hasUnquotedVarFinding := func(runBlock string) bool {
+		t.Helper()
+		wf := makeWorkflow(t, `
+name: test
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+`+indentBlock(runBlock, "          "))
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "SHELL_SCRIPT_ISSUES" &&
+				strings.Contains(f.Description, "Unquoted variable") {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Must NOT fire — locally assigned variable used in echo (Layer 1 + Layer 2)
+	if hasUnquotedVarFinding("TODAY=$(date +%F)\necho $TODAY") {
+		t.Error("should NOT flag $TODAY assigned via $(...) and used in echo")
+	}
+
+	// Must NOT fire — numeric literal used in echo
+	if hasUnquotedVarFinding("COUNT=42\necho $COUNT") {
+		t.Error("should NOT flag $COUNT assigned as numeric literal and used in echo")
+	}
+
+	// Must NOT fire — quoted string assignment used in echo
+	if hasUnquotedVarFinding("VERSION=\"1.0.0\"\necho $VERSION") {
+		t.Error("should NOT flag $VERSION assigned as quoted string and used in echo")
+	}
+
+	// Must fire — locally assigned variable used in rm (dangerous position)
+	if !hasUnquotedVarFinding("DIR=$(mktemp -d)\nrm -rf $DIR") {
+		t.Error("should flag $DIR used in rm even if locally assigned")
+	}
+
+	// Must fire — unassigned variable used in cp
+	if !hasUnquotedVarFinding("cp $SRC $DEST") {
+		t.Error("should flag unassigned $SRC/$DEST in cp")
+	}
+
+	// Must fire — unassigned variable used in curl
+	if !hasUnquotedVarFinding("curl $URL") {
+		t.Error("should flag unassigned $URL in curl")
+	}
+}
+
+// indentBlock prefixes every non-empty line of s with indent.
+func indentBlock(s, indent string) string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, indent+l)
+		}
+	}
+	return strings.Join(out, "\n")
+}

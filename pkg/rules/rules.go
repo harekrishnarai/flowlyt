@@ -2196,6 +2196,18 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
+// unquotedVarRe matches bare $VAR references (not ${VAR} or ${{ expr }}).
+// Limitation: this regex does not detect double-quote wrapping, so `rm "$VAR"` will
+// still fire. The remediation recommends ${VAR} (brace form) which is correctly excluded.
+var unquotedVarRe = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:[^}A-Za-z0-9_]|$)`)
+
+// dangerousCmdRe matches commands where unquoted variables cause real harm.
+var dangerousCmdRe = regexp.MustCompile(
+	`^\s*(?:sudo\s+)?(rm|cp|mv|mkdir|chmod|chown|ln|find|rsync|tar|zip|unzip|eval|curl|wget)\b`)
+
+// safeCmdRe matches commands where word splitting is harmless.
+var safeCmdRe = regexp.MustCompile(`^\s*(echo|printf|cat)\b`)
+
 // checkShellScriptIssues performs basic shellcheck-like analysis on run commands
 func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -2209,12 +2221,6 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 		remediation string
 		severity    Severity
 	}{
-		{
-			pattern:     regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*[^}]`), // Unquoted variables (simplified)
-			description: "Unquoted variable usage may lead to word splitting and pathname expansion",
-			remediation: "Quote variables: \"$VAR\" instead of $VAR",
-			severity:    Medium,
-		},
 		{
 			pattern:     regexp.MustCompile(`rm\s+-rf\s+/`), // Dangerous rm commands
 			description: "Dangerous rm -rf command targeting root directory",
@@ -2255,10 +2261,21 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 
 			for _, issue := range shellIssues {
 				if issue.pattern.MatchString(step.Run) {
-					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
-						Key:   "run",
-						Value: step.Run,
-					})
+					// For multi-line run blocks the generic `run: |` fallback
+					// always resolves to the first such key in the file,
+					// misattributing findings to the wrong step.  Use the first
+					// non-empty content line instead so each step maps to its
+					// own location in the file.
+					runPattern := linenum.FindPattern{Key: "run", Value: step.Run}
+					if strings.Contains(step.Run, "\n") {
+						for _, l := range strings.Split(step.Run, "\n") {
+							if trimmed := strings.TrimSpace(l); trimmed != "" {
+								runPattern = linenum.FindPattern{Value: trimmed}
+								break
+							}
+						}
+					}
+					lineResult := lineMapper.FindLineNumber(runPattern)
 
 					lineNumber := 0
 					if lineResult != nil {
@@ -2278,6 +2295,59 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 						LineNumber:  lineNumber,
 						Remediation: issue.remediation,
 					})
+				}
+			}
+
+			// --- Dedicated unquoted-variable check ---
+			// Suppression is position-based: safe commands (echo, printf, cat) are
+			// never flagged; dangerous commands (rm, cp, curl, etc.) are always flagged
+			// regardless of whether the variable was locally assigned. A locally-assigned
+			// variable in a dangerous position (e.g. rm -rf $DIR) is still a real risk.
+
+			// Scan per-line for unquoted vars in dangerous positions.
+			for _, line := range strings.Split(step.Run, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+					continue // skip blank lines and comments
+				}
+				// Skip lines where the command is safe (echo, printf, cat).
+				if safeCmdRe.MatchString(trimmed) {
+					continue
+				}
+				// Only flag if the line is in a dangerous command position.
+				isDangerous := dangerousCmdRe.MatchString(trimmed) ||
+					strings.Contains(trimmed, "eval ") ||
+					strings.Contains(trimmed, "bash -c") ||
+					strings.Contains(trimmed, "sh -c")
+				if !isDangerous {
+					continue
+				}
+				// Find unquoted $VAR references on this line.
+				matches := unquotedVarRe.FindAllStringSubmatch(trimmed, -1)
+				for _, m := range matches {
+					if len(m) < 2 {
+						continue
+					}
+					// Emit finding — use the actual line for accurate attribution.
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{Value: trimmed})
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+					findings = append(findings, Finding{
+						RuleID:      "SHELL_SCRIPT_ISSUES",
+						RuleName:    "Shell Script Security Issues",
+						Description: "Unquoted variable usage may lead to word splitting and pathname expansion",
+						Severity:    Medium,
+						Category:    MaliciousPattern,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    step.Name,
+						Evidence:    trimmed,
+						LineNumber:  lineNumber,
+						Remediation: "Quote variables: \"$VAR\" instead of $VAR",
+					})
+					break // one finding per dangerous line is sufficient
 				}
 			}
 		}
@@ -3047,6 +3117,38 @@ func checkBotIdentity(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
+// permsImplyWrite returns true if the permissions value implies at least
+// one write-level scope. It handles the three forms GitHub Actions supports:
+//
+//   - nil (no permissions block) → true (GitHub default is write-all)
+//   - string shorthand: "write-all" → true, "read-all" → false
+//   - map[string]interface{}: any scope with value "write" → true
+//
+// An empty map (permissions: {}) is treated as explicitly restricting all
+// permissions to none/read, so it returns false.
+func permsImplyWrite(perms interface{}) bool {
+	if perms == nil {
+		return true // no block → GitHub write-all default
+	}
+	switch p := perms.(type) {
+	case string:
+		return p == "write-all"
+	case bool:
+		return p // false → no permissions; true → write-all (non-standard but defensible)
+	case map[string]interface{}:
+		if len(p) == 0 {
+			return false // permissions: {} → no permissions granted
+		}
+		for _, v := range p {
+			if v == "write" {
+				return true
+			}
+		}
+		return false
+	}
+	return true // unknown type — be conservative and flag
+}
+
 // checkExternalTrigger checks for workflows that can be externally triggered
 func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -3109,8 +3211,26 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 			})
 		}
 
-		// Check workflow_dispatch separately with lower severity for dev/test workflows
+		// workflow_dispatch: only flag when the workflow has effective write
+		// permissions. A read-only workflow_dispatch poses no meaningful risk.
 		if risk, isWorkflowDispatch := workflowDispatchTriggers[trigger]; isWorkflowDispatch {
+			// Check workflow-level permissions first, then any job-level permissions.
+			workflowHasWrite := permsImplyWrite(workflow.Workflow.Permissions)
+			if !workflowHasWrite {
+				// Check if any job explicitly grants write permissions.
+				// A nil job.Permissions means "inherit from workflow" — skip it;
+				// only an explicit job-level block can upgrade permissions.
+				for _, job := range workflow.Workflow.Jobs {
+					if job.Permissions != nil && permsImplyWrite(job.Permissions) {
+						workflowHasWrite = true
+						break
+					}
+				}
+			}
+			if !workflowHasWrite {
+				continue // suppressed — restricted permissions, no real risk
+			}
+
 			severity := Medium
 			// Reduce severity for test/dev workflows
 			if strings.Contains(workflow.Path, "test") ||
@@ -3542,6 +3662,44 @@ func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
+// isMutableRef returns true if ref is a mutable git reference that poses
+// a real supply-chain attack surface (branch names, bare non-semver tags).
+// Returns false for stable semver tags (v1, v1.2, v1.2.3) and full SHAs.
+//
+// Severity guidance for callers:
+//   - main / master → High (default branches, highest-value targets)
+//   - develop / trunk / latest + bare branch-style names → Medium
+func isMutableRef(ref string) bool {
+	// Full 40-char hex SHAs are immutable and safe — not a mutable ref.
+	if len(ref) == 40 {
+		allHex := true
+		for _, c := range ref {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				allHex = false
+				break
+			}
+		}
+		if allHex {
+			return false
+		}
+	}
+
+	// Stable semver tags: start with 'v' followed immediately by a digit.
+	// Covers @v1, @v1.2, @v1.2.3, @v10.0.1 — all stable release markers.
+	if len(ref) >= 2 && ref[0] == 'v' && ref[1] >= '0' && ref[1] <= '9' {
+		return false
+	}
+
+	// Known mutable branch names (exact match).
+	switch ref {
+	case "main", "master", "develop", "trunk", "latest":
+		return true
+	}
+
+	// Any other ref with no dots and no leading 'v' is a bare branch-style name.
+	return !strings.Contains(ref, ".")
+}
+
 // checkRefConfusion detects git reference confusion vulnerabilities
 func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -3579,9 +3737,9 @@ func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 						continue
 					}
 
-					// Check for potentially confusing refs
-					if ref == "master" || ref == "main" || ref == "develop" ||
-						strings.HasPrefix(ref, "v") && len(ref) < 6 { // Short version tags
+					// Check for potentially confusing refs — only mutable branch-style
+					// refs pose a supply-chain risk; semver tags are stable.
+					if isMutableRef(ref) {
 
 						pattern := linenum.FindPattern{
 							Key:   "uses",
