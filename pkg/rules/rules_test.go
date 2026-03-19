@@ -281,3 +281,119 @@ jobs:
 		}
 	}
 }
+
+// TestExternalTriggerPermissions verifies that EXTERNAL_TRIGGER_DEBUG only fires
+// on workflow_dispatch when the workflow has (or defaults to) write permissions.
+func TestExternalTriggerPermissions(t *testing.T) {
+	rule := findRule(t, "EXTERNAL_TRIGGER_DEBUG")
+
+	firesOn := func(yamlContent string) bool {
+		t.Helper()
+		wf := makeWorkflow(t, yamlContent)
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "EXTERNAL_TRIGGER_DEBUG" && f.Evidence == "workflow_dispatch" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Must fire — no permissions block (GitHub default = write-all)
+	noPerms := `
+name: test
+on: workflow_dispatch
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if !firesOn(noPerms) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with no permissions block")
+	}
+
+	// Must fire — explicit write scope
+	writePerms := `
+name: test
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if !firesOn(writePerms) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with contents: write")
+	}
+
+	// Must NOT fire — read-all shorthand
+	readAll := `
+name: test
+on: workflow_dispatch
+permissions: read-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if firesOn(readAll) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: read-all")
+	}
+
+	// Must NOT fire — explicit read-only scope map
+	readOnly := `
+name: test
+on: workflow_dispatch
+permissions:
+  contents: read
+  issues: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if firesOn(readOnly) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with all-read permissions")
+	}
+
+	// Must NOT fire — empty permissions map
+	emptyPerms := `
+name: test
+on: workflow_dispatch
+permissions: {}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if firesOn(emptyPerms) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: {}")
+	}
+
+	// Unrelated triggers (issue_comment) must still fire regardless of permissions
+	issueComment := `
+name: test
+on: issue_comment
+permissions: read-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	hasIssueCommentFinding := false
+	wf := makeWorkflow(t, issueComment)
+	for _, f := range rule.Check(wf) {
+		if f.RuleID == "EXTERNAL_TRIGGER_DEBUG" && f.Evidence == "issue_comment" {
+			hasIssueCommentFinding = true
+		}
+	}
+	if !hasIssueCommentFinding {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should still fire on issue_comment regardless of permissions")
+	}
+}

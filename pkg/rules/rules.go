@@ -3058,6 +3058,36 @@ func checkBotIdentity(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
+// permsImplyWrite returns true if the permissions value implies at least
+// one write-level scope. It handles the three forms GitHub Actions supports:
+//
+//   - nil (no permissions block) → true (GitHub default is write-all)
+//   - string shorthand: "write-all" → true, "read-all" → false
+//   - map[string]interface{}: any scope with value "write" → true
+//
+// An empty map (permissions: {}) is treated as explicitly restricting all
+// permissions to none/read, so it returns false.
+func permsImplyWrite(perms interface{}) bool {
+	if perms == nil {
+		return true // no block → GitHub write-all default
+	}
+	switch p := perms.(type) {
+	case string:
+		return p == "write-all"
+	case map[string]interface{}:
+		if len(p) == 0 {
+			return false // permissions: {} → no permissions granted
+		}
+		for _, v := range p {
+			if v == "write" {
+				return true
+			}
+		}
+		return false
+	}
+	return true // unknown type — be conservative and flag
+}
+
 // checkExternalTrigger checks for workflows that can be externally triggered
 func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -3120,8 +3150,26 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 			})
 		}
 
-		// Check workflow_dispatch separately with lower severity for dev/test workflows
+		// workflow_dispatch: only flag when the workflow has effective write
+		// permissions. A read-only workflow_dispatch poses no meaningful risk.
 		if risk, isWorkflowDispatch := workflowDispatchTriggers[trigger]; isWorkflowDispatch {
+			// Check workflow-level permissions first, then any job-level permissions.
+			workflowHasWrite := permsImplyWrite(workflow.Workflow.Permissions)
+			if !workflowHasWrite {
+				// Check if any job explicitly grants write permissions.
+				// A nil job.Permissions means "inherit from workflow" — skip it;
+				// only an explicit job-level block can upgrade permissions.
+				for _, job := range workflow.Workflow.Jobs {
+					if job.Permissions != nil && permsImplyWrite(job.Permissions) {
+						workflowHasWrite = true
+						break
+					}
+				}
+			}
+			if !workflowHasWrite {
+				continue // suppressed — restricted permissions, no real risk
+			}
+
 			severity := Medium
 			// Reduce severity for test/dev workflows
 			if strings.Contains(workflow.Path, "test") ||
