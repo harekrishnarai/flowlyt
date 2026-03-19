@@ -3561,7 +3561,7 @@ func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
 //   - main / master → High (default branches, highest-value targets)
 //   - develop / trunk / latest + bare branch-style names → Medium
 func isMutableRef(ref string) bool {
-	// Belt-and-suspenders: 40-char hex SHAs are already filtered upstream.
+	// Full 40-char hex SHAs are immutable and safe — not a mutable ref.
 	if len(ref) == 40 {
 		allHex := true
 		for _, c := range ref {
