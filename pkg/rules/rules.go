@@ -2255,10 +2255,21 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 
 			for _, issue := range shellIssues {
 				if issue.pattern.MatchString(step.Run) {
-					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
-						Key:   "run",
-						Value: step.Run,
-					})
+					// For multi-line run blocks the generic `run: |` fallback
+					// always resolves to the first such key in the file,
+					// misattributing findings to the wrong step.  Use the first
+					// non-empty content line instead so each step maps to its
+					// own location in the file.
+					runPattern := linenum.FindPattern{Key: "run", Value: step.Run}
+					if strings.Contains(step.Run, "\n") {
+						for _, l := range strings.Split(step.Run, "\n") {
+							if trimmed := strings.TrimSpace(l); trimmed != "" {
+								runPattern = linenum.FindPattern{Value: trimmed}
+								break
+							}
+						}
+					}
+					lineResult := lineMapper.FindLineNumber(runPattern)
 
 					lineNumber := 0
 					if lineResult != nil {
@@ -3542,6 +3553,44 @@ func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
+// isMutableRef returns true if ref is a mutable git reference that poses
+// a real supply-chain attack surface (branch names, bare non-semver tags).
+// Returns false for stable semver tags (v1, v1.2, v1.2.3) and full SHAs.
+//
+// Severity guidance for callers:
+//   - main / master → High (default branches, highest-value targets)
+//   - develop / trunk / latest + bare branch-style names → Medium
+func isMutableRef(ref string) bool {
+	// Belt-and-suspenders: 40-char hex SHAs are already filtered upstream.
+	if len(ref) == 40 {
+		allHex := true
+		for _, c := range ref {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				allHex = false
+				break
+			}
+		}
+		if allHex {
+			return false
+		}
+	}
+
+	// Stable semver tags: start with 'v' followed immediately by a digit.
+	// Covers @v1, @v1.2, @v1.2.3, @v10.0.1 — all stable release markers.
+	if len(ref) >= 2 && ref[0] == 'v' && ref[1] >= '0' && ref[1] <= '9' {
+		return false
+	}
+
+	// Known mutable branch names (exact match).
+	switch ref {
+	case "main", "master", "develop", "trunk", "latest":
+		return true
+	}
+
+	// Any other ref with no dots and no leading 'v' is a bare branch-style name.
+	return !strings.Contains(ref, ".")
+}
+
 // checkRefConfusion detects git reference confusion vulnerabilities
 func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -3579,9 +3628,9 @@ func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 						continue
 					}
 
-					// Check for potentially confusing refs
-					if ref == "master" || ref == "main" || ref == "develop" ||
-						strings.HasPrefix(ref, "v") && len(ref) < 6 { // Short version tags
+					// Check for potentially confusing refs — only mutable branch-style
+					// refs pose a supply-chain risk; semver tags are stable.
+					if isMutableRef(ref) {
 
 						pattern := linenum.FindPattern{
 							Key:   "uses",

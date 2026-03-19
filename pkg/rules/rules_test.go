@@ -237,3 +237,47 @@ func TestExfiltrationWorkflowDetection(t *testing.T) {
 		}
 	}
 }
+
+// TestRefConfusionIsMutableRef verifies that REF_CONFUSION fires on mutable
+// branch refs but is suppressed for stable semver tags.
+func TestRefConfusionIsMutableRef(t *testing.T) {
+	rule := findRule(t, "REF_CONFUSION")
+
+	// firesOn returns true if the rule produces a REF_CONFUSION finding
+	// for `uses: actions/checkout@<ref>`.
+	firesOn := func(ref string) bool {
+		t.Helper()
+		wf := makeWorkflow(t, `
+name: test
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@`+ref+`
+`)
+		findings := rule.Check(wf)
+		for _, f := range findings {
+			if f.RuleID == "REF_CONFUSION" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Must fire — mutable branch refs
+	mustFire := []string{"main", "master", "develop", "trunk", "latest", "my-feature", "hotfix-1"}
+	for _, ref := range mustFire {
+		if !firesOn(ref) {
+			t.Errorf("REF_CONFUSION should fire on @%s but did not", ref)
+		}
+	}
+
+	// Must NOT fire — stable semver tags
+	mustNotFire := []string{"v1", "v2", "v4", "v1.2", "v1.2.3", "v10.0.1"}
+	for _, ref := range mustNotFire {
+		if firesOn(ref) {
+			t.Errorf("REF_CONFUSION should NOT fire on @%s but did", ref)
+		}
+	}
+}
