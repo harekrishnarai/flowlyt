@@ -426,6 +426,47 @@ jobs:
 	if !hasIssueCommentFinding {
 		t.Error("EXTERNAL_TRIGGER_DEBUG should still fire on issue_comment regardless of permissions")
 	}
+
+	// Regression: flowlyt-scan.yml — has security-events: write but also contents: read.
+	// permsImplyWrite must return true (any write scope → write), so this MUST fire.
+	scsFeedFlowlytScan := `
+name: Flowlyt manual scan
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+`
+	if !firesOn(scsFeedFlowlytScan) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch when security-events: write is present (flowlyt-scan.yml regression)")
+	}
+
+	// Regression: daily-supply-chain-reports.yml — has contents: write and pull-requests: write.
+	// This MUST fire.
+	scsFeedDailyReports := `
+name: Daily Supply Chain Security Reports
+on:
+  schedule:
+    - cron: '30 18 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+  pull-requests: write
+jobs:
+  fetch-supply-chain-reports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+`
+	if !firesOn(scsFeedDailyReports) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch when contents: write is present (daily-supply-chain-reports.yml regression)")
+	}
 }
 
 // TestShellScriptLocalVars verifies that SHELL_SCRIPT_ISSUES does not fire
