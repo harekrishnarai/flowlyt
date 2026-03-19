@@ -2196,6 +2196,36 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
+// localAssignRe matches bare variable assignments that are developer-controlled:
+// VAR=$(...), VAR=`...`, VAR=42, VAR="...", VAR='...'
+// Compound forms (export VAR=..., readonly VAR=...) are out of scope.
+// Note: uses an interpreted string literal (not raw) because the pattern includes a backtick.
+var localAssignRe = regexp.MustCompile(
+	"(?m)^\\s*([A-Za-z_][A-Za-z0-9_]*)=(?:\\$[\\(`\"']|[0-9])")
+
+// unquotedVarRe matches bare $VAR references (not ${VAR} or ${{ expr }}).
+var unquotedVarRe = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:[^}A-Za-z0-9_]|$)`)
+
+// dangerousCmdRe matches commands where unquoted variables cause real harm.
+var dangerousCmdRe = regexp.MustCompile(
+	`^\s*(rm|cp|mv|mkdir|chmod|chown|ln|find|rsync|tar|zip|unzip|eval|curl|wget)\b`)
+
+// safeCmdRe matches commands where word splitting is harmless.
+var safeCmdRe = regexp.MustCompile(`^\s*(echo|printf|cat)\b`)
+
+// extractLocalVars returns the set of variable names that are locally assigned
+// within runBlock via safe, developer-controlled patterns.
+func extractLocalVars(runBlock string) map[string]bool {
+	locals := make(map[string]bool)
+	for _, line := range strings.Split(runBlock, "\n") {
+		m := localAssignRe.FindStringSubmatch(line)
+		if len(m) >= 2 {
+			locals[m[1]] = true
+		}
+	}
+	return locals
+}
+
 // checkShellScriptIssues performs basic shellcheck-like analysis on run commands
 func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -2209,12 +2239,6 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 		remediation string
 		severity    Severity
 	}{
-		{
-			pattern:     regexp.MustCompile(`\$[A-Za-z_][A-Za-z0-9_]*[^}]`), // Unquoted variables (simplified)
-			description: "Unquoted variable usage may lead to word splitting and pathname expansion",
-			remediation: "Quote variables: \"$VAR\" instead of $VAR",
-			severity:    Medium,
-		},
 		{
 			pattern:     regexp.MustCompile(`rm\s+-rf\s+/`), // Dangerous rm commands
 			description: "Dangerous rm -rf command targeting root directory",
@@ -2289,6 +2313,59 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 						LineNumber:  lineNumber,
 						Remediation: issue.remediation,
 					})
+				}
+			}
+
+			// --- Dedicated unquoted-variable check (Layer 1 + Layer 2) ---
+			// Layer 1: build the set of locally-assigned variables.
+			// (Reserved for future use: locally-assigned vars are still flagged in
+			// dangerous positions; the set is built here for extensibility.)
+			_ = extractLocalVars(step.Run)
+
+			// Layer 2: scan per-line for unquoted vars in dangerous positions.
+			for _, line := range strings.Split(step.Run, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+					continue // skip blank lines and comments
+				}
+				// Skip lines where the command is safe (echo, printf, cat).
+				if safeCmdRe.MatchString(trimmed) {
+					continue
+				}
+				// Only flag if the line is in a dangerous command position.
+				isDangerous := dangerousCmdRe.MatchString(trimmed) ||
+					strings.Contains(trimmed, "eval ") ||
+					strings.Contains(trimmed, "bash -c") ||
+					strings.Contains(trimmed, "sh -c")
+				if !isDangerous {
+					continue
+				}
+				// Find unquoted $VAR references on this line.
+				matches := unquotedVarRe.FindAllStringSubmatch(trimmed, -1)
+				for _, m := range matches {
+					if len(m) < 2 {
+						continue
+					}
+					// Emit finding — use the actual line for accurate attribution.
+					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{Value: trimmed})
+					lineNumber := 0
+					if lineResult != nil {
+						lineNumber = lineResult.LineNumber
+					}
+					findings = append(findings, Finding{
+						RuleID:      "SHELL_SCRIPT_ISSUES",
+						RuleName:    "Shell Script Security Issues",
+						Description: "Unquoted variable usage may lead to word splitting and pathname expansion",
+						Severity:    Medium,
+						Category:    MaliciousPattern,
+						FilePath:    workflow.Path,
+						JobName:     jobName,
+						StepName:    step.Name,
+						Evidence:    trimmed,
+						LineNumber:  lineNumber,
+						Remediation: "Quote variables: \"$VAR\" instead of $VAR",
+					})
+					break // one finding per dangerous line is sufficient
 				}
 			}
 		}

@@ -427,3 +427,72 @@ jobs:
 		t.Error("EXTERNAL_TRIGGER_DEBUG should still fire on issue_comment regardless of permissions")
 	}
 }
+
+// TestShellScriptLocalVars verifies that SHELL_SCRIPT_ISSUES does not fire
+// on locally-assigned variables in safe positions, and does fire on variables
+// in dangerous positions.
+func TestShellScriptLocalVars(t *testing.T) {
+	rule := findRule(t, "SHELL_SCRIPT_ISSUES")
+
+	hasUnquotedVarFinding := func(runBlock string) bool {
+		t.Helper()
+		wf := makeWorkflow(t, `
+name: test
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+`+indentBlock(runBlock, "          "))
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "SHELL_SCRIPT_ISSUES" &&
+				strings.Contains(f.Description, "Unquoted variable") {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Must NOT fire — locally assigned variable used in echo (Layer 1 + Layer 2)
+	if hasUnquotedVarFinding("TODAY=$(date +%F)\necho $TODAY") {
+		t.Error("should NOT flag $TODAY assigned via $(...) and used in echo")
+	}
+
+	// Must NOT fire — numeric literal used in echo
+	if hasUnquotedVarFinding("COUNT=42\necho $COUNT") {
+		t.Error("should NOT flag $COUNT assigned as numeric literal and used in echo")
+	}
+
+	// Must NOT fire — quoted string assignment used in echo
+	if hasUnquotedVarFinding("VERSION=\"1.0.0\"\necho $VERSION") {
+		t.Error("should NOT flag $VERSION assigned as quoted string and used in echo")
+	}
+
+	// Must fire — locally assigned variable used in rm (dangerous position)
+	if !hasUnquotedVarFinding("DIR=$(mktemp -d)\nrm -rf $DIR") {
+		t.Error("should flag $DIR used in rm even if locally assigned")
+	}
+
+	// Must fire — unassigned variable used in cp
+	if !hasUnquotedVarFinding("cp $SRC $DEST") {
+		t.Error("should flag unassigned $SRC/$DEST in cp")
+	}
+
+	// Must fire — unassigned variable used in curl
+	if !hasUnquotedVarFinding("curl $URL") {
+		t.Error("should flag unassigned $URL in curl")
+	}
+}
+
+// indentBlock prefixes every non-empty line of s with indent.
+func indentBlock(s, indent string) string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, indent+l)
+		}
+	}
+	return strings.Join(out, "\n")
+}
