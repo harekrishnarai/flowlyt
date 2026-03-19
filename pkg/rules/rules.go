@@ -2196,14 +2196,9 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
-// localAssignRe matches bare variable assignments that are developer-controlled:
-// VAR=$(...), VAR=`...`, VAR=42, VAR="...", VAR='...'
-// Compound forms (export VAR=..., readonly VAR=...) are out of scope.
-// Note: uses an interpreted string literal (not raw) because the pattern includes a backtick.
-var localAssignRe = regexp.MustCompile(
-	"(?m)^\\s*([A-Za-z_][A-Za-z0-9_]*)=(?:\\$\\(|`|\"|'|[0-9])")
-
 // unquotedVarRe matches bare $VAR references (not ${VAR} or ${{ expr }}).
+// Limitation: this regex does not detect double-quote wrapping, so `rm "$VAR"` will
+// still fire. The remediation recommends ${VAR} (brace form) which is correctly excluded.
 var unquotedVarRe = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:[^}A-Za-z0-9_]|$)`)
 
 // dangerousCmdRe matches commands where unquoted variables cause real harm.
@@ -2212,19 +2207,6 @@ var dangerousCmdRe = regexp.MustCompile(
 
 // safeCmdRe matches commands where word splitting is harmless.
 var safeCmdRe = regexp.MustCompile(`^\s*(echo|printf|cat)\b`)
-
-// extractLocalVars returns the set of variable names that are locally assigned
-// within runBlock via safe, developer-controlled patterns.
-func extractLocalVars(runBlock string) map[string]bool {
-	locals := make(map[string]bool)
-	for _, line := range strings.Split(runBlock, "\n") {
-		m := localAssignRe.FindStringSubmatch(line)
-		if len(m) >= 2 {
-			locals[m[1]] = true
-		}
-	}
-	return locals
-}
 
 // checkShellScriptIssues performs basic shellcheck-like analysis on run commands
 func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
