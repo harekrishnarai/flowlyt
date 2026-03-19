@@ -2208,7 +2208,7 @@ var unquotedVarRe = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:[^}A-Za-z0-
 
 // dangerousCmdRe matches commands where unquoted variables cause real harm.
 var dangerousCmdRe = regexp.MustCompile(
-	`^\s*(rm|cp|mv|mkdir|chmod|chown|ln|find|rsync|tar|zip|unzip|eval|curl|wget)\b`)
+	`^\s*(?:sudo\s+)?(rm|cp|mv|mkdir|chmod|chown|ln|find|rsync|tar|zip|unzip|eval|curl|wget)\b`)
 
 // safeCmdRe matches commands where word splitting is harmless.
 var safeCmdRe = regexp.MustCompile(`^\s*(echo|printf|cat)\b`)
@@ -2316,13 +2316,13 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 				}
 			}
 
-			// --- Dedicated unquoted-variable check (Layer 1 + Layer 2) ---
-			// Layer 1: build the set of locally-assigned variables.
-			// (Reserved for future use: locally-assigned vars are still flagged in
-			// dangerous positions; the set is built here for extensibility.)
-			_ = extractLocalVars(step.Run)
+			// --- Dedicated unquoted-variable check ---
+			// Suppression is position-based: safe commands (echo, printf, cat) are
+			// never flagged; dangerous commands (rm, cp, curl, etc.) are always flagged
+			// regardless of whether the variable was locally assigned. A locally-assigned
+			// variable in a dangerous position (e.g. rm -rf $DIR) is still a real risk.
 
-			// Layer 2: scan per-line for unquoted vars in dangerous positions.
+			// Scan per-line for unquoted vars in dangerous positions.
 			for _, line := range strings.Split(step.Run, "\n") {
 				trimmed := strings.TrimSpace(line)
 				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
