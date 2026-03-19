@@ -375,6 +375,36 @@ jobs:
 		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: {}")
 	}
 
+	// Must NOT fire — permissions: none shorthand
+	nonePerms := `
+name: test
+on: workflow_dispatch
+permissions: none
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if firesOn(nonePerms) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: none")
+	}
+
+	// Must fire — permissions: write-all string shorthand
+	writeAll := `
+name: test
+on: workflow_dispatch
+permissions: write-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hello
+`
+	if !firesOn(writeAll) {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with permissions: write-all")
+	}
+
 	// Unrelated triggers (issue_comment) must still fire regardless of permissions
 	issueComment := `
 name: test

@@ -3074,6 +3074,8 @@ func permsImplyWrite(perms interface{}) bool {
 	switch p := perms.(type) {
 	case string:
 		return p == "write-all"
+	case bool:
+		return p // false → no permissions; true → write-all (non-standard but defensible)
 	case map[string]interface{}:
 		if len(p) == 0 {
 			return false // permissions: {} → no permissions granted
