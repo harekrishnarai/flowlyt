@@ -2201,7 +2201,7 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 // Compound forms (export VAR=..., readonly VAR=...) are out of scope.
 // Note: uses an interpreted string literal (not raw) because the pattern includes a backtick.
 var localAssignRe = regexp.MustCompile(
-	"(?m)^\\s*([A-Za-z_][A-Za-z0-9_]*)=(?:\\$[\\(`\"']|[0-9])")
+	"(?m)^\\s*([A-Za-z_][A-Za-z0-9_]*)=(?:\\$\\(|`|\"|'|[0-9])")
 
 // unquotedVarRe matches bare $VAR references (not ${VAR} or ${{ expr }}).
 var unquotedVarRe = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:[^}A-Za-z0-9_]|$)`)
