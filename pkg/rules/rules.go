@@ -1874,41 +1874,17 @@ func checkBroadPermissions(workflow parser.WorkflowFile) []Finding {
 		}
 	}
 
-	// Check for missing permissions: block at job level
+	// Check for missing permissions: block at job level.
+	// When the workflow itself has no permissions block, the workflow-level finding already
+	// captures the issue — avoid emitting one finding per job (N-times amplification).
 	for jobName, job := range workflow.Workflow.Jobs {
 		// Check if job has permissions set
 		hasJobPermissions := job.Permissions != nil
 
-		// If job doesn't have permissions, it inherits from workflow or defaults to write-all
-		if !hasJobPermissions {
-			// Only flag if workflow also doesn't have permissions (double default)
-			if !hasWorkflowPermissions {
-				pattern := linenum.FindPattern{
-					Key:   "jobs",
-					Value: jobName,
-				}
-				lineResult := lineMapper.FindLineNumber(pattern)
-				lineNumber := 0
-				if lineResult != nil {
-					lineNumber = lineResult.LineNumber
-				}
-
-				findings = append(findings, Finding{
-					RuleID:      "BROAD_PERMISSIONS",
-					RuleName:    "Missing Permissions Block",
-					Description: fmt.Sprintf("Job '%s' does not set permissions, defaulting to write-all which grants excessive access", jobName),
-					Severity:    High,
-					Category:    Misconfiguration,
-					FilePath:    workflow.Path,
-					JobName:     jobName,
-					StepName:    "",
-					Evidence:    fmt.Sprintf("job '%s' missing permissions: block", jobName),
-					LineNumber:  lineNumber,
-					Remediation: "Add 'permissions: {}' or specific minimal permissions to the job to restrict access.",
-				})
-			}
-		} else {
-			// Job has permissions, check if it's overly broad
+		// When the workflow has no permissions block, the workflow-level finding covers it.
+		// Only check jobs that explicitly set permissions, to catch write-all overrides.
+		if hasJobPermissions {
+			// Job has permissions — check if it's overly broad
 			if permStr, ok := job.Permissions.(string); ok && permStr == "write-all" {
 				pattern := linenum.FindPattern{
 					Key:   "permissions",
@@ -3002,8 +2978,9 @@ func checkRunnerLabels(workflow parser.WorkflowFile) []Finding {
 				}
 			}
 
-			// Check for unknown runner labels (not GitHub-hosted and not self-hosted format)
-			if !githubHostedRunners[runsOnStr] && !strings.Contains(runsOnStr, "self-hosted") {
+			// Check for unknown runner labels (not GitHub-hosted and not self-hosted format).
+			// Skip dynamic matrix expressions like ${{ matrix.os }} — these are valid at runtime.
+			if !githubHostedRunners[runsOnStr] && !strings.Contains(runsOnStr, "self-hosted") && !strings.Contains(runsOnStr, "${{") {
 				lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 					Key:   "runs-on",
 					Value: runsOnStr,
@@ -3889,6 +3866,10 @@ func checkStaleActionRefs(workflow parser.WorkflowFile) []Finding {
 	// Create GitHub client for API calls
 	ghClient := github.NewClient()
 
+	// Deduplicate: same action@version at the same line can appear across multiple job contexts
+	// (e.g. matrix jobs sharing one step definition) — emit at most one finding per unique key.
+	seen := make(map[string]bool)
+
 	for jobName, job := range workflow.Workflow.Jobs {
 		for stepIdx, step := range job.Steps {
 			if step.Uses == "" {
@@ -3945,6 +3926,13 @@ func checkStaleActionRefs(workflow parser.WorkflowFile) []Finding {
 				if lineResult != nil {
 					lineNumber = lineResult.LineNumber
 				}
+
+				// Deduplicate: matrix jobs share step definitions at the same line.
+				dedupKey := fmt.Sprintf("%s:%d", step.Uses, lineNumber)
+				if seen[dedupKey] {
+					continue
+				}
+				seen[dedupKey] = true
 
 				findings = append(findings, Finding{
 					RuleID:      "STALE_ACTION_REFS",
@@ -4484,6 +4472,9 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
 
+	// Deduplicate checkout findings: same uses: line appears in every matrix-expanded job context.
+	seenCheckout := make(map[string]bool)
+
 	for jobName, job := range workflow.Workflow.Jobs {
 		for stepIdx, step := range job.Steps {
 			stepName := step.Name
@@ -4515,6 +4506,15 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 					if lineResult != nil {
 						lineNumber = lineResult.LineNumber
 					}
+
+					// Deduplicate: same checkout step fires once per matrix job variant.
+					// Safe to `continue` here: checkout and upload/download-artifact checks are
+					// mutually exclusive on step.Uses, so this cannot suppress artifact findings.
+					checkoutKey := fmt.Sprintf("%s:%d", step.Uses, lineNumber)
+					if seenCheckout[checkoutKey] {
+						continue
+					}
+					seenCheckout[checkoutKey] = true
 
 					severity := High
 					description := "actions/checkout does not set persist-credentials: false, which may allow credentials to persist in artifacts"
@@ -4646,12 +4646,16 @@ func hasUnsoundLogic(condition string) bool {
 }
 
 func hasVulnerableContains(condition string) bool {
-	// Check for contains() patterns that can be bypassed
+	// Check for contains() patterns that can be bypassed in security-sensitive contexts.
+	//
+	// github.ref is intentionally excluded: ref-based conditions (e.g. contains(github.ref, 'l10n'))
+	// are almost always branch/environment filters, not security gates. Flagging them produces
+	// high false-positive rates. Note: pull_request_target workflows where an attacker controls the
+	// source branch ref are covered by the dedicated INSECURE_PULL_REQUEST_TARGET rule instead.
 	vulnerablePatterns := []string{
-		`contains\(.*github\.event.*,\s*'[^']*'\)`,      // Contains with event data and fixed string
-		`contains\(.*github\.actor.*,\s*'[^']*'\)`,      // Contains with actor and fixed string
-		`contains\(.*github\.ref.*,\s*'[^']*'\)`,        // Contains with ref and fixed string
-		`contains\(.*steps\..*\.outputs.*,\s*'[^']*'\)`, // Contains with step outputs
+		`contains\(.*github\.event.*,\s*'[^']*'\)`,      // Contains with event data (user-controlled)
+		`contains\(.*github\.actor.*,\s*'[^']*'\)`,      // Contains with actor (spoofable username)
+		`contains\(.*steps\..*\.outputs.*,\s*'[^']*'\)`, // Contains with step outputs (taint source)
 	}
 
 	for _, pattern := range vulnerablePatterns {

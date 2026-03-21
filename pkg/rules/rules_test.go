@@ -527,6 +527,222 @@ jobs:
 }
 
 // indentBlock prefixes every non-empty line of s with indent.
+// TestBroadPermissionsNoise verifies that a workflow with no permissions block and N jobs
+// produces exactly ONE BROAD_PERMISSIONS finding (workflow-level), not N+1.
+func TestBroadPermissionsNoise(t *testing.T) {
+	rule := findRule(t, "BROAD_PERMISSIONS")
+
+	countFindings := func(yaml string) int {
+		wf := makeWorkflow(t, yaml)
+		n := 0
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "BROAD_PERMISSIONS" {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Three jobs, no permissions block anywhere — must produce exactly one finding.
+	threeJobs := `
+name: ci
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo test
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo lint
+`
+	if n := countFindings(threeJobs); n != 1 {
+		t.Errorf("three-job workflow with no permissions block: want 1 BROAD_PERMISSIONS finding, got %d", n)
+	}
+
+	// Workflow sets read-all, but one job overrides with write-all — only the job-level write-all fires.
+	writeAllJob := `
+name: ci
+on: push
+permissions: read-all
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - run: echo deploy
+`
+	if n := countFindings(writeAllJob); n != 1 {
+		t.Errorf("job with explicit write-all: want 1 BROAD_PERMISSIONS finding, got %d", n)
+	}
+
+	// Workflow sets read-all, jobs have no explicit permissions — they inherit read-all, no finding.
+	readAllWorkflow := `
+name: ci
+on: push
+permissions: read-all
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo build
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo test
+`
+	if n := countFindings(readAllWorkflow); n != 0 {
+		t.Errorf("workflow with read-all and no per-job overrides: want 0 BROAD_PERMISSIONS findings, got %d", n)
+	}
+}
+
+// TestRunnerLabelMatrixExpression verifies that dynamic matrix runner expressions
+// (e.g. runs-on: ${{ matrix.os }}) do not produce RUNNER_LABEL_VALIDATION findings.
+func TestRunnerLabelMatrixExpression(t *testing.T) {
+	rule := findRule(t, "RUNNER_LABEL_VALIDATION")
+
+	hasRunnerFinding := func(yaml string) bool {
+		wf := makeWorkflow(t, yaml)
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "RUNNER_LABEL_VALIDATION" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Matrix expression — must NOT fire.
+	matrixRunner := `
+name: ci
+on: push
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: echo hi
+`
+	if hasRunnerFinding(matrixRunner) {
+		t.Error("runs-on: ${{ matrix.os }} should NOT produce RUNNER_LABEL_VALIDATION finding")
+	}
+
+	// Another expression form — must NOT fire.
+	vectorRunner := `
+name: ci
+on: push
+jobs:
+  build:
+    runs-on: ${{ matrix.vector.pool }}
+    steps:
+      - run: echo hi
+`
+	if hasRunnerFinding(vectorRunner) {
+		t.Error("runs-on: ${{ matrix.vector.pool }} should NOT produce RUNNER_LABEL_VALIDATION finding")
+	}
+
+	// Known GitHub-hosted runner — must NOT fire.
+	knownRunner := `
+name: ci
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`
+	if hasRunnerFinding(knownRunner) {
+		t.Error("runs-on: ubuntu-latest should NOT produce RUNNER_LABEL_VALIDATION finding")
+	}
+}
+
+// TestUnsoundContainsGithubRef verifies that contains() on github.ref does not fire
+// (branch filters are not security gates), while actor-based contains() still fires.
+func TestUnsoundContainsGithubRef(t *testing.T) {
+	rule := findRule(t, "UNSOUND_CONTAINS")
+
+	hasFinding := func(jobIf string) bool {
+		yaml := `
+name: ci
+on: push
+jobs:
+  work:
+    if: ` + jobIf + `
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo hi
+`
+		wf := makeWorkflow(t, yaml)
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "UNSOUND_CONTAINS" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Branch filter — must NOT fire.
+	if hasFinding("contains(github.ref, 'l10n')") {
+		t.Error("contains(github.ref, 'l10n') is a branch filter and should NOT produce UNSOUND_CONTAINS finding")
+	}
+
+	// Another ref filter — must NOT fire.
+	if hasFinding("contains(github.head_ref, 'feature')") {
+		t.Error("contains(github.head_ref, 'feature') is a PR branch filter and should NOT produce UNSOUND_CONTAINS finding")
+	}
+
+	// Actor check — must fire (spoofable).
+	if !hasFinding("contains(github.actor, 'bot')") {
+		t.Error("contains(github.actor, 'bot') SHOULD produce UNSOUND_CONTAINS finding")
+	}
+}
+
+// TestArtipackedCheckoutDedup verifies that multiple jobs sharing the same checkout
+// action produce exactly one ARTIPACKED_VULNERABILITY finding, not one per job.
+func TestArtipackedCheckoutDedup(t *testing.T) {
+	rule := findRule(t, "ARTIPACKED_VULNERABILITY")
+
+	countCheckoutFindings := func(yaml string) int {
+		wf := makeWorkflow(t, yaml)
+		n := 0
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "ARTIPACKED_VULNERABILITY" &&
+				strings.Contains(f.Description, "persist-credentials") {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Two jobs, both using the same checkout action without persist-credentials: false.
+	// FindLineNumber returns the first occurrence, so both jobs resolve to the same
+	// line number and should be collapsed to a single finding.
+	twoJobWorkflow := `
+name: ci
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo build
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo test
+`
+	if n := countCheckoutFindings(twoJobWorkflow); n != 1 {
+		t.Errorf("two jobs with same checkout@v4: want 1 ARTIPACKED checkout finding, got %d", n)
+	}
+}
+
 func indentBlock(s, indent string) string {
 	lines := strings.Split(s, "\n")
 	var out []string
