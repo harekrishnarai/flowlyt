@@ -743,6 +743,72 @@ jobs:
 	}
 }
 
+// TestCacheWriteInPRDedup verifies that two jobs sharing the same cache action
+// produce exactly one CACHE_WRITE_IN_PR_WORKFLOW finding, not one per job.
+func TestCacheWriteInPRDedup(t *testing.T) {
+	rule := findRule(t, "CACHE_WRITE_IN_PR_WORKFLOW")
+
+	countFindings := func(yaml string) int {
+		wf := makeWorkflow(t, yaml)
+		n := 0
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "CACHE_WRITE_IN_PR_WORKFLOW" {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Two jobs both using the same actions/cache@v3 step.
+	// FindLineNumber returns the first occurrence of "uses: actions/cache@v3",
+	// so both jobs resolve to the same line → dedup collapses to 1 finding.
+	twoJobs := `
+name: ci
+on:
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm
+`
+	if n := countFindings(twoJobs); n != 1 {
+		t.Errorf("two jobs with same cache@v3 step: want 1 finding, got %d", n)
+	}
+
+	// Two distinct cache actions at different YAML positions → 2 findings (invariant).
+	twoDistinct := `
+name: ci
+on:
+  pull_request:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo
+`
+	if n := countFindings(twoDistinct); n != 2 {
+		t.Errorf("two distinct cache steps: want 2 findings, got %d", n)
+	}
+}
+
 func indentBlock(s, indent string) string {
 	lines := strings.Split(s, "\n")
 	var out []string
