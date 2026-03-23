@@ -850,6 +850,42 @@ jobs:
 	}
 }
 
+// TestDangerousWriteOperationDedup verifies that two matrix jobs sharing the same run step
+// produce exactly one DANGEROUS_WRITE_OPERATION finding, not one per job.
+func TestDangerousWriteOperationDedup(t *testing.T) {
+	rule := findRule(t, "DANGEROUS_WRITE_OPERATION")
+
+	countFindings := func(yaml string) int {
+		wf := makeWorkflow(t, yaml)
+		n := 0
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "DANGEROUS_WRITE_OPERATION" {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Two jobs with identical run steps. FindLineNumber returns the same line for
+	// both jobs, so the dedup key is identical → collapsed to 1 finding.
+	twoJobs := `
+name: ci
+on: push
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ github.event.inputs.version }}" >> $GITHUB_ENV
+  macos:
+    runs-on: macos-latest
+    steps:
+      - run: echo "${{ github.event.inputs.version }}" >> $GITHUB_ENV
+`
+	if n := countFindings(twoJobs); n != 1 {
+		t.Errorf("two jobs with same run step: want 1 finding, got %d", n)
+	}
+}
+
 func indentBlock(s, indent string) string {
 	lines := strings.Split(s, "\n")
 	var out []string

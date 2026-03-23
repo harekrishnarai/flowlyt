@@ -1956,6 +1956,7 @@ func CheckAllRules(workflow parser.WorkflowFile) []Finding {
 // checkDangerousWriteOperations checks for dangerous write operations on GitHub environment variables
 func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
+	seen := make(map[string]bool)
 
 	lineMapper := linenum.NewLineMapper(workflow.Content)
 
@@ -1977,7 +1978,7 @@ func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
-			for _, pattern := range dangerousPatterns {
+			for i, pattern := range dangerousPatterns {
 				if pattern.MatchString(step.Run) {
 					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 						Key:   "run",
@@ -1988,6 +1989,12 @@ func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
 					if lineResult != nil {
 						lineNumber = lineResult.LineNumber
 					}
+
+					dedupKey := fmt.Sprintf("%s:%d:%d", workflow.Path, lineNumber, i)
+					if seen[dedupKey] {
+						continue
+					}
+					seen[dedupKey] = true
 
 					findings = append(findings, Finding{
 						RuleID:      "DANGEROUS_WRITE_OPERATION",
