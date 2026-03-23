@@ -807,6 +807,47 @@ jobs:
 	if n := countFindings(twoDistinct); n != 2 {
 		t.Errorf("two distinct cache steps: want 2 findings, got %d", n)
 	}
+
+	// Four jobs: two using cache@v3 (dedup → 1) and two using cache@v4 (dedup → 1) → 2 total.
+	// This verifies that the step.Uses component of the dedup key is load-bearing:
+	// dropping it would incorrectly collapse cache@v3 and cache@v4 to a single finding.
+	twoActionsMultiJobs := `
+name: ci
+on:
+  pull_request:
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm
+  lint-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo
+  lint-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo
+          key: ${{ runner.os }}-cargo
+`
+	if n := countFindings(twoActionsMultiJobs); n != 2 {
+		t.Errorf("two actions each in two jobs: want 2 findings (one per unique action), got %d", n)
+	}
 }
 
 func indentBlock(s, indent string) string {
