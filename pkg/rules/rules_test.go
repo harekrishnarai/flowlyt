@@ -884,6 +884,24 @@ jobs:
 	if n := countFindings(twoJobs); n != 1 {
 		t.Errorf("two jobs with same run step: want 1 finding, got %d", n)
 	}
+
+	// One job, one step matching two distinct dangerous patterns (GITHUB_ENV + GITHUB_OUTPUT).
+	// Each pattern has a unique index in dangerousPatterns, so the dedup key differs →
+	// 2 findings must be preserved (validates the patternIndex component of the key).
+	twoPatterns := `
+name: ci
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+`
+	if n := countFindings(twoPatterns); n != 2 {
+		t.Errorf("one step matching two patterns: want 2 findings, got %d", n)
+	}
 }
 
 func indentBlock(s, indent string) string {
