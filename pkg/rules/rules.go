@@ -2190,6 +2190,8 @@ var dangerousCmdRe = regexp.MustCompile(
 // fileOpCmdRe matches file-operation commands where double-quoting a $VAR provides
 // actual safety (prevents word splitting/glob expansion). Does NOT include exec or
 // network commands (eval, curl, wget, bash -c) where quoting is insufficient.
+// find is intentionally excluded: its -exec/-delete sub-commands mean a single
+// quoted path argument does not fully contain the risk.
 var fileOpCmdRe = regexp.MustCompile(
 	`^\s*(?:sudo\s+)?(rm|cp|mv|mkdir|chmod|chown|ln|rsync|tar|zip|unzip)\b`)
 
@@ -2321,6 +2323,8 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 					start := pair[0] // byte offset of '$' in trimmed
 					// If this is a file-op command and '$' is immediately preceded by '"',
 					// the variable is properly quoted — word splitting cannot occur.
+					// Known limitation: variables preceded by literal text inside double
+					// quotes (e.g. "prefix$VAR") are not suppressed by this heuristic.
 					if isFileOp && start > 0 && trimmed[start-1] == '"' {
 						continue
 					}
