@@ -2198,6 +2198,11 @@ var fileOpCmdRe = regexp.MustCompile(
 // safeCmdRe matches commands where word splitting is harmless.
 var safeCmdRe = regexp.MustCompile(`^\s*(echo|printf|cat)\b`)
 
+// knownBotRe matches known official GitHub service bot identities used in
+// git config user.name/email commands. Findings for these are downgraded to LOW.
+var knownBotRe = regexp.MustCompile(
+	`user\.(name|email)\s+["']?(github-actions(?:\[bot\])?|dependabot\[bot\])["']?`)
+
 // checkShellScriptIssues performs basic shellcheck-like analysis on run commands
 func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
@@ -3884,8 +3889,6 @@ func checkImpostorCommit(workflow parser.WorkflowFile) []Finding {
 						// Known official GitHub service bots are legitimate automation.
 						// Still emit the finding but at LOW so it can be triaged separately.
 						runLower := strings.ToLower(step.Run)
-						knownBotRe := regexp.MustCompile(
-							`user\.(name|email)\s+["']?(github-actions(?:\[bot\])?|dependabot\[bot\])["']?`)
 						if knownBotRe.MatchString(runLower) {
 							severity = Low
 						}
