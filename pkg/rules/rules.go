@@ -2771,6 +2771,10 @@ func checkMatrixInjection(workflow parser.WorkflowFile) []Finding {
 		if job.Strategy != nil {
 			// Check if matrix strategy is defined
 			if matrix, exists := job.Strategy["matrix"]; exists && matrix != nil {
+				matrixStr := fmt.Sprintf("%v", matrix)
+				isUserControlledMatrix := strings.Contains(matrixStr, "fromJSON(inputs.") ||
+					strings.Contains(matrixStr, "fromJSON(github.event.")
+
 				// Check for matrix values used in shell commands
 				for _, step := range job.Steps {
 					if step.Run == "" {
@@ -2825,29 +2829,37 @@ func checkMatrixInjection(workflow parser.WorkflowFile) []Finding {
 							// Check for unquoted matrix variables (simpler check)
 							unquotedPattern := regexp.MustCompile(`[^"']\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}[^"']`)
 							if unquotedPattern.MatchString(step.Run) {
-								lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
-									Key:   "run",
-									Value: step.Run,
-								})
+								// Arithmetic expansion $((...)) cannot execute arbitrary code via string
+								// injection when matrix values are statically defined.
+								arithmeticRe := regexp.MustCompile(
+									`\$\(\([^)]*\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}`)
+								if arithmeticRe.MatchString(step.Run) && !isUserControlledMatrix {
+									// Safe: arithmetic context with static matrix — skip finding.
+								} else {
+									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+										Key:   "run",
+										Value: step.Run,
+									})
 
-								lineNumber := 0
-								if lineResult != nil {
-									lineNumber = lineResult.LineNumber
+									lineNumber := 0
+									if lineResult != nil {
+										lineNumber = lineResult.LineNumber
+									}
+
+									findings = append(findings, Finding{
+										RuleID:      "MATRIX_INJECTION",
+										RuleName:    "Matrix Strategy Injection",
+										Description: "Unquoted matrix variable usage may lead to command injection",
+										Severity:    Medium,
+										Category:    InjectionAttack,
+										FilePath:    workflow.Path,
+										JobName:     jobName,
+										StepName:    step.Name,
+										Evidence:    fmt.Sprintf("Unquoted matrix variable '%s' in: %s", matrixVar, strings.TrimSpace(step.Run)),
+										LineNumber:  lineNumber,
+										Remediation: "Always quote matrix variables in shell commands: \"${{ matrix.var }}\"",
+									})
 								}
-
-								findings = append(findings, Finding{
-									RuleID:      "MATRIX_INJECTION",
-									RuleName:    "Matrix Strategy Injection",
-									Description: "Unquoted matrix variable usage may lead to command injection",
-									Severity:    Medium,
-									Category:    InjectionAttack,
-									FilePath:    workflow.Path,
-									JobName:     jobName,
-									StepName:    step.Name,
-									Evidence:    fmt.Sprintf("Unquoted matrix variable '%s' in: %s", matrixVar, strings.TrimSpace(step.Run)),
-									LineNumber:  lineNumber,
-									Remediation: "Always quote matrix variables in shell commands: \"${{ matrix.var }}\"",
-								})
 							}
 						}
 					}

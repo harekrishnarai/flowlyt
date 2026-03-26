@@ -904,6 +904,58 @@ jobs:
 	}
 }
 
+// TestMatrixInjectionArithmetic verifies that a matrix variable used only inside
+// arithmetic expansion $((...)) with a static matrix does not produce a finding,
+// while bare interpolations still fire.
+func TestMatrixInjectionArithmetic(t *testing.T) {
+	rule := findRule(t, "MATRIX_INJECTION")
+
+	countFindings := func(yaml string) int {
+		wf := makeWorkflow(t, yaml)
+		n := 0
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "MATRIX_INJECTION" {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Static matrix + arithmetic context — safe, must NOT fire.
+	staticArithmetic := `
+name: ci
+on: push
+jobs:
+  build:
+    strategy:
+      matrix:
+        nr: [1, 2, 3]
+    runs-on: ubuntu-latest
+    steps:
+      - run: result=$((${{ matrix.nr }} + 1))
+`
+	if n := countFindings(staticArithmetic); n != 0 {
+		t.Errorf("static matrix in arithmetic context: want 0 findings, got %d", n)
+	}
+
+	// Bare interpolation in curl — always fires regardless of arithmetic context.
+	bareDangerous := `
+name: ci
+on: push
+jobs:
+  build:
+    strategy:
+      matrix:
+        url: [https://example.com]
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl ${{ matrix.url }}
+`
+	if n := countFindings(bareDangerous); n == 0 {
+		t.Error("bare matrix var in curl: want >= 1 finding, got 0")
+	}
+}
+
 func indentBlock(s, indent string) string {
 	lines := strings.Split(s, "\n")
 	var out []string
