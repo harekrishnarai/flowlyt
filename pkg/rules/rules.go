@@ -2180,13 +2180,18 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 }
 
 // unquotedVarRe matches bare $VAR references (not ${VAR} or ${{ expr }}).
-// Limitation: this regex does not detect double-quote wrapping, so `rm "$VAR"` will
-// still fire. The remediation recommends ${VAR} (brace form) which is correctly excluded.
+// Double-quote wrapping is checked separately for file-op commands via fileOpCmdRe.
 var unquotedVarRe = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:[^}A-Za-z0-9_]|$)`)
 
 // dangerousCmdRe matches commands where unquoted variables cause real harm.
 var dangerousCmdRe = regexp.MustCompile(
 	`^\s*(?:sudo\s+)?(rm|cp|mv|mkdir|chmod|chown|ln|find|rsync|tar|zip|unzip|eval|curl|wget)\b`)
+
+// fileOpCmdRe matches file-operation commands where double-quoting a $VAR provides
+// actual safety (prevents word splitting/glob expansion). Does NOT include exec or
+// network commands (eval, curl, wget, bash -c) where quoting is insufficient.
+var fileOpCmdRe = regexp.MustCompile(
+	`^\s*(?:sudo\s+)?(rm|cp|mv|mkdir|chmod|chown|ln|rsync|tar|zip|unzip)\b`)
 
 // safeCmdRe matches commands where word splitting is harmless.
 var safeCmdRe = regexp.MustCompile(`^\s*(echo|printf|cat)\b`)
@@ -2305,10 +2310,18 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 				if !isDangerous {
 					continue
 				}
-				// Find unquoted $VAR references on this line.
-				matches := unquotedVarRe.FindAllStringSubmatch(trimmed, -1)
-				for _, m := range matches {
-					if len(m) < 2 {
+				// Find unquoted $VAR references on this line using byte-position form
+				// so we can check whether each '$' is immediately preceded by '"'.
+				isFileOp := fileOpCmdRe.MatchString(trimmed)
+				idxPairs := unquotedVarRe.FindAllStringSubmatchIndex(trimmed, -1)
+				for _, pair := range idxPairs {
+					if len(pair) < 2 {
+						continue
+					}
+					start := pair[0] // byte offset of '$' in trimmed
+					// If this is a file-op command and '$' is immediately preceded by '"',
+					// the variable is properly quoted — word splitting cannot occur.
+					if isFileOp && start > 0 && trimmed[start-1] == '"' {
 						continue
 					}
 					// Emit finding — use the actual line for accurate attribution.

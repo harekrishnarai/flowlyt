@@ -526,6 +526,59 @@ jobs:
 	}
 }
 
+// TestShellScriptQuotedVarFileOp verifies that double-quoted variables in file-op
+// commands do not produce unquoted-var findings, while unquoted file-op vars and
+// quoted exec/network commands still fire.
+func TestShellScriptQuotedVarFileOp(t *testing.T) {
+	rule := findRule(t, "SHELL_SCRIPT_ISSUES")
+
+	hasUnquotedVarFinding := func(runBlock string) bool {
+		t.Helper()
+		wf := makeWorkflow(t, `
+name: test
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+`+indentBlock(runBlock, "          "))
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "SHELL_SCRIPT_ISSUES" &&
+				strings.Contains(f.Description, "Unquoted variable") {
+				return true
+			}
+		}
+		return false
+	}
+
+	// File-op with quoted var — safe, must NOT fire.
+	if hasUnquotedVarFinding(`rm "$DIR"`) {
+		t.Error(`rm "$DIR" should NOT produce unquoted-var finding`)
+	}
+	if hasUnquotedVarFinding(`cp "$SRC" "$DEST"`) {
+		t.Error(`cp "$SRC" "$DEST" should NOT produce unquoted-var finding`)
+	}
+	if hasUnquotedVarFinding(`mv "$OLD" "$NEW"`) {
+		t.Error(`mv "$OLD" "$NEW" should NOT produce unquoted-var finding`)
+	}
+
+	// File-op with unquoted var — still fires.
+	if !hasUnquotedVarFinding(`rm $DIR`) {
+		t.Error(`rm $DIR SHOULD produce unquoted-var finding`)
+	}
+
+	// Execution command with quoted var — still fires (eval is never safe).
+	if !hasUnquotedVarFinding(`eval "$CMD"`) {
+		t.Error(`eval "$CMD" SHOULD produce unquoted-var finding`)
+	}
+
+	// Network command with quoted var — still fires.
+	if !hasUnquotedVarFinding(`curl "$URL"`) {
+		t.Error(`curl "$URL" SHOULD produce unquoted-var finding`)
+	}
+}
+
 // indentBlock prefixes every non-empty line of s with indent.
 // TestBroadPermissionsNoise verifies that a workflow with no permissions block and N jobs
 // produces exactly ONE BROAD_PERMISSIONS finding (workflow-level), not N+1.
