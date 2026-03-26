@@ -18,6 +18,7 @@ package rules
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
@@ -180,6 +181,7 @@ func checkBroadRestoreKeys(workflow parser.WorkflowFile) []Finding {
 // (actions/cache/restore) are excluded as they cannot write to the cache.
 func checkCacheWriteInPR(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
+	seen := make(map[string]bool)
 
 	if !hasPRTrigger(workflow) {
 		return findings
@@ -217,6 +219,12 @@ func checkCacheWriteInPR(workflow parser.WorkflowFile) []Finding {
 			if lineResult != nil {
 				lineNumber = lineResult.LineNumber
 			}
+
+			dedupKey := step.Uses + ":" + strconv.Itoa(lineNumber)
+			if seen[dedupKey] {
+				continue
+			}
+			seen[dedupKey] = true
 
 			findings = append(findings, Finding{
 				RuleID:      "CACHE_WRITE_IN_PR_WORKFLOW",

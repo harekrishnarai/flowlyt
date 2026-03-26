@@ -1874,41 +1874,17 @@ func checkBroadPermissions(workflow parser.WorkflowFile) []Finding {
 		}
 	}
 
-	// Check for missing permissions: block at job level
+	// Check for missing permissions: block at job level.
+	// When the workflow itself has no permissions block, the workflow-level finding already
+	// captures the issue — avoid emitting one finding per job (N-times amplification).
 	for jobName, job := range workflow.Workflow.Jobs {
 		// Check if job has permissions set
 		hasJobPermissions := job.Permissions != nil
 
-		// If job doesn't have permissions, it inherits from workflow or defaults to write-all
-		if !hasJobPermissions {
-			// Only flag if workflow also doesn't have permissions (double default)
-			if !hasWorkflowPermissions {
-				pattern := linenum.FindPattern{
-					Key:   "jobs",
-					Value: jobName,
-				}
-				lineResult := lineMapper.FindLineNumber(pattern)
-				lineNumber := 0
-				if lineResult != nil {
-					lineNumber = lineResult.LineNumber
-				}
-
-				findings = append(findings, Finding{
-					RuleID:      "BROAD_PERMISSIONS",
-					RuleName:    "Missing Permissions Block",
-					Description: fmt.Sprintf("Job '%s' does not set permissions, defaulting to write-all which grants excessive access", jobName),
-					Severity:    High,
-					Category:    Misconfiguration,
-					FilePath:    workflow.Path,
-					JobName:     jobName,
-					StepName:    "",
-					Evidence:    fmt.Sprintf("job '%s' missing permissions: block", jobName),
-					LineNumber:  lineNumber,
-					Remediation: "Add 'permissions: {}' or specific minimal permissions to the job to restrict access.",
-				})
-			}
-		} else {
-			// Job has permissions, check if it's overly broad
+		// When the workflow has no permissions block, the workflow-level finding covers it.
+		// Only check jobs that explicitly set permissions, to catch write-all overrides.
+		if hasJobPermissions {
+			// Job has permissions — check if it's overly broad
 			if permStr, ok := job.Permissions.(string); ok && permStr == "write-all" {
 				pattern := linenum.FindPattern{
 					Key:   "permissions",
@@ -1980,6 +1956,7 @@ func CheckAllRules(workflow parser.WorkflowFile) []Finding {
 // checkDangerousWriteOperations checks for dangerous write operations on GitHub environment variables
 func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
+	seen := make(map[string]bool)
 
 	lineMapper := linenum.NewLineMapper(workflow.Content)
 
@@ -2001,7 +1978,7 @@ func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
-			for _, pattern := range dangerousPatterns {
+			for i, pattern := range dangerousPatterns {
 				if pattern.MatchString(step.Run) {
 					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 						Key:   "run",
@@ -2012,6 +1989,12 @@ func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
 					if lineResult != nil {
 						lineNumber = lineResult.LineNumber
 					}
+
+					dedupKey := fmt.Sprintf("%s:%d:%d", workflow.Path, lineNumber, i)
+					if seen[dedupKey] {
+						continue
+					}
+					seen[dedupKey] = true
 
 					findings = append(findings, Finding{
 						RuleID:      "DANGEROUS_WRITE_OPERATION",
@@ -2197,16 +2180,28 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 }
 
 // unquotedVarRe matches bare $VAR references (not ${VAR} or ${{ expr }}).
-// Limitation: this regex does not detect double-quote wrapping, so `rm "$VAR"` will
-// still fire. The remediation recommends ${VAR} (brace form) which is correctly excluded.
+// Double-quote wrapping is checked separately for file-op commands via fileOpCmdRe.
 var unquotedVarRe = regexp.MustCompile(`\$([A-Za-z_][A-Za-z0-9_]*)(?:[^}A-Za-z0-9_]|$)`)
 
 // dangerousCmdRe matches commands where unquoted variables cause real harm.
 var dangerousCmdRe = regexp.MustCompile(
 	`^\s*(?:sudo\s+)?(rm|cp|mv|mkdir|chmod|chown|ln|find|rsync|tar|zip|unzip|eval|curl|wget)\b`)
 
+// fileOpCmdRe matches file-operation commands where double-quoting a $VAR provides
+// actual safety (prevents word splitting/glob expansion). Does NOT include exec or
+// network commands (eval, curl, wget, bash -c) where quoting is insufficient.
+// find is intentionally excluded: its -exec/-delete sub-commands mean a single
+// quoted path argument does not fully contain the risk.
+var fileOpCmdRe = regexp.MustCompile(
+	`^\s*(?:sudo\s+)?(rm|cp|mv|mkdir|chmod|chown|ln|rsync|tar|zip|unzip)\b`)
+
 // safeCmdRe matches commands where word splitting is harmless.
 var safeCmdRe = regexp.MustCompile(`^\s*(echo|printf|cat)\b`)
+
+// knownBotRe matches known official GitHub service bot identities used in
+// git config user.name/email commands. Findings for these are downgraded to LOW.
+var knownBotRe = regexp.MustCompile(
+	`user\.(name|email)\s+["']?(github-actions(?:\[bot\])?|dependabot\[bot\])["']?`)
 
 // checkShellScriptIssues performs basic shellcheck-like analysis on run commands
 func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
@@ -2322,10 +2317,20 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 				if !isDangerous {
 					continue
 				}
-				// Find unquoted $VAR references on this line.
-				matches := unquotedVarRe.FindAllStringSubmatch(trimmed, -1)
-				for _, m := range matches {
-					if len(m) < 2 {
+				// Find unquoted $VAR references on this line using byte-position form
+				// so we can check whether each '$' is immediately preceded by '"'.
+				isFileOp := fileOpCmdRe.MatchString(trimmed)
+				idxPairs := unquotedVarRe.FindAllStringSubmatchIndex(trimmed, -1)
+				for _, pair := range idxPairs {
+					if len(pair) < 2 {
+						continue
+					}
+					start := pair[0] // byte offset of '$' in trimmed
+					// If this is a file-op command and '$' is immediately preceded by '"',
+					// the variable is properly quoted — word splitting cannot occur.
+					// Known limitation: variables preceded by literal text inside double
+					// quotes (e.g. "prefix$VAR") are not suppressed by this heuristic.
+					if isFileOp && start > 0 && trimmed[start-1] == '"' {
 						continue
 					}
 					// Emit finding — use the actual line for accurate attribution.
@@ -2788,6 +2793,10 @@ func checkMatrixInjection(workflow parser.WorkflowFile) []Finding {
 		if job.Strategy != nil {
 			// Check if matrix strategy is defined
 			if matrix, exists := job.Strategy["matrix"]; exists && matrix != nil {
+				matrixStr := fmt.Sprintf("%v", matrix)
+				isUserControlledMatrix := strings.Contains(matrixStr, "fromJSON(inputs.") ||
+					strings.Contains(matrixStr, "fromJSON(github.event.")
+
 				// Check for matrix values used in shell commands
 				for _, step := range job.Steps {
 					if step.Run == "" {
@@ -2842,29 +2851,46 @@ func checkMatrixInjection(workflow parser.WorkflowFile) []Finding {
 							// Check for unquoted matrix variables (simpler check)
 							unquotedPattern := regexp.MustCompile(`[^"']\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}[^"']`)
 							if unquotedPattern.MatchString(step.Run) {
-								lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
-									Key:   "run",
-									Value: step.Run,
-								})
-
-								lineNumber := 0
-								if lineResult != nil {
-									lineNumber = lineResult.LineNumber
+								// Arithmetic expansion $((...)) cannot execute arbitrary code via
+								// string injection when matrix values are statically defined.
+								// Per-line string check avoids regex fragility with inner-paren
+								// expressions like $(( (a+b) * ${{ matrix.nr }} )).
+								// Note: suppression is per-step; if the same var appears in both
+								// arithmetic and non-arithmetic contexts on separate lines of the
+								// same run block, the finding is suppressed for both occurrences.
+								matrixExpr := "${{ matrix." + matrixVar
+								isArithmetic := false
+								for _, runLine := range strings.Split(step.Run, "\n") {
+									if strings.Contains(runLine, "$((") && strings.Contains(runLine, matrixExpr) {
+										isArithmetic = true
+										break
+									}
 								}
+								if !isArithmetic || isUserControlledMatrix {
+									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+										Key:   "run",
+										Value: step.Run,
+									})
 
-								findings = append(findings, Finding{
-									RuleID:      "MATRIX_INJECTION",
-									RuleName:    "Matrix Strategy Injection",
-									Description: "Unquoted matrix variable usage may lead to command injection",
-									Severity:    Medium,
-									Category:    InjectionAttack,
-									FilePath:    workflow.Path,
-									JobName:     jobName,
-									StepName:    step.Name,
-									Evidence:    fmt.Sprintf("Unquoted matrix variable '%s' in: %s", matrixVar, strings.TrimSpace(step.Run)),
-									LineNumber:  lineNumber,
-									Remediation: "Always quote matrix variables in shell commands: \"${{ matrix.var }}\"",
-								})
+									lineNumber := 0
+									if lineResult != nil {
+										lineNumber = lineResult.LineNumber
+									}
+
+									findings = append(findings, Finding{
+										RuleID:      "MATRIX_INJECTION",
+										RuleName:    "Matrix Strategy Injection",
+										Description: "Unquoted matrix variable usage may lead to command injection",
+										Severity:    Medium,
+										Category:    InjectionAttack,
+										FilePath:    workflow.Path,
+										JobName:     jobName,
+										StepName:    step.Name,
+										Evidence:    fmt.Sprintf("Unquoted matrix variable '%s' in: %s", matrixVar, strings.TrimSpace(step.Run)),
+										LineNumber:  lineNumber,
+										Remediation: "Always quote matrix variables in shell commands: \"${{ matrix.var }}\"",
+									})
+								}
 							}
 						}
 					}
@@ -3002,8 +3028,9 @@ func checkRunnerLabels(workflow parser.WorkflowFile) []Finding {
 				}
 			}
 
-			// Check for unknown runner labels (not GitHub-hosted and not self-hosted format)
-			if !githubHostedRunners[runsOnStr] && !strings.Contains(runsOnStr, "self-hosted") {
+			// Check for unknown runner labels (not GitHub-hosted and not self-hosted format).
+			// Skip dynamic matrix expressions like ${{ matrix.os }} — these are valid at runtime.
+			if !githubHostedRunners[runsOnStr] && !strings.Contains(runsOnStr, "self-hosted") && !strings.Contains(runsOnStr, "${{") {
 				lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 					Key:   "runs-on",
 					Value: runsOnStr,
@@ -3858,6 +3885,13 @@ func checkImpostorCommit(workflow parser.WorkflowFile) []Finding {
 					severity := High
 					if strings.Contains(step.Run, "${") {
 						severity = Critical // Variable-based identity is more dangerous
+					} else {
+						// Known official GitHub service bots are legitimate automation.
+						// Still emit the finding but at LOW so it can be triaged separately.
+						runLower := strings.ToLower(step.Run)
+						if knownBotRe.MatchString(runLower) {
+							severity = Low
+						}
 					}
 
 					findings = append(findings, Finding{
@@ -3888,6 +3922,10 @@ func checkStaleActionRefs(workflow parser.WorkflowFile) []Finding {
 
 	// Create GitHub client for API calls
 	ghClient := github.NewClient()
+
+	// Deduplicate: same action@version at the same line can appear across multiple job contexts
+	// (e.g. matrix jobs sharing one step definition) — emit at most one finding per unique key.
+	seen := make(map[string]bool)
 
 	for jobName, job := range workflow.Workflow.Jobs {
 		for stepIdx, step := range job.Steps {
@@ -3945,6 +3983,13 @@ func checkStaleActionRefs(workflow parser.WorkflowFile) []Finding {
 				if lineResult != nil {
 					lineNumber = lineResult.LineNumber
 				}
+
+				// Deduplicate: matrix jobs share step definitions at the same line.
+				dedupKey := fmt.Sprintf("%s:%d", step.Uses, lineNumber)
+				if seen[dedupKey] {
+					continue
+				}
+				seen[dedupKey] = true
 
 				findings = append(findings, Finding{
 					RuleID:      "STALE_ACTION_REFS",
@@ -4484,6 +4529,9 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
 
+	// Deduplicate checkout findings: same uses: line appears in every matrix-expanded job context.
+	seenCheckout := make(map[string]bool)
+
 	for jobName, job := range workflow.Workflow.Jobs {
 		for stepIdx, step := range job.Steps {
 			stepName := step.Name
@@ -4515,6 +4563,15 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 					if lineResult != nil {
 						lineNumber = lineResult.LineNumber
 					}
+
+					// Deduplicate: same checkout step fires once per matrix job variant.
+					// Safe to `continue` here: checkout and upload/download-artifact checks are
+					// mutually exclusive on step.Uses, so this cannot suppress artifact findings.
+					checkoutKey := fmt.Sprintf("%s:%d", step.Uses, lineNumber)
+					if seenCheckout[checkoutKey] {
+						continue
+					}
+					seenCheckout[checkoutKey] = true
 
 					severity := High
 					description := "actions/checkout does not set persist-credentials: false, which may allow credentials to persist in artifacts"
@@ -4646,12 +4703,16 @@ func hasUnsoundLogic(condition string) bool {
 }
 
 func hasVulnerableContains(condition string) bool {
-	// Check for contains() patterns that can be bypassed
+	// Check for contains() patterns that can be bypassed in security-sensitive contexts.
+	//
+	// github.ref is intentionally excluded: ref-based conditions (e.g. contains(github.ref, 'l10n'))
+	// are almost always branch/environment filters, not security gates. Flagging them produces
+	// high false-positive rates. Note: pull_request_target workflows where an attacker controls the
+	// source branch ref are covered by the dedicated INSECURE_PULL_REQUEST_TARGET rule instead.
 	vulnerablePatterns := []string{
-		`contains\(.*github\.event.*,\s*'[^']*'\)`,      // Contains with event data and fixed string
-		`contains\(.*github\.actor.*,\s*'[^']*'\)`,      // Contains with actor and fixed string
-		`contains\(.*github\.ref.*,\s*'[^']*'\)`,        // Contains with ref and fixed string
-		`contains\(.*steps\..*\.outputs.*,\s*'[^']*'\)`, // Contains with step outputs
+		`contains\(.*github\.event.*,\s*'[^']*'\)`,      // Contains with event data (user-controlled)
+		`contains\(.*github\.actor.*,\s*'[^']*'\)`,      // Contains with actor (spoofable username)
+		`contains\(.*steps\..*\.outputs.*,\s*'[^']*'\)`, // Contains with step outputs (taint source)
 	}
 
 	for _, pattern := range vulnerablePatterns {
