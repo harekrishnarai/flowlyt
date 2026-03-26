@@ -954,6 +954,28 @@ jobs:
 	if n := countFindings(bareDangerous); n == 0 {
 		t.Error("bare matrix var in curl: want >= 1 finding, got 0")
 	}
+
+	// User-controlled matrix (fromJSON(inputs.*)) in arithmetic context — still fires.
+	// The fromJSON guard overrides the arithmetic exemption because matrix values are
+	// attacker-controlled and arithmetic injection remains a real risk.
+	dynamicArithmetic := `
+name: ci
+on:
+  workflow_dispatch:
+    inputs:
+      matrix:
+        type: string
+jobs:
+  build:
+    strategy:
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: result=$((${{ matrix.nr }} + 1))
+`
+	if n := countFindings(dynamicArithmetic); n == 0 {
+		t.Error("user-controlled matrix in arithmetic context: want >= 1 finding, got 0")
+	}
 }
 
 func indentBlock(s, indent string) string {

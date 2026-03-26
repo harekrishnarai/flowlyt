@@ -2829,13 +2829,22 @@ func checkMatrixInjection(workflow parser.WorkflowFile) []Finding {
 							// Check for unquoted matrix variables (simpler check)
 							unquotedPattern := regexp.MustCompile(`[^"']\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}[^"']`)
 							if unquotedPattern.MatchString(step.Run) {
-								// Arithmetic expansion $((...)) cannot execute arbitrary code via string
-								// injection when matrix values are statically defined.
-								arithmeticRe := regexp.MustCompile(
-									`\$\(\([^)]*\$\{\{\s*matrix\.` + regexp.QuoteMeta(matrixVar) + `\s*\}\}`)
-								if arithmeticRe.MatchString(step.Run) && !isUserControlledMatrix {
-									// Safe: arithmetic context with static matrix — skip finding.
-								} else {
+								// Arithmetic expansion $((...)) cannot execute arbitrary code via
+								// string injection when matrix values are statically defined.
+								// Per-line string check avoids regex fragility with inner-paren
+								// expressions like $(( (a+b) * ${{ matrix.nr }} )).
+								// Note: suppression is per-step; if the same var appears in both
+								// arithmetic and non-arithmetic contexts on separate lines of the
+								// same run block, the finding is suppressed for both occurrences.
+								matrixExpr := "${{ matrix." + matrixVar
+								isArithmetic := false
+								for _, runLine := range strings.Split(step.Run, "\n") {
+									if strings.Contains(runLine, "$((") && strings.Contains(runLine, matrixExpr) {
+										isArithmetic = true
+										break
+									}
+								}
+								if !isArithmetic || isUserControlledMatrix {
 									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 										Key:   "run",
 										Value: step.Run,
