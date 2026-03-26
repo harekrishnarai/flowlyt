@@ -3880,6 +3880,15 @@ func checkImpostorCommit(workflow parser.WorkflowFile) []Finding {
 					severity := High
 					if strings.Contains(step.Run, "${") {
 						severity = Critical // Variable-based identity is more dangerous
+					} else {
+						// Known official GitHub service bots are legitimate automation.
+						// Still emit the finding but at LOW so it can be triaged separately.
+						runLower := strings.ToLower(step.Run)
+						knownBotRe := regexp.MustCompile(
+							`user\.(name|email)\s+["']?(github-actions(?:\[bot\])?|dependabot\[bot\])["']?`)
+						if knownBotRe.MatchString(runLower) {
+							severity = Low
+						}
 					}
 
 					findings = append(findings, Finding{

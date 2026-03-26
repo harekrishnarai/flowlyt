@@ -1031,6 +1031,47 @@ jobs:
 	}
 }
 
+// TestImpostorCommitBotSeverity verifies that known GitHub service bots are downgraded
+// to LOW severity, while variable-based identities retain CRITICAL severity.
+func TestImpostorCommitBotSeverity(t *testing.T) {
+	rule := findRule(t, "IMPOSTOR_COMMIT")
+
+	severityFor := func(runBlock string) rules.Severity {
+		t.Helper()
+		wf := makeWorkflow(t, `
+name: test
+on: push
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+`+indentBlock(runBlock, "          "))
+		for _, f := range rule.Check(wf) {
+			if f.RuleID == "IMPOSTOR_COMMIT" {
+				return f.Severity
+			}
+		}
+		return ""
+	}
+
+	// Known bots → LOW (finding still appears, just deprioritised).
+	if s := severityFor(`git config user.name "github-actions[bot]"`); s != rules.Low {
+		t.Errorf(`github-actions[bot]: want LOW, got %q`, s)
+	}
+	if s := severityFor(`git config user.name "github-actions"`); s != rules.Low {
+		t.Errorf(`github-actions (no [bot]): want LOW, got %q`, s)
+	}
+	if s := severityFor(`git config user.name "dependabot[bot]"`); s != rules.Low {
+		t.Errorf(`dependabot[bot]: want LOW, got %q`, s)
+	}
+
+	// Variable-based identity → CRITICAL (unchanged).
+	if s := severityFor(`git config user.name "${{ github.actor }}"`); s != rules.Critical {
+		t.Errorf(`variable identity: want CRITICAL, got %q`, s)
+	}
+}
+
 func indentBlock(s, indent string) string {
 	lines := strings.Split(s, "\n")
 	var out []string
