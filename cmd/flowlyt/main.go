@@ -716,16 +716,20 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 	var resultFindings []rules.Finding
 	for _, enhanced := range enhancedFindings {
 		finding := enhanced.Finding
-		finding.AIVerified = true
 
 		if enhanced.AISkipped {
 			finding.AISkipped = true
 			finding.AISkipReason = enhanced.AISkipReason
+			// AIVerified stays false — AI was not run
 			resultFindings = append(resultFindings, finding)
 			continue
-		} else if enhanced.AIError != "" {
+		}
+
+		if enhanced.AIError != "" {
 			finding.AIError = enhanced.AIError
+			finding.AIVerified = true // AI ran but errored
 		} else if enhanced.AIVerification != nil {
+			finding.AIVerified = true // AI ran and returned a result
 			finding.AILikelyFalsePositive = &enhanced.AIVerification.IsLikelyFalsePositive
 			finding.AIConfidence = enhanced.AIVerification.Confidence
 			finding.AIReasoning = enhanced.AIVerification.Reasoning

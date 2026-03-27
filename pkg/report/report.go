@@ -362,7 +362,19 @@ func (g *Generator) generateCLIReport() error {
 							infoStyle.Printf("  %-12s ", "AI Suggests:")
 							fmt.Printf("%s severity (current: %s)\n", finding.AISuggestedSeverity, string(finding.Severity))
 						}
+
+						if finding.AIRemediation != "" {
+							infoStyle.Printf("  %-12s ", "AI Fix:")
+							fmt.Println(finding.AIRemediation)
+						}
 					}
+				}
+
+				if finding.AISkipped {
+					fmt.Println()
+					aiStyle := color.New(color.FgMagenta, color.Bold)
+					aiStyle.Printf("  %-12s ", "\U0001f916 AI Analysis:")
+					fmt.Printf("Skipped (%s)\n", finding.AISkipReason)
 				}
 
 				if g.Verbose {
