@@ -405,6 +405,60 @@ func TestShannonEntropy(t *testing.T) {
 	}
 }
 
+func TestComposeBatchPrompt(t *testing.T) {
+	findings := []rules.Finding{
+		{RuleID: "TEST_RULE_1", Evidence: "evidence one", Category: rules.PrivilegeEscalation},
+		{RuleID: "TEST_RULE_2", Evidence: "evidence two", Category: rules.PrivilegeEscalation},
+	}
+
+	system, user := composeBatchPrompt("escalation", findings)
+
+	if system == "" {
+		t.Error("expected non-empty system prompt")
+	}
+	if !strings.Contains(user, `"index": 0`) {
+		t.Error("user prompt must contain index 0")
+	}
+	if !strings.Contains(user, `"index": 1`) {
+		t.Error("user prompt must contain index 1")
+	}
+	if !strings.Contains(user, "evidence one") {
+		t.Error("user prompt must contain first finding evidence")
+	}
+	// Verify the system prompt is class-specific, not generic
+	if !strings.Contains(strings.ToLower(system), "escalation") {
+		t.Error("escalation class system prompt must mention escalation")
+	}
+}
+
+func TestCategoryToClass(t *testing.T) {
+	tests := []struct {
+		category  rules.Category
+		wantClass string
+	}{
+		{rules.PrivilegeEscalation, "escalation"},
+		{rules.AccessControl, "escalation"},
+		{rules.InjectionAttack, "injection"},
+		{rules.SecretExposure, "secrets_context"},
+		{rules.SecretsExposure, "secrets_context"},
+		{rules.SupplyChain, "supply_chain_trust"},
+		{rules.Misconfiguration, "generic"},
+		{rules.ShellObfuscation, "generic"},
+		{rules.MaliciousPattern, "generic"},
+		{rules.PolicyViolation, "generic"},
+		{rules.DataExposure, "generic"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.category), func(t *testing.T) {
+			got := categoryToClass(tt.category)
+			if got != tt.wantClass {
+				t.Errorf("categoryToClass(%q) = %q, want %q", tt.category, got, tt.wantClass)
+			}
+		})
+	}
+}
+
 func TestGetSummary(t *testing.T) {
 	enhancedFindings := []EnhancedFinding{
 		{
