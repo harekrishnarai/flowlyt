@@ -718,13 +718,18 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 		finding := enhanced.Finding
 		finding.AIVerified = true
 
-		if enhanced.AIError != "" {
+		if enhanced.AISkipped {
+			fmt.Printf("  AI:         Skipped (%s)\n", enhanced.AISkipReason)
+		} else if enhanced.AIError != "" {
 			finding.AIError = enhanced.AIError
 		} else if enhanced.AIVerification != nil {
 			finding.AILikelyFalsePositive = &enhanced.AIVerification.IsLikelyFalsePositive
 			finding.AIConfidence = enhanced.AIVerification.Confidence
 			finding.AIReasoning = enhanced.AIVerification.Reasoning
 			finding.AISuggestedSeverity = enhanced.AIVerification.Severity
+			if enhanced.AIVerification.Remediation != "" {
+				fmt.Printf("  Fix:        %s\n", enhanced.AIVerification.Remediation)
+			}
 		}
 
 		resultFindings = append(resultFindings, finding)
@@ -732,15 +737,11 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 
 	// Print AI analysis summary
 	summary := ai.GetSummary(enhancedFindings)
-	fmt.Printf("✅ AI Analysis Complete:\n")
-	fmt.Printf("  - Successfully analyzed: %d/%d findings\n", summary.SuccessfullyAnalyzed, summary.TotalAnalyzed)
-	if summary.AnalysisErrors > 0 {
-		fmt.Printf("  - Analysis errors: %d\n", summary.AnalysisErrors)
+	modelName := aiConfig.Model
+	if modelName == "" {
+		modelName = string(ai.GetDefaultModel(aiConfig.Provider))
 	}
-	fmt.Printf("  - Likely false positives: %d\n", summary.LikelyFalsePositives)
-	fmt.Printf("  - Likely true positives: %d\n", summary.LikelyTruePositives)
-	fmt.Printf("  - High confidence: %d, Medium: %d, Low: %d\n",
-		summary.HighConfidence, summary.MediumConfidence, summary.LowConfidence)
+	ai.PrintAISummary(terminal.Default(), summary, client.GetProvider(), modelName)
 
 	return resultFindings, nil
 }
