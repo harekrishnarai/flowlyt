@@ -231,6 +231,13 @@ func (g *Generator) addSARIFResult(run *sarif.Run, finding rules.Finding) {
 			result.Properties["ai.error"] = finding.AIError
 		}
 	}
+	if finding.AISkipped {
+		result.Properties["ai.skipped"] = true
+		result.Properties["ai.skip_reason"] = finding.AISkipReason
+	}
+	if finding.AIRemediation != "" {
+		result.Properties["ai.remediation"] = finding.AIRemediation
+	}
 }
 
 // addSARIFArtifacts adds artifact entries for analyzed files

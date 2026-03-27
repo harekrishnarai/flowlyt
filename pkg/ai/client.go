@@ -40,12 +40,24 @@ type VerificationResult struct {
 	Confidence            float64 `json:"confidence"` // 0.0 to 1.0
 	Reasoning             string  `json:"reasoning"`
 	Severity              string  `json:"suggested_severity,omitempty"`
+	Remediation           string  `json:"remediation,omitempty"`
+}
+
+// BatchVerificationResult is one result from a VerifyBatch call.
+// Index echoes the input finding's position for correct attribution.
+type BatchVerificationResult struct {
+	Index  int                 `json:"index"`
+	Result *VerificationResult `json:"result,omitempty"`
+	Error  string              `json:"error,omitempty"`
 }
 
 // Client interface for AI providers
 type Client interface {
 	// VerifyFinding analyzes a security finding and determines if it's likely a false positive
 	VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error)
+
+	// VerifyBatch analyses up to 5 findings of the same class in one API call.
+	VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error)
 
 	// GetProvider returns the provider name
 	GetProvider() Provider
@@ -112,14 +124,13 @@ func GetDefaultModel(provider Provider) string {
 	case ProviderOpenAI:
 		return "gpt-4o-mini"
 	case ProviderGemini:
-		return "gemini-2.5-flash"
+		return "gemini-3.1-flash"
 	case ProviderClaude:
-		// Default to Claude Haiku latest stable for better quality/cost
-		return "claude-3-5-haiku-20241022"
+		return "claude-sonnet-4-6"
 	case ProviderGrok:
-		return "grok-beta"
+		return "grok-3"
 	case ProviderPerplexity:
-		return "sonar"
+		return "sonar-pro"
 	default:
 		return ""
 	}
@@ -130,33 +141,33 @@ func GetAvailableModels(provider Provider) []string {
 	switch provider {
 	case ProviderOpenAI:
 		return []string{
-			"gpt-4o-mini",   // Cost-effective default
-			"gpt-4o",        // Latest flagship model
-			"gpt-4-turbo",   // Fast and capable
-			"gpt-4",         // Original GPT-4
-			"gpt-3.5-turbo", // Legacy but fast
+			"gpt-4o-mini", // Cost-effective default
+			"gpt-4o",      // Flagship model
+			"o3-mini",     // Reasoning model, cost-effective
+			"o3",          // Full reasoning model
 		}
 	case ProviderGemini:
 		return []string{
-			"gemini-2.5-flash", // Cost-effective default
-			"gemini-1.5-pro",   // Higher quality
-			"gemini-1.0-pro",   // Legacy version
+			"gemini-3.1-flash", // Cost-effective default
+			"gemini-3.1-pro",   // Higher quality
+			"gemini-2.5-flash", // Previous generation
 		}
 	case ProviderClaude:
 		return []string{
-			"claude-3-5-haiku-20241022", // Default (quality + speed)
-			"claude-3-sonnet-20240229",  // Balanced performance
-			"claude-3-opus-20240229",    // Highest quality
+			"claude-sonnet-4-6",          // Default — balanced quality/cost
+			"claude-opus-4-6",            // Highest quality
+			"claude-haiku-4-5-20251001",  // Fastest, most cost-effective
 		}
 	case ProviderGrok:
 		return []string{
-			"grok-beta", // Current default
+			"grok-3",      // Current default
+			"grok-3-mini", // Cost-effective
 		}
 	case ProviderPerplexity:
 		return []string{
-			"llama-3.1-sonar-small-128k-online", // Cost-effective default
-			"llama-3.1-sonar-large-128k-online", // Higher quality
-			"llama-3.1-sonar-huge-128k-online",  // Highest quality
+			"sonar-pro",      // Cost-effective default
+			"sonar-reasoning", // Reasoning model
+			"sonar",          // Legacy
 		}
 	default:
 		return []string{}

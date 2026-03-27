@@ -223,3 +223,51 @@ func (c *GrokClient) Close() error {
 	// No cleanup needed for HTTP client
 	return nil
 }
+
+// VerifyBatch analyzes a batch of findings of the same class using Grok.
+func (c *GrokClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
+	if len(findings) == 0 {
+		return nil, fmt.Errorf("VerifyBatch called with empty findings slice")
+	}
+	system, user := composeBatchPrompt(class, findings)
+
+	req := grokRequest{
+		Model:       c.model,
+		MaxTokens:   c.maxTokens * len(findings),
+		Temperature: c.temperature,
+		Messages: []grokMessage{
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
+		},
+	}
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal batch request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/chat/completions", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create batch request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("batch request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var response grokResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode batch response: %w", err)
+	}
+	if response.Error != nil {
+		return nil, fmt.Errorf("Grok API error: %s", response.Error.Message)
+	}
+	if len(response.Choices) == 0 {
+		return nil, fmt.Errorf("empty batch response from Grok")
+	}
+	return parseBatchResponse(response.Choices[0].Message.Content, len(findings))
+}
