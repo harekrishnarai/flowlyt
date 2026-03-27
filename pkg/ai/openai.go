@@ -246,3 +246,8 @@ func (c *OpenAIClient) Close() error {
 	// No cleanup needed for HTTP client
 	return nil
 }
+
+// VerifyBatch is a stub; real implementation added in Task 4.
+func (c *OpenAIClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
+	return nil, fmt.Errorf("VerifyBatch not yet implemented")
+}

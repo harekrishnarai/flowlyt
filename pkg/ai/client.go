@@ -40,12 +40,24 @@ type VerificationResult struct {
 	Confidence            float64 `json:"confidence"` // 0.0 to 1.0
 	Reasoning             string  `json:"reasoning"`
 	Severity              string  `json:"suggested_severity,omitempty"`
+	Remediation           string  `json:"remediation,omitempty"`
+}
+
+// BatchVerificationResult is one result from a VerifyBatch call.
+// Index echoes the input finding's position for correct attribution.
+type BatchVerificationResult struct {
+	Index  int                 `json:"index"`
+	Result *VerificationResult `json:"result,omitempty"`
+	Error  string              `json:"error,omitempty"`
 }
 
 // Client interface for AI providers
 type Client interface {
 	// VerifyFinding analyzes a security finding and determines if it's likely a false positive
 	VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error)
+
+	// VerifyBatch analyses up to 5 findings of the same class in one API call.
+	VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error)
 
 	// GetProvider returns the provider name
 	GetProvider() Provider

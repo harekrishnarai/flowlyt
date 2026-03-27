@@ -35,6 +35,8 @@ type EnhancedFinding struct {
 	rules.Finding
 	AIVerification *VerificationResult `json:"ai_verification,omitempty"`
 	AIError        string              `json:"ai_error,omitempty"`
+	AISkipped      bool                `json:"ai_skipped,omitempty"`
+	AISkipReason   string              `json:"ai_skip_reason,omitempty"`
 }
 
 // Analyzer handles AI-powered analysis of findings
@@ -460,6 +462,7 @@ type AISummary struct {
 	HighConfidence       int `json:"high_confidence"`   // >= 0.8
 	MediumConfidence     int `json:"medium_confidence"` // >= 0.6 && < 0.8
 	LowConfidence        int `json:"low_confidence"`    // < 0.6
+	SkippedByFilter      int `json:"skipped_by_filter"`
 }
 
 // Close cleans up the analyzer

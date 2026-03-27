@@ -48,6 +48,19 @@ func (m *MockClient) Close() error {
 	return m.closeError
 }
 
+func (m *MockClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
+	results := make([]BatchVerificationResult, len(findings))
+	for i := range findings {
+		m.callCount++
+		if m.verifyError != nil {
+			results[i] = BatchVerificationResult{Index: i, Error: m.verifyError.Error()}
+		} else {
+			results[i] = BatchVerificationResult{Index: i, Result: m.verifyResult}
+		}
+	}
+	return results, nil
+}
+
 func TestValidateProvider(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -246,6 +259,23 @@ func TestAnalyzer(t *testing.T) {
 	expectedCalls := 1
 	if mockClient.callCount != expectedCalls {
 		t.Errorf("Expected %d API calls, got %d", expectedCalls, mockClient.callCount)
+	}
+}
+
+func TestBatchVerificationResultIndexed(t *testing.T) {
+	r := BatchVerificationResult{
+		Index: 2,
+		Result: &VerificationResult{
+			IsLikelyFalsePositive: true,
+			Confidence:            0.9,
+			Remediation:           "use secrets.TOKEN",
+		},
+	}
+	if r.Index != 2 {
+		t.Errorf("expected index 2, got %d", r.Index)
+	}
+	if r.Result.Remediation == "" {
+		t.Error("expected Remediation to be set")
 	}
 }
 
