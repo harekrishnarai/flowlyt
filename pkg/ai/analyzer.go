@@ -114,17 +114,6 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 
 	const batchSize = 5
 
-	// Group by class (stable order)
-	classBatches := make(map[string][]rules.Finding)
-	classOrder := []string{}
-	for _, f := range filtered {
-		class := categoryToClass(f.Category)
-		if _, exists := classBatches[class]; !exists {
-			classOrder = append(classOrder, class)
-		}
-		classBatches[class] = append(classBatches[class], f)
-	}
-
 	// Cache pre-check: split into cached and uncached
 	var toDispatch []rules.Finding
 	for _, f := range filtered {
@@ -150,10 +139,14 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 		return enhancedFindings, nil
 	}
 
-	// Re-group uncached findings by class
+	// Group uncached findings by class (stable order)
 	toDispatchByClass := make(map[string][]rules.Finding)
+	classOrder := []string{}
 	for _, f := range toDispatch {
 		class := categoryToClass(f.Category)
+		if _, exists := toDispatchByClass[class]; !exists {
+			classOrder = append(classOrder, class)
+		}
 		toDispatchByClass[class] = append(toDispatchByClass[class], f)
 	}
 
@@ -235,6 +228,8 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 		bar.Finish()
 	}
 
+	enhancedFindings = append(enhancedFindings, skippedFindings...)
+
 	// Check if context was cancelled
 	if analyzeCtx.Err() != nil {
 		return enhancedFindings, fmt.Errorf("AI analysis timed out or was cancelled: %w", analyzeCtx.Err())
@@ -243,7 +238,6 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 	// Persist any new cache entries (successful ones only)
 	a.flushPersistentCache()
 
-	enhancedFindings = append(enhancedFindings, skippedFindings...)
 	return enhancedFindings, nil
 }
 
@@ -492,13 +486,13 @@ func PrintAISummary(term *terminal.Terminal, summary AISummary, provider Provide
 	}
 	const w = 54
 	title := " AI Analysis Summary "
-	top := "┌─" + title + strings.Repeat("─", w-2-len(title)) + "┐"
+	top := "┌─ " + title + " " + strings.Repeat("─", w-4-len(title)) + "┐"
 	mid := func(content string) string {
 		inner := w - 2
-		if len(content) < inner {
-			content += strings.Repeat(" ", inner-len(content))
+		if len(content) > inner {
+			content = content[:inner]
 		}
-		return "│" + content + "│"
+		return "│" + content + strings.Repeat(" ", inner-len(content)) + "│"
 	}
 	bot := "└" + strings.Repeat("─", w-2) + "┘"
 
