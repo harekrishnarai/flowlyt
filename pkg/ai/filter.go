@@ -61,7 +61,7 @@ func ShouldSkipAI(f rules.Finding) (bool, string) {
 	if strings.Contains(cat, "SECRET") {
 		if strings.Contains(ev, "${{ secrets.") ||
 			strings.Contains(ev, "${{ env.") ||
-			strings.Contains(ev, "vars.") {
+			strings.Contains(ev, "${{ vars.") {
 			return true, "expression reference — not a hardcoded value"
 		}
 		if placeholderRe.MatchString(ev) {

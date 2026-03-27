@@ -359,6 +359,15 @@ func TestShouldSkipAI(t *testing.T) {
 			wantSkip:    true,
 			wantContain: "expression reference",
 		},
+		{
+			name: "vars reference skipped",
+			finding: rules.Finding{
+				Category: rules.SecretsExposure,
+				Evidence: "token: ${{ vars.API_TOKEN }}",
+			},
+			wantSkip:    true,
+			wantContain: "expression reference",
+		},
 	}
 
 	for _, tt := range tests {
