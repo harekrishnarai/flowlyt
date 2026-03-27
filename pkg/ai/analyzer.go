@@ -277,19 +277,6 @@ func (a *Analyzer) shouldSendToAI(f rules.Finding) bool {
 	return levels[fs] >= levels[a.minSeverity]
 }
 
-// parseCSVSet builds a case-insensitive set from comma-separated env var.
-func parseCSVSet(s string) map[string]struct{} {
-	m := map[string]struct{}{}
-	for _, part := range strings.Split(s, ",") {
-		p := strings.TrimSpace(part)
-		if p == "" {
-			continue
-		}
-		m[strings.ToUpper(p)] = struct{}{}
-	}
-	return m
-}
-
 // persistent cache handling (simple JSONL: {"fp":"...", "result":{...}})
 type cacheLine struct {
 	FP     string              `json:"fp"`

@@ -18,6 +18,7 @@ package ai
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
@@ -276,6 +277,122 @@ func TestBatchVerificationResultIndexed(t *testing.T) {
 	}
 	if r.Result.Remediation == "" {
 		t.Error("expected Remediation to be set")
+	}
+}
+
+func TestShouldSkipAI(t *testing.T) {
+	tests := []struct {
+		name        string
+		finding     rules.Finding
+		wantSkip    bool
+		wantContain string // substring expected in reason
+	}{
+		{
+			name: "secrets expression reference skipped",
+			finding: rules.Finding{
+				Category: rules.SecretsExposure,
+				Evidence: "value: ${{ secrets.MY_TOKEN }}",
+			},
+			wantSkip:    true,
+			wantContain: "expression reference",
+		},
+		{
+			name: "placeholder secret skipped",
+			finding: rules.Finding{
+				Category: rules.SecretsExposure,
+				Evidence: "api_key: your-api-key-here",
+			},
+			wantSkip:    true,
+			wantContain: "placeholder",
+		},
+		{
+			name: "real token prefix sent",
+			finding: rules.Finding{
+				Category: rules.SecretsExposure,
+				Evidence: "token: ghp_xxxxxxxxxxxxxxxxxxxx",
+			},
+			wantSkip: false,
+		},
+		{
+			name: "pinned SHA skipped",
+			finding: rules.Finding{
+				Category: rules.Misconfiguration,
+				Evidence: "uses: actions/checkout@abcdef1234567890abcdef1234567890abcdef12",
+			},
+			wantSkip:    true,
+			wantContain: "SHA",
+		},
+		{
+			name: "locked permissions skipped",
+			finding: rules.Finding{
+				Category: rules.Misconfiguration,
+				Evidence: "permissions: read-all",
+			},
+			wantSkip:    true,
+			wantContain: "permissions",
+		},
+		{
+			name: "high entropy string sent",
+			finding: rules.Finding{
+				Category: rules.SecretsExposure,
+				Evidence: "AKIA1234567890ABCDEF",
+			},
+			wantSkip: false,
+		},
+		{
+			name: "env reference skipped",
+			finding: rules.Finding{
+				Category: rules.SecretsExposure,
+				Evidence: "token: ${{ env.API_TOKEN }}",
+			},
+			wantSkip:    true,
+			wantContain: "expression reference",
+		},
+		{
+			// SecretExposure (singular) is the older constant used in most rules;
+			// the filter must treat it identically to SecretsExposure (plural).
+			name: "singular SecretExposure expression reference skipped",
+			finding: rules.Finding{
+				Category: rules.SecretExposure,
+				Evidence: "api_key: ${{ secrets.API_KEY }}",
+			},
+			wantSkip:    true,
+			wantContain: "expression reference",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			skip, reason := ShouldSkipAI(tt.finding)
+			if skip != tt.wantSkip {
+				t.Errorf("ShouldSkipAI() skip = %v, want %v (reason: %q)", skip, tt.wantSkip, reason)
+			}
+			if tt.wantContain != "" && !strings.Contains(reason, tt.wantContain) {
+				t.Errorf("ShouldSkipAI() reason = %q, want it to contain %q", reason, tt.wantContain)
+			}
+		})
+	}
+}
+
+func TestShannonEntropy(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantGTE float64 // expect entropy >= this
+		wantLT  float64 // expect entropy < this
+	}{
+		{"aaaaaaaaaa", 0, 0.1},               // all same char — near zero
+		{"your-api-key-here", 0, 4.0},        // placeholder — low entropy
+		{"AKIA1234567890ABCDEF", 4.0, 10},    // real token prefix — high entropy
+		{"ghp_xxxxxxxxxxxxxxxxxxxx", 0, 4.0}, // repetitive x — low (but prefix catches it)
+	}
+	for _, tt := range tests {
+		e := shannonEntropy(tt.input)
+		if e < tt.wantGTE {
+			t.Errorf("shannonEntropy(%q) = %f, want >= %f", tt.input, e, tt.wantGTE)
+		}
+		if e >= tt.wantLT {
+			t.Errorf("shannonEntropy(%q) = %f, want < %f", tt.input, e, tt.wantLT)
+		}
 	}
 }
 
