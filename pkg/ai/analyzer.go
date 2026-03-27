@@ -57,10 +57,7 @@ type Analyzer struct {
 }
 
 // NewAnalyzer creates a new AI analyzer
-func NewAnalyzer(client Client, maxWorkers int, timeout time.Duration) *Analyzer {
-	if maxWorkers <= 0 {
-		maxWorkers = 5 // Default to 5 concurrent workers
-	}
+func NewAnalyzer(client Client, timeout time.Duration) *Analyzer {
 	if timeout == 0 {
 		timeout = 30 * time.Second // Default timeout
 	}

@@ -214,7 +214,7 @@ func TestAnalyzer(t *testing.T) {
 		},
 	}
 
-	analyzer := NewAnalyzer(mockClient, 2, 0)
+	analyzer := NewAnalyzer(mockClient, 0)
 	defer analyzer.Close()
 
 	// Test single finding analysis
@@ -544,7 +544,7 @@ func TestAnalyzerSkipsFilteredFindings(t *testing.T) {
 		provider:     ProviderOpenAI,
 		verifyResult: &VerificationResult{Confidence: 0.9},
 	}
-	analyzer := NewAnalyzer(mockClient, 2, 0)
+	analyzer := NewAnalyzer(mockClient, 0)
 	defer analyzer.Close()
 
 	findings := []rules.Finding{

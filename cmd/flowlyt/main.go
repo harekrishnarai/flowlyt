@@ -214,11 +214,6 @@ func main() {
 						Usage: "Timeout for AI analysis in seconds",
 						Value: 30,
 					},
-					&cli.IntFlag{
-						Name:  "ai-workers",
-						Usage: "Number of concurrent AI analysis workers",
-						Value: 5,
-					},
 				},
 				Action: scanAction,
 			},
@@ -321,11 +316,6 @@ func main() {
 						Name:  "ai-timeout",
 						Usage: "Timeout for AI analysis in seconds",
 						Value: 30,
-					},
-					&cli.IntFlag{
-						Name:  "ai-workers",
-						Usage: "Number of concurrent AI analysis workers",
-						Value: 5,
 					},
 				},
 				Action: analyzeOrgAction,
@@ -700,7 +690,7 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 	defer client.Close()
 
 	// Create AI analyzer
-	analyzer := ai.NewAnalyzer(client, c.Int("ai-workers"), time.Duration(c.Int("ai-timeout"))*time.Second)
+	analyzer := ai.NewAnalyzer(client, time.Duration(c.Int("ai-timeout"))*time.Second)
 	defer analyzer.Close()
 
 	fmt.Printf("🔍 Analyzing %d findings with AI...\n", len(findings))
@@ -709,7 +699,10 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 	ctx := context.Background()
 	enhancedFindings, err := analyzer.AnalyzeFindings(ctx, findings)
 	if err != nil {
-		return nil, fmt.Errorf("AI analysis failed: %w", err)
+		// Log the timeout/cancellation as a warning but use whatever partial results were returned.
+		// Individual findings already carry AIError where the batch failed.
+		fmt.Fprintf(os.Stderr, "Warning: AI analysis incomplete: %v\n", err)
+		// fall through and return partial results
 	}
 
 	// Convert enhanced findings back to regular findings with AI fields populated
