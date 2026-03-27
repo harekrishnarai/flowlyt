@@ -486,7 +486,7 @@ func PrintAISummary(term *terminal.Terminal, summary AISummary, provider Provide
 	}
 	const w = 54
 	title := " AI Analysis Summary "
-	top := "┌─ " + title + " " + strings.Repeat("─", w-4-len(title)) + "┐"
+	top := "┌─ " + title + strings.Repeat("─", w-4-len(title)) + "┐"
 	mid := func(content string) string {
 		inner := w - 2
 		if len(content) > inner {
