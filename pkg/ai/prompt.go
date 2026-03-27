@@ -49,29 +49,31 @@ func composeBatchPrompt(class string, findings []rules.Finding) (string, string)
 	system := systemPromptForClass(class)
 
 	type batchItem struct {
-		Index    int    `json:"index"`
-		RuleID   string `json:"rule_id"`
-		RuleName string `json:"rule_name"`
-		Severity string `json:"severity"`
-		Trigger  string `json:"trigger,omitempty"`
-		Runner   string `json:"runner,omitempty"`
-		Job      string `json:"job,omitempty"`
-		Step     string `json:"step,omitempty"`
-		Evidence string `json:"evidence"`
+		Index       int    `json:"index"`
+		RuleID      string `json:"rule_id"`
+		RuleName    string `json:"rule_name"`
+		Severity    string `json:"severity"`
+		Trigger     string `json:"trigger,omitempty"`
+		Runner      string `json:"runner,omitempty"`
+		Job         string `json:"job,omitempty"`
+		Step        string `json:"step,omitempty"`
+		FileContext string `json:"file_context,omitempty"`
+		Evidence    string `json:"evidence"`
 	}
 
 	items := make([]batchItem, len(findings))
 	for i, f := range findings {
 		items[i] = batchItem{
-			Index:    i,
-			RuleID:   f.RuleID,
-			RuleName: f.RuleName,
-			Severity: string(f.Severity),
-			Trigger:  safePromptValue(f.Trigger, ""),
-			Runner:   safePromptValue(f.RunnerType, ""),
-			Job:      safePromptValue(f.JobName, ""),
-			Step:     safePromptValue(f.StepName, ""),
-			Evidence: trimEvidence(safePromptValue(strings.TrimSpace(f.Evidence), "not provided")),
+			Index:       i,
+			RuleID:      f.RuleID,
+			RuleName:    f.RuleName,
+			Severity:    string(f.Severity),
+			Trigger:     safePromptValue(f.Trigger, ""),
+			Runner:      safePromptValue(f.RunnerType, ""),
+			Job:         safePromptValue(f.JobName, ""),
+			Step:        safePromptValue(f.StepName, ""),
+			FileContext: safePromptValue(f.FileContext, ""),
+			Evidence:    trimEvidence(safePromptValue(strings.TrimSpace(f.Evidence), "not provided")),
 		}
 	}
 

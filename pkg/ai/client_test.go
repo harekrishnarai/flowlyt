@@ -459,6 +459,86 @@ func TestCategoryToClass(t *testing.T) {
 	}
 }
 
+func TestParseBatchResponse(t *testing.T) {
+	t.Run("happy path", func(t *testing.T) {
+		content := `[
+            {"index": 0, "is_likely_false_positive": false, "confidence": 0.9, "reasoning": "real token", "suggested_severity": "HIGH", "remediation": "rotate key"},
+            {"index": 1, "is_likely_false_positive": true,  "confidence": 0.7, "reasoning": "placeholder", "suggested_severity": "LOW",  "remediation": ""}
+        ]`
+		results, err := parseBatchResponse(content, 2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != 2 {
+			t.Fatalf("expected 2 results, got %d", len(results))
+		}
+		if results[0].Index != 0 || results[0].Result == nil {
+			t.Errorf("result[0] not attributed correctly: %+v", results[0])
+		}
+		if results[0].Result.Confidence != 0.9 {
+			t.Errorf("expected confidence 0.9, got %f", results[0].Result.Confidence)
+		}
+		if results[0].Result.Remediation != "rotate key" {
+			t.Errorf("expected remediation 'rotate key', got %q", results[0].Result.Remediation)
+		}
+		if results[1].Index != 1 || results[1].Result == nil {
+			t.Errorf("result[1] not attributed correctly: %+v", results[1])
+		}
+	})
+
+	t.Run("markdown wrapped response", func(t *testing.T) {
+		content := "```json\n[{\"index\": 0, \"is_likely_false_positive\": false, \"confidence\": 0.8, \"reasoning\": \"ok\", \"suggested_severity\": \"MEDIUM\", \"remediation\": \"fix it\"}]\n```"
+		results, err := parseBatchResponse(content, 1)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != 1 || results[0].Result == nil {
+			t.Errorf("expected 1 result with non-nil Result, got %+v", results)
+		}
+	})
+
+	t.Run("missing index filled with error", func(t *testing.T) {
+		content := `[{"index": 0, "is_likely_false_positive": false, "confidence": 0.9, "reasoning": "ok", "suggested_severity": "HIGH", "remediation": ""}]`
+		results, err := parseBatchResponse(content, 3) // 3 expected but only 1 returned
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(results) != 3 {
+			t.Fatalf("expected 3 results, got %d", len(results))
+		}
+		if results[1].Error == "" {
+			t.Error("expected results[1] to have an error for missing index")
+		}
+		if results[2].Error == "" {
+			t.Error("expected results[2] to have an error for missing index")
+		}
+	})
+
+	t.Run("confidence clamped to 0-1", func(t *testing.T) {
+		content := `[
+            {"index": 0, "is_likely_false_positive": false, "confidence": 1.5, "reasoning": "over", "suggested_severity": "HIGH", "remediation": ""},
+            {"index": 1, "is_likely_false_positive": false, "confidence": -0.3, "reasoning": "under", "suggested_severity": "LOW", "remediation": ""}
+        ]`
+		results, err := parseBatchResponse(content, 2)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if results[0].Result.Confidence != 1.0 {
+			t.Errorf("expected confidence clamped to 1.0, got %f", results[0].Result.Confidence)
+		}
+		if results[1].Result.Confidence != 0.0 {
+			t.Errorf("expected confidence clamped to 0.0, got %f", results[1].Result.Confidence)
+		}
+	})
+
+	t.Run("no JSON array returns error", func(t *testing.T) {
+		_, err := parseBatchResponse("sorry, I cannot help with that", 2)
+		if err == nil {
+			t.Error("expected error for response with no JSON array")
+		}
+	})
+}
+
 func TestGetSummary(t *testing.T) {
 	enhancedFindings := []EnhancedFinding{
 		{
