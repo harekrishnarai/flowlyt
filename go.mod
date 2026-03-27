@@ -1,6 +1,6 @@
 module github.com/harekrishnarai/flowlyt
 
-go 1.24.6
+go 1.25.8
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.3.2

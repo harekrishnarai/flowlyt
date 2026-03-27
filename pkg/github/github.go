@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,6 +40,15 @@ import (
 type Client struct {
 	client *github.Client
 	ctx    context.Context
+}
+
+// IsRateLimitError reports whether err (or any error in its chain) is a GitHub
+// primary or secondary (abuse) rate limit error. Uses errors.As so it works
+// correctly with wrapped errors.
+func IsRateLimitError(err error) bool {
+	var rle *github.RateLimitError
+	var ale *github.AbuseRateLimitError
+	return errors.As(err, &rle) || errors.As(err, &ale)
 }
 
 // getGitHubToken attempts to get a GitHub token from multiple sources

@@ -426,6 +426,9 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 			fmt.Printf("� Downloading workflow files from GitHub repository: %s/%s\n", owner, repo)
 			workflowContents, err = ghClient.GetWorkflowFilesContents(owner, repo)
 			if err != nil {
+				if github.IsRateLimitError(err) {
+					return "", nil, fmt.Errorf("GitHub API rate limit exceeded\n\nTip: Authenticate to get a higher rate limit:\n  flowlyt scan --github-token $(gh auth token) ...\n  or set: export GITHUB_TOKEN=$(gh auth token)")
+				}
 				return "", nil, fmt.Errorf("failed to fetch workflow files from %s: %w", repoURL, err)
 			}
 
@@ -1147,7 +1150,7 @@ Possible solutions:
 3. Provide a GitHub token with appropriate permissions:
    - Use flag: --token YOUR_TOKEN
    - Or set environment variable: export GITHUB_TOKEN=YOUR_TOKEN
-   
+
 To create a GitHub token:
    1. Go to https://github.com/settings/tokens
    2. Click "Generate new token" -> "Generate new token (classic)"
@@ -1164,6 +1167,9 @@ Please check your token and ensure it has the correct permissions:
    - For private repositories: 'repo' scope
 
 Original error: %s`, err.Error())
+		}
+		if github.IsRateLimitError(err) {
+			return fmt.Errorf("GitHub API rate limit exceeded\n\nTip: Authenticate to get a higher rate limit:\n  flowlyt org --token $(gh auth token) ...\n  or set: export GITHUB_TOKEN=$(gh auth token)")
 		}
 		if strings.Contains(err.Error(), "403 Forbidden") {
 			return fmt.Errorf(`access forbidden: token lacks required permissions
