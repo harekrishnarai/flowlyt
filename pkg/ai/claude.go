@@ -209,5 +209,5 @@ func (c *ClaudeClient) Close() error {
 
 // VerifyBatch is a stub; real implementation added in Task 4.
 func (c *ClaudeClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
-	return nil, fmt.Errorf("VerifyBatch not yet implemented")
+	return nil, ErrVerifyBatchNotImplemented
 }

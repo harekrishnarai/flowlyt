@@ -226,5 +226,5 @@ func (c *GrokClient) Close() error {
 
 // VerifyBatch is a stub; real implementation added in Task 4.
 func (c *GrokClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
-	return nil, fmt.Errorf("VerifyBatch not yet implemented")
+	return nil, ErrVerifyBatchNotImplemented
 }

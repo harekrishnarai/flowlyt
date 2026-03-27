@@ -415,6 +415,7 @@ func (a *Analyzer) AnalyzeSingleFinding(ctx context.Context, finding rules.Findi
 
 // GetSummary returns a summary of AI analysis results
 func GetSummary(enhancedFindings []EnhancedFinding) AISummary {
+	// SkippedByFilter is populated in Task 5 when the batch dispatch loop lands.
 	summary := AISummary{}
 
 	for _, enhanced := range enhancedFindings {
