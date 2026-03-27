@@ -208,13 +208,14 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 			}
 			enhancedFindings = append(enhancedFindings, batchEnhanced...)
 
+			// Print findings first so they scroll above the progress bar.
+			for _, ef := range batchEnhanced {
+				printFindingResult(term, ef)
+			}
 			if bar != nil {
 				bar.SetSuffix(fmt.Sprintf("(%s batch %d/%d)", class, batchNum, totalBatches))
 				bar.Add(len(batch))
-				term.Println("") // advance past the bar line before printing findings
-				for _, ef := range batchEnhanced {
-					printFindingResult(term, ef)
-				}
+				term.Println("") // commit the bar line so findings in the next batch print above it
 			}
 		}
 	}

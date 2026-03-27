@@ -2610,69 +2610,96 @@ func checkArtifactPoisoning(workflow parser.WorkflowFile) []Finding {
 				if step.With != nil {
 					if pathInterface, exists := step.With["path"]; exists {
 						if path, ok := pathInterface.(string); ok {
-							// Check for dangerous paths
+							// Check for dangerous absolute paths — must start with the dangerous prefix
+							// (avoids false positives on relative paths like "dist/*.tar.gz" which
+							// contain "/" as a path separator but are not absolute system paths).
 							dangerousPaths := []string{
-								"/", "/*", "~", "~/", "$HOME",
-								"/etc", "/usr", "/bin", "/sbin",
+								"/", "~", "~/", "$HOME",
+								"/etc/", "/usr/", "/bin/", "/sbin/",
 								"C:\\", "C:\\Windows", "C:\\Program Files",
 							}
 
+							var matchedDangerous string
 							for _, dangerousPath := range dangerousPaths {
-								if strings.Contains(path, dangerousPath) {
-									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
-										Key:   "path",
-										Value: path,
-									})
-
-									lineNumber := 0
-									if lineResult != nil {
-										lineNumber = lineResult.LineNumber
+								// Use HasPrefix so "dist/*.tar.gz" doesn't match "/"
+								for _, line := range strings.Split(path, "\n") {
+									line = strings.TrimSpace(line)
+									if strings.HasPrefix(line, dangerousPath) {
+										matchedDangerous = line
+										break
 									}
-
-									findings = append(findings, Finding{
-										RuleID:      "ARTIFACT_POISONING",
-										RuleName:    "Artifact Poisoning",
-										Description: "Artifact upload includes dangerous system paths that could expose sensitive files",
-										Severity:    High,
-										Category:    SupplyChain,
-										FilePath:    workflow.Path,
-										JobName:     jobName,
-										StepName:    step.Name,
-										Evidence:    fmt.Sprintf("Dangerous artifact path: %s", path),
-										LineNumber:  lineNumber,
-										Remediation: "Restrict artifact uploads to specific, safe directories only",
-									})
+								}
+								if matchedDangerous != "" {
+									break
 								}
 							}
 
-							// Check for overly broad patterns
-							broadPatterns := []string{"*", "**", "**/*", "."}
-							for _, pattern := range broadPatterns {
-								if path == pattern {
-									lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
-										Key:   "path",
-										Value: path,
-									})
+							if matchedDangerous != "" {
+								lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+									Key:   "path",
+									Value: path,
+								})
 
-									lineNumber := 0
-									if lineResult != nil {
-										lineNumber = lineResult.LineNumber
-									}
-
-									findings = append(findings, Finding{
-										RuleID:      "ARTIFACT_POISONING",
-										RuleName:    "Artifact Poisoning",
-										Description: "Artifact upload uses overly broad patterns that may include sensitive files",
-										Severity:    Medium,
-										Category:    SupplyChain,
-										FilePath:    workflow.Path,
-										JobName:     jobName,
-										StepName:    step.Name,
-										Evidence:    fmt.Sprintf("Broad artifact pattern: %s", path),
-										LineNumber:  lineNumber,
-										Remediation: "Use specific file patterns instead of broad wildcards for artifact uploads",
-									})
+								lineNumber := 0
+								if lineResult != nil {
+									lineNumber = lineResult.LineNumber
 								}
+
+								findings = append(findings, Finding{
+									RuleID:      "ARTIFACT_POISONING",
+									RuleName:    "Artifact Poisoning",
+									Description: "Artifact upload includes dangerous system paths that could expose sensitive files",
+									Severity:    High,
+									Category:    SupplyChain,
+									FilePath:    workflow.Path,
+									JobName:     jobName,
+									StepName:    step.Name,
+									Evidence:    fmt.Sprintf("Dangerous artifact path: %s", matchedDangerous),
+									LineNumber:  lineNumber,
+									Remediation: "Restrict artifact uploads to specific, safe directories only",
+								})
+							}
+
+							// Check for overly broad patterns (exact match against each line of a multi-line path)
+							broadPatterns := []string{"*", "**", "**/*", "."}
+							var matchedBroad string
+							for _, line := range strings.Split(path, "\n") {
+								line = strings.TrimSpace(line)
+								for _, pattern := range broadPatterns {
+									if line == pattern {
+										matchedBroad = line
+										break
+									}
+								}
+								if matchedBroad != "" {
+									break
+								}
+							}
+
+							if matchedBroad != "" {
+								lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
+									Key:   "path",
+									Value: path,
+								})
+
+								lineNumber := 0
+								if lineResult != nil {
+									lineNumber = lineResult.LineNumber
+								}
+
+								findings = append(findings, Finding{
+									RuleID:      "ARTIFACT_POISONING",
+									RuleName:    "Artifact Poisoning",
+									Description: "Artifact upload uses overly broad patterns that may include sensitive files",
+									Severity:    Medium,
+									Category:    SupplyChain,
+									FilePath:    workflow.Path,
+									JobName:     jobName,
+									StepName:    step.Name,
+									Evidence:    fmt.Sprintf("Broad artifact pattern: %s", matchedBroad),
+									LineNumber:  lineNumber,
+									Remediation: "Use specific file patterns instead of broad wildcards for artifact uploads",
+								})
 							}
 						}
 					}
