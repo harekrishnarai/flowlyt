@@ -719,7 +719,10 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 		finding.AIVerified = true
 
 		if enhanced.AISkipped {
-			// skipped findings are already counted in PrintAISummary; no per-finding printf needed
+			finding.AISkipped = true
+			finding.AISkipReason = enhanced.AISkipReason
+			resultFindings = append(resultFindings, finding)
+			continue
 		} else if enhanced.AIError != "" {
 			finding.AIError = enhanced.AIError
 		} else if enhanced.AIVerification != nil {
@@ -727,6 +730,9 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 			finding.AIConfidence = enhanced.AIVerification.Confidence
 			finding.AIReasoning = enhanced.AIVerification.Reasoning
 			finding.AISuggestedSeverity = enhanced.AIVerification.Severity
+			if enhanced.AIVerification.Remediation != "" {
+				finding.AIRemediation = enhanced.AIVerification.Remediation
+			}
 		}
 
 		resultFindings = append(resultFindings, finding)
@@ -736,7 +742,7 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 	summary := ai.GetSummary(enhancedFindings)
 	modelName := aiConfig.Model
 	if modelName == "" {
-		modelName = string(ai.GetDefaultModel(aiConfig.Provider))
+		modelName = ai.GetDefaultModel(aiConfig.Provider)
 	}
 	ai.PrintAISummary(terminal.Default(), summary, client.GetProvider(), modelName)
 

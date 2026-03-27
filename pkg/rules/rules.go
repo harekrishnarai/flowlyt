@@ -185,6 +185,9 @@ type Finding struct {
 	AIReasoning           string  `json:"ai_reasoning,omitempty"`             // AI explanation
 	AISuggestedSeverity   string  `json:"ai_suggested_severity,omitempty"`    // AI suggested severity if different
 	AIError               string  `json:"ai_error,omitempty"`                 // AI analysis error if any
+	AISkipped             bool    `json:"ai_skipped,omitempty"`               // Whether AI analysis was skipped
+	AISkipReason          string  `json:"ai_skip_reason,omitempty"`           // Reason AI analysis was skipped
+	AIRemediation         string  `json:"ai_remediation,omitempty"`           // AI-suggested remediation steps
 }
 
 // StandardRules returns the list of built-in security rules
