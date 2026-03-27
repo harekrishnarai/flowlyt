@@ -539,6 +539,65 @@ func TestParseBatchResponse(t *testing.T) {
 	})
 }
 
+func TestAnalyzerSkipsFilteredFindings(t *testing.T) {
+	mockClient := &MockClient{
+		provider:     ProviderOpenAI,
+		verifyResult: &VerificationResult{Confidence: 0.9},
+	}
+	analyzer := NewAnalyzer(mockClient, 2, 0)
+	defer analyzer.Close()
+
+	findings := []rules.Finding{
+		// This should be skipped (expression reference)
+		{RuleID: "SECRET_1", Category: rules.SecretsExposure, Evidence: "token: ${{ secrets.MY_TOKEN }}"},
+		// This should be sent
+		{RuleID: "ESCALATION_1", Category: rules.PrivilegeEscalation, Evidence: "pull_request_target with write:contents"},
+	}
+
+	ctx := context.Background()
+	enhanced, err := analyzer.AnalyzeFindings(ctx, findings)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(enhanced) != 2 {
+		t.Fatalf("expected 2 EnhancedFindings (skipped + analyzed), got %d", len(enhanced))
+	}
+
+	summary := GetSummary(enhanced)
+	if summary.SkippedByFilter != 1 {
+		t.Errorf("expected SkippedByFilter=1, got %d", summary.SkippedByFilter)
+	}
+
+	// Find the skipped one
+	var skipped *EnhancedFinding
+	for i := range enhanced {
+		if enhanced[i].AISkipped {
+			skipped = &enhanced[i]
+		}
+	}
+	if skipped == nil {
+		t.Error("expected one finding with AISkipped=true")
+	}
+	if skipped.AISkipReason == "" {
+		t.Error("expected AISkipReason to be set on skipped finding")
+	}
+}
+
+func TestGetSummarySkippedByFilter(t *testing.T) {
+	findings := []EnhancedFinding{
+		{Finding: rules.Finding{RuleID: "A"}, AISkipped: true, AISkipReason: "expression reference"},
+		{Finding: rules.Finding{RuleID: "B"}, AIVerification: &VerificationResult{IsLikelyFalsePositive: false, Confidence: 0.9}},
+	}
+	summary := GetSummary(findings)
+	if summary.SkippedByFilter != 1 {
+		t.Errorf("expected SkippedByFilter=1, got %d", summary.SkippedByFilter)
+	}
+	if summary.TotalAnalyzed != 2 {
+		t.Errorf("expected TotalAnalyzed=2, got %d", summary.TotalAnalyzed)
+	}
+}
+
 func TestGetSummary(t *testing.T) {
 	enhancedFindings := []EnhancedFinding{
 		{

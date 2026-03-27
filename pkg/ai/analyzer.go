@@ -18,9 +18,9 @@ package ai
 
 import (
 	"context"
-	"encoding/json"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/pkg/terminal"
 )
 
 // EnhancedFinding represents a finding enhanced with AI verification
@@ -48,11 +49,6 @@ type Analyzer struct {
 	// key: fingerprint string, value: *VerificationResult or error string
 	cache sync.Map
 
-	// filtering controls (config-driven via env for now)
-	minSeverity  string
-	includeRules map[string]struct{}
-	excludeRules map[string]struct{}
-
 	// optional persistent cache across runs
 	cacheFilePath string
 	persistCache  map[string]*VerificationResult // fp -> result
@@ -70,19 +66,12 @@ func NewAnalyzer(client Client, maxWorkers int, timeout time.Duration) *Analyzer
 		timeout = 30 * time.Second // Default timeout
 	}
 
-	// Load filtering config (env-based for now)
-	minSev := strings.TrimSpace(os.Getenv("AI_MIN_SEVERITY"))
-	include := parseCSVSet(os.Getenv("AI_INCLUDE_RULES"))
-	exclude := parseCSVSet(os.Getenv("AI_EXCLUDE_RULES"))
 	cachePath := strings.TrimSpace(os.Getenv("AI_CACHE_FILE"))
 
 	return &Analyzer{
 		client:        client,
 		maxWorkers:    maxWorkers,
 		timeout:       timeout,
-		minSeverity:   strings.ToUpper(minSev),
-		includeRules:  include,
-		excludeRules:  exclude,
 		cacheFilePath: cachePath,
 		persistCache:  make(map[string]*VerificationResult, 256),
 		provider:      client.GetProvider(),
@@ -100,60 +89,150 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 
 	// Filter findings based on configured scope
 	filtered := make([]rules.Finding, 0, len(findings))
+	var skippedFindings []EnhancedFinding
 	for _, f := range findings {
-		if !a.shouldSendToAI(f) {
+		if skip, reason := ShouldSkipAI(f); skip {
+			skippedFindings = append(skippedFindings, EnhancedFinding{
+				Finding:      f,
+				AISkipped:    true,
+				AISkipReason: reason,
+			})
 			continue
 		}
 		filtered = append(filtered, f)
 	}
+
 	if len(filtered) == 0 {
-		return []EnhancedFinding{}, nil
+		return skippedFindings, nil
 	}
 
 	// Create context with timeout
 	analyzeCtx, cancel := context.WithTimeout(ctx, a.timeout*time.Duration(len(filtered)))
 	defer cancel()
 
-	// Create channels for work distribution
-	findingsChan := make(chan rules.Finding, len(filtered))
-	resultsChan := make(chan EnhancedFinding, len(filtered))
+	enhancedFindings := make([]EnhancedFinding, 0, len(findings))
 
-	// Start workers
-	var wg sync.WaitGroup
-	for i := 0; i < a.maxWorkers; i++ {
-		wg.Add(1)
-		go a.worker(analyzeCtx, &wg, findingsChan, resultsChan)
+	const batchSize = 5
+
+	// Group by class (stable order)
+	classBatches := make(map[string][]rules.Finding)
+	classOrder := []string{}
+	for _, f := range filtered {
+		class := categoryToClass(f.Category)
+		if _, exists := classBatches[class]; !exists {
+			classOrder = append(classOrder, class)
+		}
+		classBatches[class] = append(classBatches[class], f)
 	}
 
-	// Send findings to workers
-	go func() {
-		for _, finding := range filtered {
-			select {
-			case findingsChan <- finding:
-			case <-analyzeCtx.Done():
-				return
+	// Cache pre-check: split into cached and uncached
+	var toDispatch []rules.Finding
+	for _, f := range filtered {
+		fp := fingerprintFinding(f)
+		if cached, ok := a.cache.Load(fp); ok {
+			if vr, ok2 := cached.(*VerificationResult); ok2 {
+				enhancedFindings = append(enhancedFindings, EnhancedFinding{Finding: f, AIVerification: vr})
+				continue
 			}
 		}
-		close(findingsChan)
-	}()
-
-	// Wait for workers to complete and close results channel
-	go func() {
-		wg.Wait()
-		close(resultsChan)
-	}()
-
-	// Collect results
-	enhancedFindings := make([]EnhancedFinding, 0, len(findings))
-	total := len(filtered)
-	completed := 0
-	for result := range resultsChan {
-		enhancedFindings = append(enhancedFindings, result)
-		completed++
-		// Lightweight progress indicator for CLI users
-		if completed == total || completed%10 == 0 {
-			fmt.Printf("🤖 AI (%s): %d/%d findings analyzed\r\n", a.provider, completed, total)
+		if a.persistCache != nil {
+			if vr, ok := a.persistCache[fp]; ok {
+				enhancedFindings = append(enhancedFindings, EnhancedFinding{Finding: f, AIVerification: vr})
+				continue
+			}
 		}
+		toDispatch = append(toDispatch, f)
+	}
+
+	dispatchCount := len(toDispatch)
+	if dispatchCount == 0 {
+		enhancedFindings = append(enhancedFindings, skippedFindings...)
+		return enhancedFindings, nil
+	}
+
+	// Re-group uncached findings by class
+	toDispatchByClass := make(map[string][]rules.Finding)
+	for _, f := range toDispatch {
+		class := categoryToClass(f.Category)
+		toDispatchByClass[class] = append(toDispatchByClass[class], f)
+	}
+
+	// Set up streaming progress bar
+	term := terminal.Default()
+	var bar *terminal.ProgressBar
+	if term.IsTTY() {
+		bar = term.NewProgressBar(dispatchCount)
+		bar.SetPrefix("🤖 AI analysis")
+		bar.SetStyle(terminal.DefaultProgressStyle)
+	}
+
+	// Dispatch batches per class (synchronously)
+	for _, class := range classOrder {
+		classFindings, ok := toDispatchByClass[class]
+		if !ok {
+			continue
+		}
+		totalBatches := (len(classFindings) + batchSize - 1) / batchSize
+		for batchNum := 1; batchNum <= totalBatches; batchNum++ {
+			start := (batchNum - 1) * batchSize
+			end := start + batchSize
+			if end > len(classFindings) {
+				end = len(classFindings)
+			}
+			batch := classFindings[start:end]
+
+			batchResults, err := a.client.VerifyBatch(analyzeCtx, class, batch)
+			if err != nil {
+				// Fall back to individual calls on batch failure
+				for _, f := range batch {
+					vr, singleErr := a.client.VerifyFinding(analyzeCtx, f)
+					ef := EnhancedFinding{Finding: f}
+					if singleErr != nil {
+						ef.AIError = singleErr.Error()
+					} else {
+						ef.AIVerification = vr
+						fp := fingerprintFinding(f)
+						a.cache.Store(fp, vr)
+						a.stagePersist(fp, vr)
+					}
+					enhancedFindings = append(enhancedFindings, ef)
+				}
+				continue
+			}
+
+			// Attribute by index, collect into batchEnhanced for streaming
+			batchEnhanced := make([]EnhancedFinding, 0, len(batch))
+			for _, br := range batchResults {
+				if br.Index < 0 || br.Index >= len(batch) {
+					continue
+				}
+				f := batch[br.Index]
+				ef := EnhancedFinding{Finding: f}
+				if br.Error != "" {
+					ef.AIError = br.Error
+				} else if br.Result != nil {
+					ef.AIVerification = br.Result
+					fp := fingerprintFinding(f)
+					a.cache.Store(fp, br.Result)
+					a.stagePersist(fp, br.Result)
+				}
+				batchEnhanced = append(batchEnhanced, ef)
+			}
+			enhancedFindings = append(enhancedFindings, batchEnhanced...)
+
+			if bar != nil {
+				bar.SetSuffix(fmt.Sprintf("(%s batch %d/%d)", class, batchNum, totalBatches))
+				bar.Add(len(batch))
+				term.Println("") // advance past the bar line before printing findings
+				for _, ef := range batchEnhanced {
+					printFindingResult(term, ef)
+				}
+			}
+		}
+	}
+
+	if bar != nil {
+		bar.Finish()
 	}
 
 	// Check if context was cancelled
@@ -164,68 +243,8 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 	// Persist any new cache entries (successful ones only)
 	a.flushPersistentCache()
 
+	enhancedFindings = append(enhancedFindings, skippedFindings...)
 	return enhancedFindings, nil
-}
-
-// worker processes findings from the channel
-func (a *Analyzer) worker(ctx context.Context, wg *sync.WaitGroup, findingsChan <-chan rules.Finding, resultsChan chan<- EnhancedFinding) {
-	defer wg.Done()
-
-	for {
-		select {
-		case finding, ok := <-findingsChan:
-			if !ok {
-				return // Channel closed, worker done
-			}
-
-			enhanced := EnhancedFinding{Finding: finding}
-
-			// Fingerprint to coalesce duplicate analyses within this run
-			fp := fingerprintFinding(finding)
-
-			var verification *VerificationResult
-			var err error
-
-			if cached, ok := a.cache.Load(fp); ok {
-				switch v := cached.(type) {
-				case *VerificationResult:
-					verification = v
-				case error:
-					err = v
-				case string:
-					err = fmt.Errorf("%s", v)
-				}
-			} else {
-				// Create a timeout for this individual analysis
-				analyzeCtx, cancel := context.WithTimeout(ctx, a.timeout)
-				verification, err = a.client.VerifyFinding(analyzeCtx, finding)
-				cancel()
-
-				if err != nil {
-					a.cache.Store(fp, err.Error())
-				} else {
-					a.cache.Store(fp, verification)
-					// Also stage for persistence
-					a.stagePersist(fp, verification)
-				}
-			}
-
-			if err != nil {
-				enhanced.AIError = err.Error()
-			} else {
-				enhanced.AIVerification = verification
-			}
-
-			select {
-			case resultsChan <- enhanced:
-			case <-ctx.Done():
-				return // Context cancelled
-			}
-
-		case <-ctx.Done():
-			return // Context cancelled
-		}
-	}
 }
 
 // fingerprintFinding creates a stable identity for a finding, minimizing token waste by caching equal work.
@@ -250,31 +269,6 @@ func hashEvidence(s string) string {
 	}
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:]) // 64 hex chars
-}
-
-// shouldSendToAI decides if a finding should be sent to AI based on configured severity/rule filters.
-func (a *Analyzer) shouldSendToAI(f rules.Finding) bool {
-	// Exclude-list takes precedence
-	if _, denied := a.excludeRules[strings.ToUpper(f.RuleID)]; denied {
-		return false
-	}
-	// Include-list overrides severity
-	if len(a.includeRules) > 0 {
-		if _, ok := a.includeRules[strings.ToUpper(f.RuleID)]; ok {
-			return true
-		}
-		// Not included explicitly
-		return false
-	}
-	// Min severity gate
-	if a.minSeverity == "" {
-		return true
-	}
-	levels := map[string]int{
-		"INFO": 1, "LOW": 2, "MEDIUM": 3, "HIGH": 4, "CRITICAL": 5,
-	}
-	fs := strings.ToUpper(string(f.Severity))
-	return levels[fs] >= levels[a.minSeverity]
 }
 
 // persistent cache handling (simple JSONL: {"fp":"...", "result":{...}})
@@ -402,11 +396,15 @@ func (a *Analyzer) AnalyzeSingleFinding(ctx context.Context, finding rules.Findi
 
 // GetSummary returns a summary of AI analysis results
 func GetSummary(enhancedFindings []EnhancedFinding) AISummary {
-	// SkippedByFilter is populated in Task 5 when the batch dispatch loop lands.
 	summary := AISummary{}
 
 	for _, enhanced := range enhancedFindings {
 		summary.TotalAnalyzed++
+
+		if enhanced.AISkipped {
+			summary.SkippedByFilter++
+			continue
+		}
 
 		if enhanced.AIError != "" {
 			summary.AnalysisErrors++
@@ -459,4 +457,58 @@ func (a *Analyzer) Close() error {
 		return a.client.Close()
 	}
 	return nil
+}
+
+// printFindingResult prints a per-finding result to the terminal during streaming.
+func printFindingResult(term *terminal.Terminal, ef EnhancedFinding) {
+	if !term.IsTTY() {
+		return
+	}
+	if ef.AISkipped || ef.AIVerification == nil {
+		return
+	}
+	v := ef.AIVerification
+	if v.IsLikelyFalsePositive {
+		dim := terminal.NewStyle().WithDim()
+		term.PrintStyled(fmt.Sprintf("  ~  %-42s %s  FALSE POSITIVE  %.0f%%\n",
+			ef.RuleID, v.Severity, v.Confidence*100), dim)
+	} else {
+		red := terminal.NewStyle().WithForeground(terminal.ColorCritical).WithBold()
+		term.PrintStyled(fmt.Sprintf("  ✗  %-42s %s  TRUE POSITIVE   %.0f%%\n",
+			ef.RuleID, v.Severity, v.Confidence*100), red)
+		if v.Reasoning != "" {
+			term.Printf("     %s\n", v.Reasoning)
+		}
+		if v.Remediation != "" {
+			term.Printf("     Fix: %s\n", v.Remediation)
+		}
+	}
+}
+
+// PrintAISummary prints a summary box of AI analysis results to the terminal.
+func PrintAISummary(term *terminal.Terminal, summary AISummary, provider Provider, model string) {
+	if !term.IsTTY() {
+		return
+	}
+	const w = 54
+	title := " AI Analysis Summary "
+	top := "┌─" + title + strings.Repeat("─", w-2-len(title)) + "┐"
+	mid := func(content string) string {
+		inner := w - 2
+		if len(content) < inner {
+			content += strings.Repeat(" ", inner-len(content))
+		}
+		return "│" + content + "│"
+	}
+	bot := "└" + strings.Repeat("─", w-2) + "┘"
+
+	term.Printf("%s\n", top)
+	term.Printf("%s\n", mid(fmt.Sprintf("  %-20s %-6d  Skipped by filter  %-4d",
+		"Analyzed", summary.TotalAnalyzed, summary.SkippedByFilter)))
+	term.Printf("%s\n", mid(fmt.Sprintf("  %-20s %-6d  False pos          %-4d",
+		"True pos", summary.LikelyTruePositives, summary.LikelyFalsePositives)))
+	term.Printf("%s\n", mid(fmt.Sprintf("  %-20s %-6d  Low conf           %-4d",
+		"High conf", summary.HighConfidence, summary.LowConfidence)))
+	term.Printf("%s\n", mid(fmt.Sprintf("  Provider  %s · %s", provider, model)))
+	term.Printf("%s\n", bot)
 }
