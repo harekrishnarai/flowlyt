@@ -42,9 +42,8 @@ type EnhancedFinding struct {
 
 // Analyzer handles AI-powered analysis of findings
 type Analyzer struct {
-	client     Client
-	maxWorkers int
-	timeout    time.Duration
+	client  Client
+	timeout time.Duration
 	// inRunCache avoids duplicate AI calls for equivalent findings during a single run
 	// key: fingerprint string, value: *VerificationResult or error string
 	cache sync.Map
@@ -70,7 +69,6 @@ func NewAnalyzer(client Client, maxWorkers int, timeout time.Duration) *Analyzer
 
 	return &Analyzer{
 		client:        client,
-		maxWorkers:    maxWorkers,
 		timeout:       timeout,
 		cacheFilePath: cachePath,
 		persistCache:  make(map[string]*VerificationResult, 256),
@@ -106,10 +104,6 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 		return skippedFindings, nil
 	}
 
-	// Create context with timeout
-	analyzeCtx, cancel := context.WithTimeout(ctx, a.timeout*time.Duration(len(filtered)))
-	defer cancel()
-
 	enhancedFindings := make([]EnhancedFinding, 0, len(findings))
 
 	const batchSize = 5
@@ -138,6 +132,10 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 		enhancedFindings = append(enhancedFindings, skippedFindings...)
 		return enhancedFindings, nil
 	}
+
+	// Create context with timeout
+	analyzeCtx, cancel := context.WithTimeout(ctx, a.timeout*time.Duration(dispatchCount))
+	defer cancel()
 
 	// Group uncached findings by class (stable order)
 	toDispatchByClass := make(map[string][]rules.Finding)
@@ -230,13 +228,13 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 
 	enhancedFindings = append(enhancedFindings, skippedFindings...)
 
+	// Persist any new cache entries (including those from partial runs)
+	a.flushPersistentCache()
+
 	// Check if context was cancelled
 	if analyzeCtx.Err() != nil {
 		return enhancedFindings, fmt.Errorf("AI analysis timed out or was cancelled: %w", analyzeCtx.Err())
 	}
-
-	// Persist any new cache entries (successful ones only)
-	a.flushPersistentCache()
 
 	return enhancedFindings, nil
 }
