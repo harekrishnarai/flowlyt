@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.1.0] - 2026-03-27
+
+### 🎉 Major Features
+
+**AI Layer Redesign** — Three independent layers that reduce token cost, sharpen analysis quality, and deliver a modern streaming CLI experience
+
+- **Heuristic Pre-filter** (`pkg/ai/filter.go`): Zero-cost Go pattern matching skips obvious false positives before any API call. Skips expression references (`${{ secrets.`, `${{ env.`), known placeholders, already-pinned SHA actions, and locked permissions. Always sends real token prefixes (`ghp_`, `sk-`, `AKIA`) and high-entropy blobs (Shannon ≥4.0 bits/char). Preserves existing `AI_MIN_SEVERITY` / `AI_INCLUDE_RULES` / `AI_EXCLUDE_RULES` env behaviour.
+- **Class-Specific Prompt Templates** (`pkg/ai/prompt.go`): Four specialist system prompts replace the single generic template — `escalation` (privilege chain reasoning), `injection` (source→sink data flow), `secrets_context` (live credential vs placeholder), `supply_chain_trust` (trust context beyond pinning). Each ~150 tokens vs the old ~500-token generic prompt.
+- **Batch Dispatcher** (`pkg/ai/analyzer.go`): Sends up to 5 findings per API call, grouped by class. Results attributed by echoed `index` field (no positional misattribution). Falls back to individual calls on batch failure. All 5 providers implement `VerifyBatch`.
+- **Streaming UX**: Live progress bar (`🤖 AI analysis [████░░] 8/20`), per-finding result lines as batches resolve, `PrintAISummary` box at scan end with analyzed/skipped/true-pos/false-pos breakdown.
+
+### ✨ Added
+
+- `pkg/ai/filter.go` — `ShouldSkipAI` with Shannon entropy helper and env-based gate
+- `pkg/ai/prompt.go` — `composeBatchPrompt`, `parseBatchResponse`, 4 class-specific + 1 generic system prompt
+- `BatchVerificationResult{Index, Result, Error}` struct for index-echoed batch attribution
+- `VerifyBatch` method on all 5 providers (Claude, OpenAI, Gemini, Grok, Perplexity)
+- `AISkipped`, `AISkipReason`, `AIRemediation` fields on `rules.Finding`
+- `SkippedByFilter` field on `AISummary`
+- `PrintAISummary` renders summary box; `printFindingResult` streams per-finding output
+- `ai.remediation`, `ai.skipped`, `ai.skip_reason` properties in SARIF output
+
+### 🔧 Changed
+
+- `shouldSendToAI` / worker goroutine pool replaced by `ShouldSkipAI` + synchronous batch loop
+- `AIVerified` only set when AI actually ran (not for pre-filter skipped findings)
+- Partial AI results returned on timeout — scan completes with warning instead of aborting
+- `--ai-workers` flag removed (design is now synchronous per-class batching)
+- `Remediation` field added to `VerificationResult` response schema
+
+### 📊 Expected Impact
+
+- ≥60% token spend reduction on scans with 20+ findings
+- AI reasoning now cites specific evidence tokens (trigger × permission × step for escalation, source → sink for injection, etc.)
+- Remediation suggestions surfaced in CLI output and SARIF for all true positives
+
+[Full Details](changelogs/CHANGELOG-v1.1.0.md)
+
+---
+
+## [1.0.11] - 2026-03-27
+
+### 🐛 Fixed
+
+- **CACHE_WRITE_IN_PR_WORKFLOW**: Deduplicate findings across matrix-expanded jobs — one finding per `actions/cache` step instead of N
+- **DANGEROUS_WRITE_OPERATION**: Deduplicate across matrix-expanded jobs, keyed per pattern
+- **MATRIX_INJECTION**: Exempt arithmetic expansion context with static matrix values; `fromJSON(inputs.*)` sources still fire
+- **SHELL_SCRIPT_ISSUES**: Exempt double-quoted `$VAR` in file-operation commands (`rm`, `cp`, `mv`, etc.); `eval`, `curl`, `wget` remain fully flagged
+- **IMPOSTOR_COMMIT**: Downgrade severity from HIGH to LOW for known GitHub service bots (`github-actions[bot]`, `dependabot[bot]`)
+
+### 🔧 Improved
+
+- `knownBotRe` promoted to package-level compiled regex (avoids hot-loop recompilation)
+
+[Full Details](changelogs/CHANGELOG-v1.0.11.md)
+
+---
+
+## [1.0.10] - 2026-03-19
+
+### 🐛 Fixed
+
+- **REF_CONFUSION**: Stable semver tags (`@v1`, `@v1.2.3`) no longer produce false positives; only genuinely mutable refs fire
+- **EXTERNAL_TRIGGER_DEBUG**: `workflow_dispatch` suppressed for read-only permission scopes
+- **SHELL_SCRIPT_ISSUES**: Broad unquoted-variable check replaced with precise per-line scan; variables in safe positions (`echo`, `printf`, `cat`) no longer flagged
+- **Data flow analysis**: Fixed self-referential and cross-variable same-step false positive flows in taint engine
+
+### 🔧 Improved
+
+- `permsImplyWrite` handles all GitHub Actions permissions forms (nil, string shorthands, booleans, empty map, granular scope maps)
+- `dangerousCmdRe` extended to match `sudo`-prefixed variants
+
+[Full Details](changelogs/CHANGELOG-v1.0.10.md)
+
+---
+
 ## [1.0.9] - 2026-03-17
 
 ### 🎉 Major Features
@@ -350,7 +426,11 @@ First stable release of Flowlyt!
 
 | Version | Key Feature | False Positive Rate |
 |---------|-------------|-------------------|
-| **1.0.8** | Context-Aware Analysis | **10-15%** ✅ |
+| **1.1.0** | AI Layer Redesign (batch dispatch, class prompts, pre-filter) | **10-15%** ✅ |
+| 1.0.11 | Noise reduction (matrix dedup, bot severity, SHELL_SCRIPT_ISSUES) | 10-15% |
+| 1.0.10 | False positive wave (REF_CONFUSION, EXTERNAL_TRIGGER_DEBUG, taint engine) | 10-15% |
+| 1.0.9 | Expression Taint Analysis + 11 New Rules | 10-15% |
+| 1.0.8 | Context-Aware Analysis | 10-15% |
 | 1.0.7 | Code Context in Reports | 60-70% |
 | 1.0.6 | Internal Action Trust | 60-70% |
 | 1.0.5 | Multi-Platform Support | 60-70% |
