@@ -35,16 +35,29 @@ var (
 // It subsumes the previous shouldSendToAI severity/rule-list gate — env-based
 // filters (AI_MIN_SEVERITY, AI_INCLUDE_RULES, AI_EXCLUDE_RULES) run first.
 func ShouldSkipAI(f rules.Finding) (bool, string) {
-	// 1. Env-based filters (preserve existing behaviour)
+	// 1. Env-based filters (run first, preserve existing behaviour)
 	if skip, reason := envBasedFilter(f); skip {
 		return true, reason
 	}
 
 	ev := f.Evidence
 
+	// 2. Always send: real token prefixes — cannot be overridden by skip logic
+	if realTokenRe.MatchString(ev) {
+		return false, ""
+	}
+
+	// 3. Always send: high-entropy blobs — cannot be overridden by skip logic
+	// NOTE: SHA check (step 4) must come before entropy check within skip logic
+	// because action URLs with 40-char SHAs have high entropy (~4.5 bits/char).
+	// But "always send" gates (steps 2-3) run before any skip check.
+	if hasHighEntropyBlob(ev) {
+		return false, ""
+	}
+
 	cat := strings.ToUpper(string(f.Category))
 
-	// 2. Secrets: expression references are never hardcoded secrets
+	// 4. Secrets: expression references are never hardcoded secrets
 	if strings.Contains(cat, "SECRET") {
 		if strings.Contains(ev, "${{ secrets.") ||
 			strings.Contains(ev, "${{ env.") ||
@@ -56,24 +69,14 @@ func ShouldSkipAI(f rules.Finding) (bool, string) {
 		}
 	}
 
-	// 3. Pinning: SHA already present means static analysis fired incorrectly
+	// 5. Pinning: SHA already present means static analysis fired incorrectly
 	if shaRe.MatchString(ev) {
 		return true, "SHA pin already present — static analysis false positive"
 	}
 
-	// 4. Permissions: already locked down
+	// 6. Permissions: already locked down
 	if strings.Contains(ev, "permissions: read-all") || strings.Contains(ev, "permissions: {}") {
 		return true, "permissions already locked down"
-	}
-
-	// 5. Always send: real token prefixes
-	if realTokenRe.MatchString(ev) {
-		return false, ""
-	}
-
-	// 6. Always send: high-entropy blobs (Shannon entropy >= 4.0 over raw string chars)
-	if hasHighEntropyBlob(ev) {
-		return false, ""
 	}
 
 	return false, ""
@@ -108,7 +111,12 @@ func envBasedFilter(f rules.Finding) (bool, string) {
 
 // hasHighEntropyBlob returns true if any 20+ char token in evidence has
 // Shannon entropy >= 4.0 bits/char over its raw characters.
+// SHA-pinned actions are excluded — those are handled by the SHA skip check.
 func hasHighEntropyBlob(evidence string) bool {
+	// Don't flag entropy on SHA-pinned actions — those are handled by the SHA skip check.
+	if shaRe.MatchString(evidence) {
+		return false
+	}
 	for _, word := range strings.Fields(evidence) {
 		if len(word) >= 20 && shannonEntropy(word) >= 4.0 {
 			return true
