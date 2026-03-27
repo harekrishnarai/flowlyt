@@ -41,6 +41,7 @@ type ClaudeClient struct {
 // Claude API structures
 type claudeRequest struct {
 	Model       string          `json:"model"`
+	System      string          `json:"system,omitempty"`
 	Messages    []claudeMessage `json:"messages"`
 	MaxTokens   int             `json:"max_tokens"`
 	Temperature *float64        `json:"temperature,omitempty"`
@@ -207,7 +208,46 @@ func (c *ClaudeClient) Close() error {
 	return nil
 }
 
-// VerifyBatch is a stub; real implementation added in Task 4.
+// VerifyBatch analyzes a batch of findings of the same class using Claude.
 func (c *ClaudeClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
-	return nil, ErrVerifyBatchNotImplemented
+	system, user := composeBatchPrompt(class, findings)
+
+	req := claudeRequest{
+		Model:       c.model,
+		System:      system,
+		MaxTokens:   c.maxTokens * len(findings),
+		Temperature: &c.temperature,
+		Messages:    []claudeMessage{{Role: "user", Content: user}},
+	}
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal batch request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/messages", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create batch request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", c.apiKey)
+	httpReq.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("batch request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var response claudeResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode batch response: %w", err)
+	}
+	if response.Error != nil {
+		return nil, fmt.Errorf("Claude API error: %s", response.Error.Message)
+	}
+	if len(response.Content) == 0 {
+		return nil, fmt.Errorf("empty batch response from Claude")
+	}
+	return parseBatchResponse(response.Content[0].Text, len(findings))
 }

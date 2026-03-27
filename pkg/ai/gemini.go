@@ -239,7 +239,48 @@ func (c *GeminiClient) Close() error {
 	return nil
 }
 
-// VerifyBatch is a stub; real implementation added in Task 4.
+// VerifyBatch analyzes a batch of findings of the same class using Gemini.
 func (c *GeminiClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
-	return nil, ErrVerifyBatchNotImplemented
+	system, user := composeBatchPrompt(class, findings)
+	combined := system + "\n\n---\n\n" + user
+
+	maxOut := c.maxTokens * len(findings)
+	req := geminiRequest{
+		Contents: []geminiContent{
+			{Parts: []geminiPart{{Text: combined}}},
+		},
+		GenerationConfig: &geminiGenerationConfig{
+			MaxOutputTokens: &maxOut,
+		},
+	}
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal batch request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/models/%s:generateContent?key=%s", c.baseURL, c.model, c.apiKey)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create batch request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("batch request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var response geminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, fmt.Errorf("failed to decode batch response: %w", err)
+	}
+	if response.Error != nil {
+		return nil, fmt.Errorf("Gemini API error: %s", response.Error.Message)
+	}
+	if len(response.Candidates) == 0 || len(response.Candidates[0].Content.Parts) == 0 {
+		return nil, fmt.Errorf("empty batch response from Gemini")
+	}
+	return parseBatchResponse(response.Candidates[0].Content.Parts[0].Text, len(findings))
 }
