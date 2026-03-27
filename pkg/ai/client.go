@@ -18,7 +18,6 @@ package ai
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
@@ -118,9 +117,6 @@ func GetSupportedProviders() []string {
 		string(ProviderPerplexity),
 	}
 }
-
-// ErrVerifyBatchNotImplemented is returned by VerifyBatch stubs until Task 4 replaces them.
-var ErrVerifyBatchNotImplemented = errors.New("VerifyBatch not yet implemented")
 
 // GetDefaultModel returns the default model for a given provider
 func GetDefaultModel(provider Provider) string {

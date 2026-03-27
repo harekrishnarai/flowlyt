@@ -241,6 +241,9 @@ func (c *GeminiClient) Close() error {
 
 // VerifyBatch analyzes a batch of findings of the same class using Gemini.
 func (c *GeminiClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
+	if len(findings) == 0 {
+		return nil, fmt.Errorf("VerifyBatch called with empty findings slice")
+	}
 	system, user := composeBatchPrompt(class, findings)
 	combined := system + "\n\n---\n\n" + user
 

@@ -226,6 +226,9 @@ func (c *GrokClient) Close() error {
 
 // VerifyBatch analyzes a batch of findings of the same class using Grok.
 func (c *GrokClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
+	if len(findings) == 0 {
+		return nil, fmt.Errorf("VerifyBatch called with empty findings slice")
+	}
 	system, user := composeBatchPrompt(class, findings)
 
 	req := grokRequest{

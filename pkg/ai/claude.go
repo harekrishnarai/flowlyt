@@ -210,6 +210,9 @@ func (c *ClaudeClient) Close() error {
 
 // VerifyBatch analyzes a batch of findings of the same class using Claude.
 func (c *ClaudeClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
+	if len(findings) == 0 {
+		return nil, fmt.Errorf("VerifyBatch called with empty findings slice")
+	}
 	system, user := composeBatchPrompt(class, findings)
 
 	req := claudeRequest{
