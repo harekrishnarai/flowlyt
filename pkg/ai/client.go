@@ -112,14 +112,13 @@ func GetDefaultModel(provider Provider) string {
 	case ProviderOpenAI:
 		return "gpt-4o-mini"
 	case ProviderGemini:
-		return "gemini-2.5-flash"
+		return "gemini-3.1-flash"
 	case ProviderClaude:
-		// Default to Claude Haiku latest stable for better quality/cost
-		return "claude-3-5-haiku-20241022"
+		return "claude-sonnet-4-6"
 	case ProviderGrok:
-		return "grok-beta"
+		return "grok-3"
 	case ProviderPerplexity:
-		return "sonar"
+		return "sonar-pro"
 	default:
 		return ""
 	}
@@ -130,33 +129,33 @@ func GetAvailableModels(provider Provider) []string {
 	switch provider {
 	case ProviderOpenAI:
 		return []string{
-			"gpt-4o-mini",   // Cost-effective default
-			"gpt-4o",        // Latest flagship model
-			"gpt-4-turbo",   // Fast and capable
-			"gpt-4",         // Original GPT-4
-			"gpt-3.5-turbo", // Legacy but fast
+			"gpt-4o-mini", // Cost-effective default
+			"gpt-4o",      // Flagship model
+			"o3-mini",     // Reasoning model, cost-effective
+			"o3",          // Full reasoning model
 		}
 	case ProviderGemini:
 		return []string{
-			"gemini-2.5-flash", // Cost-effective default
-			"gemini-1.5-pro",   // Higher quality
-			"gemini-1.0-pro",   // Legacy version
+			"gemini-3.1-flash", // Cost-effective default
+			"gemini-3.1-pro",   // Higher quality
+			"gemini-2.5-flash", // Previous generation
 		}
 	case ProviderClaude:
 		return []string{
-			"claude-3-5-haiku-20241022", // Default (quality + speed)
-			"claude-3-sonnet-20240229",  // Balanced performance
-			"claude-3-opus-20240229",    // Highest quality
+			"claude-sonnet-4-6",          // Default — balanced quality/cost
+			"claude-opus-4-6",            // Highest quality
+			"claude-haiku-4-5-20251001",  // Fastest, most cost-effective
 		}
 	case ProviderGrok:
 		return []string{
-			"grok-beta", // Current default
+			"grok-3",      // Current default
+			"grok-3-mini", // Cost-effective
 		}
 	case ProviderPerplexity:
 		return []string{
-			"llama-3.1-sonar-small-128k-online", // Cost-effective default
-			"llama-3.1-sonar-large-128k-online", // Higher quality
-			"llama-3.1-sonar-huge-128k-online",  // Highest quality
+			"sonar-pro",      // Cost-effective default
+			"sonar-reasoning", // Reasoning model
+			"sonar",          // Legacy
 		}
 	default:
 		return []string{}
