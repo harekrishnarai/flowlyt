@@ -136,15 +136,23 @@ runs:
   steps:
     - name: Setup Flowlyt Scanner
       shell: bash
+      # Inputs are bound to env vars here so they are never interpolated directly
+      # into the shell script, preventing script injection via malicious input values.
+      env:
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_CONFIG_FILE: ${{ inputs.config-file }}
+        INPUT_OUTPUT_FORMAT: ${{ inputs.output-format }}
+        INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail-on-severity }}
+        INPUT_POLICY_ENFORCEMENT: ${{ inputs.enable-policy-enforcement }}
       run: |
         set -euo pipefail
 
-        echo "🔍 Setting up Flowlyt Security Scanner..."
-        echo "Repository: ${{ inputs.repository }}"
-        echo "Config: ${{ inputs.config-file }}"
-        echo "Output Format: ${{ inputs.output-format }}"
-        echo "Fail on Severity: ${{ inputs.fail-on-severity }}"
-        echo "Policy Enforcement: ${{ inputs.enable-policy-enforcement }}"
+        echo "Setting up Flowlyt Security Scanner..."
+        echo "Repository: $INPUT_REPOSITORY"
+        echo "Config: $INPUT_CONFIG_FILE"
+        echo "Output Format: $INPUT_OUTPUT_FORMAT"
+        echo "Fail on Severity: $INPUT_FAIL_ON_SEVERITY"
+        echo "Policy Enforcement: $INPUT_POLICY_ENFORCEMENT"
 
         # Auto-detect platform and architecture
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -246,6 +254,17 @@ runs:
         FLOWLYT_OUTPUT_FORMAT: ${{ inputs.output-format }}
         FLOWLYT_OUTPUT_FILE: ${{ inputs.output-file }}
         FLOWLYT_MIN_SEVERITY: ${{ inputs.min-severity }}
+        FLOWLYT_POLICY_ENFORCEMENT: ${{ inputs.enable-policy-enforcement }}
+        FLOWLYT_VULN_INTEL: ${{ inputs.enable-vuln-intel }}
+        FLOWLYT_AST_ANALYSIS: ${{ inputs.enable-ast-analysis }}
+        FLOWLYT_POLICY_CONFIG: ${{ inputs.policy-config }}
+        FLOWLYT_COMPLIANCE_FRAMEWORKS: ${{ inputs.compliance-frameworks }}
+        FLOWLYT_VERBOSE: ${{ inputs.verbose }}
+        FLOWLYT_REPOSITORY: ${{ inputs.repository }}
+        FLOWLYT_FAIL_ON_SEVERITY: ${{ inputs.fail-on-severity }}
+        FLOWLYT_MAX_CRITICAL: ${{ inputs.max-critical }}
+        FLOWLYT_MAX_HIGH: ${{ inputs.max-high }}
+        FLOWLYT_CONTINUE_ON_ERROR: ${{ inputs.continue-on-error }}
       run: |
         set -o pipefail
 
@@ -272,27 +291,27 @@ runs:
         fi
 
         # Add optional flags
-        if [ "${{ inputs.enable-policy-enforcement }}" = "true" ]; then
+        if [ "$FLOWLYT_POLICY_ENFORCEMENT" = "true" ]; then
           SCAN_ARGS+=("--enable-policy-enforcement")
         fi
 
-        if [ "${{ inputs.enable-vuln-intel }}" = "true" ]; then
+        if [ "$FLOWLYT_VULN_INTEL" = "true" ]; then
           SCAN_ARGS+=("--enable-vuln-intel")
         fi
 
-        if [ "${{ inputs.enable-ast-analysis }}" = "true" ]; then
+        if [ "$FLOWLYT_AST_ANALYSIS" = "true" ]; then
           SCAN_ARGS+=("--enable-ast-analysis")
         fi
 
-        if [ -n "${{ inputs.policy-config }}" ]; then
-          SCAN_ARGS+=("--policy-config" "${{ inputs.policy-config }}")
+        if [ -n "$FLOWLYT_POLICY_CONFIG" ]; then
+          SCAN_ARGS+=("--policy-config" "$FLOWLYT_POLICY_CONFIG")
         fi
 
-        if [ -n "${{ inputs.compliance-frameworks }}" ]; then
-          SCAN_ARGS+=("--compliance-frameworks" "${{ inputs.compliance-frameworks }}")
+        if [ -n "$FLOWLYT_COMPLIANCE_FRAMEWORKS" ]; then
+          SCAN_ARGS+=("--compliance-frameworks" "$FLOWLYT_COMPLIANCE_FRAMEWORKS")
         fi
 
-        if [ "${{ inputs.verbose }}" = "true" ]; then
+        if [ "$FLOWLYT_VERBOSE" = "true" ]; then
           SCAN_ARGS+=("--verbose")
         fi
 
@@ -354,7 +373,7 @@ runs:
         cat > summary.md << EOF
         ## 🛡️ Flowlyt Security Scan Results
 
-        **Repository:** \`${{ inputs.repository }}\`
+        **Repository:** \`$FLOWLYT_REPOSITORY\`
         **Scan Time:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')
         **Configuration:** \`$FLOWLYT_CONFIG\`
 
@@ -369,7 +388,7 @@ runs:
         EOF
 
         # Add policy information if enabled
-        if [ "${{ inputs.enable-policy-enforcement }}" = "true" ]; then
+        if [ "$FLOWLYT_POLICY_ENFORCEMENT" = "true" ]; then
           POLICY_VIOLATIONS=0
           BLOCKING_VIOLATIONS=0
           COMPLIANCE_STATUS="true"
@@ -404,8 +423,8 @@ runs:
         FAIL_REASON=""
 
         # Check fail-on-severity threshold
-        if [ -n "${{ inputs.fail-on-severity }}" ]; then
-          case "${{ inputs.fail-on-severity }}" in
+        if [ -n "$FLOWLYT_FAIL_ON_SEVERITY" ]; then
+          case "$FLOWLYT_FAIL_ON_SEVERITY" in
             "CRITICAL")
               if [ "$CRITICAL_COUNT" -gt 0 ]; then
                 SHOULD_FAIL=true
@@ -434,18 +453,18 @@ runs:
         fi
 
         # Check maximum limits
-        if [ "${{ inputs.max-critical }}" -gt 0 ] && [ "$CRITICAL_COUNT" -gt "${{ inputs.max-critical }}" ]; then
+        if [ "${FLOWLYT_MAX_CRITICAL:-0}" -gt 0 ] && [ "$CRITICAL_COUNT" -gt "${FLOWLYT_MAX_CRITICAL:-0}" ]; then
           SHOULD_FAIL=true
-          FAIL_REASON="Critical findings ($CRITICAL_COUNT) exceed limit (${{ inputs.max-critical }})"
+          FAIL_REASON="Critical findings ($CRITICAL_COUNT) exceed limit ($FLOWLYT_MAX_CRITICAL)"
         fi
 
-        if [ "${{ inputs.max-high }}" -gt 0 ] && [ "$HIGH_COUNT" -gt "${{ inputs.max-high }}" ]; then
+        if [ "${FLOWLYT_MAX_HIGH:-0}" -gt 0 ] && [ "$HIGH_COUNT" -gt "${FLOWLYT_MAX_HIGH:-0}" ]; then
           SHOULD_FAIL=true
-          FAIL_REASON="High severity findings ($HIGH_COUNT) exceed limit (${{ inputs.max-high }})"
+          FAIL_REASON="High severity findings ($HIGH_COUNT) exceed limit ($FLOWLYT_MAX_HIGH)"
         fi
 
         # Check blocking policy violations
-        if [ "${{ inputs.enable-policy-enforcement }}" = "true" ] && [ "${BLOCKING_VIOLATIONS:-0}" -gt 0 ]; then
+        if [ "$FLOWLYT_POLICY_ENFORCEMENT" = "true" ] && [ "${BLOCKING_VIOLATIONS:-0}" -gt 0 ]; then
           SHOULD_FAIL=true
           FAIL_REASON="Found $BLOCKING_VIOLATIONS blocking policy violations"
         fi
@@ -454,7 +473,7 @@ runs:
         if [ "$SHOULD_FAIL" = "true" ]; then
           echo "🚨 Security scan failed: $FAIL_REASON"
 
-          if [ "${{ inputs.continue-on-error }}" != "true" ]; then
+          if [ "$FLOWLYT_CONTINUE_ON_ERROR" != "true" ]; then
             exit 1
           else
             echo "⚠️ Continuing despite failures due to continue-on-error setting"
