@@ -136,15 +136,23 @@ runs:
   steps:
     - name: Setup Flowlyt Scanner
       shell: bash
+      # Inputs are bound to env vars here so they are never interpolated directly
+      # into the shell script, preventing script injection via malicious input values.
+      env:
+        INPUT_REPOSITORY: ${{ inputs.repository }}
+        INPUT_CONFIG_FILE: ${{ inputs.config-file }}
+        INPUT_OUTPUT_FORMAT: ${{ inputs.output-format }}
+        INPUT_FAIL_ON_SEVERITY: ${{ inputs.fail-on-severity }}
+        INPUT_POLICY_ENFORCEMENT: ${{ inputs.enable-policy-enforcement }}
       run: |
         set -euo pipefail
 
-        echo "🔍 Setting up Flowlyt Security Scanner..."
-        echo "Repository: ${{ inputs.repository }}"
-        echo "Config: ${{ inputs.config-file }}"
-        echo "Output Format: ${{ inputs.output-format }}"
-        echo "Fail on Severity: ${{ inputs.fail-on-severity }}"
-        echo "Policy Enforcement: ${{ inputs.enable-policy-enforcement }}"
+        echo "Setting up Flowlyt Security Scanner..."
+        echo "Repository: $INPUT_REPOSITORY"
+        echo "Config: $INPUT_CONFIG_FILE"
+        echo "Output Format: $INPUT_OUTPUT_FORMAT"
+        echo "Fail on Severity: $INPUT_FAIL_ON_SEVERITY"
+        echo "Policy Enforcement: $INPUT_POLICY_ENFORCEMENT"
 
         # Auto-detect platform and architecture
         OS=$(uname -s | tr '[:upper:]' '[:lower:]')
@@ -246,6 +254,8 @@ runs:
         FLOWLYT_OUTPUT_FORMAT: ${{ inputs.output-format }}
         FLOWLYT_OUTPUT_FILE: ${{ inputs.output-file }}
         FLOWLYT_MIN_SEVERITY: ${{ inputs.min-severity }}
+        FLOWLYT_POLICY_ENFORCEMENT: ${{ inputs.enable-policy-enforcement }}
+        FLOWLYT_VULN_INTEL: ${{ inputs.enable-vuln-intel }}
       run: |
         set -o pipefail
 
@@ -272,11 +282,11 @@ runs:
         fi
 
         # Add optional flags
-        if [ "${{ inputs.enable-policy-enforcement }}" = "true" ]; then
+        if [ "$FLOWLYT_POLICY_ENFORCEMENT" = "true" ]; then
           SCAN_ARGS+=("--enable-policy-enforcement")
         fi
 
-        if [ "${{ inputs.enable-vuln-intel }}" = "true" ]; then
+        if [ "$FLOWLYT_VULN_INTEL" = "true" ]; then
           SCAN_ARGS+=("--enable-vuln-intel")
         fi
 
