@@ -95,22 +95,17 @@ func checkReusableWorkflowAgentExposure(workflow parser.WorkflowFile) []Finding 
 		}
 
 		if !hasSecrets {
-			contentStr := string(workflow.Content)
-			if strings.Contains(contentStr, "secrets:") {
-				hasSecrets = true
-			}
-		}
-
-		if !hasSecrets {
 			continue
 		}
 
 		severity := High
-		contentStr := string(workflow.Content)
-		if strings.Contains(contentStr, "PRIVATE_KEY") ||
-			strings.Contains(contentStr, "API_KEY") ||
-			strings.Contains(contentStr, "inherit") {
-			severity = Critical
+		if job.Secrets != nil {
+			switch s := job.Secrets.(type) {
+			case string:
+				if s == "inherit" {
+					severity = Critical
+				}
+			}
 		}
 
 		finding := Finding{
@@ -134,6 +129,7 @@ func checkReusableWorkflowAgentExposure(workflow parser.WorkflowFile) []Finding 
 
 // checkDockerExecWithSecrets detects direct docker run commands that forward
 // secrets via -e/--env while operating on fork code without network isolation.
+// Only flags when the job checks out untrusted PR head code.
 func checkDockerExecWithSecrets(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
@@ -154,6 +150,11 @@ func checkDockerExecWithSecrets(workflow parser.WorkflowFile) []Finding {
 	networkNone := regexp.MustCompile(`--network[=\s]+none`)
 
 	for jobName, job := range workflow.Workflow.Jobs {
+		// Only flag if the job checks out untrusted PR head code
+		if !jobCheckoutsUntrustedCode(job) {
+			continue
+		}
+
 		for stepIdx, step := range job.Steps {
 			if step.Run == "" {
 				continue
@@ -236,8 +237,10 @@ func checkDockerExecWithSecrets(workflow parser.WorkflowFile) []Finding {
 	return findings
 }
 
-// checkIndirectDockerWithSecrets detects step-level reusable workflow/action
-// calls that pass secrets to agent/review workflows under pull_request_target.
+// checkIndirectDockerWithSecrets detects step-level composite action calls
+// that pass secrets to agent/review workflows under pull_request_target.
+// Note: Reusable workflows (.github/workflows/) are job-level only;
+// step-level uses only valid for composite actions.
 func checkIndirectDockerWithSecrets(workflow parser.WorkflowFile, lineMapper *linenum.LineMapper) []Finding {
 	var findings []Finding
 
@@ -256,8 +259,8 @@ func checkIndirectDockerWithSecrets(workflow parser.WorkflowFile, lineMapper *li
 				continue
 			}
 
-			if !strings.Contains(step.Uses, ".github/workflows/") &&
-				!strings.Contains(step.Uses, ".github/actions/") {
+			// Step-level uses: only composite actions are valid here
+			if !strings.Contains(step.Uses, ".github/actions/") {
 				continue
 			}
 
@@ -353,6 +356,8 @@ func checkAIAgentOnUntrustedCode(workflow parser.WorkflowFile) []Finding {
 		regexp.MustCompile(`(?i)(anthropic|openai|claude|copilot).*action`),
 	}
 
+	networkNonePattern := regexp.MustCompile(`--network[=\s]+none`)
+
 	for jobName, job := range workflow.Workflow.Jobs {
 		for stepIdx, step := range job.Steps {
 			isAIStep := false
@@ -365,6 +370,10 @@ func checkAIAgentOnUntrustedCode(workflow parser.WorkflowFile) []Finding {
 						evidence = step.Run
 						break
 					}
+				}
+				// If this is a docker run with --network=none, it's mitigated
+				if isAIStep && networkNonePattern.MatchString(step.Run) {
+					continue
 				}
 			}
 
@@ -431,6 +440,15 @@ func checkAIAgentOnUntrustedCode(workflow parser.WorkflowFile) []Finding {
 				if lineResult != nil {
 					lineNumber = lineResult.LineNumber
 				}
+			} else if step.Uses != "" {
+				linePattern := linenum.FindPattern{
+					Key:   "uses",
+					Value: step.Uses,
+				}
+				lineResult := lineMapper.FindLineNumber(linePattern)
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
 			}
 
 			finding := Finding{
@@ -444,6 +462,268 @@ func checkAIAgentOnUntrustedCode(workflow parser.WorkflowFile) []Finding {
 				StepName:    stepName,
 				Evidence:    evidence,
 				Remediation: "Add --network=none to agent containers. Treat all file contents as untrusted in agent prompts. Remove secrets from the agent environment if not needed. Require a maintainer label before running agents on fork PRs.",
+				LineNumber:  lineNumber,
+			}
+			findings = append(findings, finding)
+		}
+	}
+
+	return findings
+}
+
+// jobCheckoutsUntrustedCode returns true if a job contains a checkout step
+// that references the PR head (untrusted code). Checks for:
+// - actions/checkout with ref containing head.sha, head.ref, or head_ref
+// - git checkout/fetch commands referencing PR refs
+func jobCheckoutsUntrustedCode(job parser.Job) bool {
+	untrustedRefPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)pull_request\.head\.sha`),
+		regexp.MustCompile(`(?i)pull_request\.head\.ref`),
+		regexp.MustCompile(`(?i)github\.head_ref`),
+		regexp.MustCompile(`(?i)event\.pull_request\.head`),
+		regexp.MustCompile(`(?i)refs/pull/`),
+	}
+
+	for _, step := range job.Steps {
+		// Check actions/checkout with untrusted ref
+		if strings.Contains(step.Uses, "actions/checkout") {
+			if step.With != nil {
+				if ref, ok := step.With["ref"]; ok {
+					refStr, _ := ref.(string)
+					for _, pattern := range untrustedRefPatterns {
+						if pattern.MatchString(refStr) {
+							return true
+						}
+					}
+				}
+			}
+		}
+
+		// Check run steps for git commands fetching PR refs
+		if step.Run != "" {
+			for _, pattern := range untrustedRefPatterns {
+				if pattern.MatchString(step.Run) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
+}
+
+// CheckAIAgentCommentTriggered detects AI agent workflows triggered by
+// issue_comment or pull_request_review_comment that process attacker-controlled
+// input (comment body) with secrets available. This enables prompt injection
+// attacks where any external user can @mention the agent and craft payloads
+// to exfiltrate secrets or abuse write permissions.
+func CheckAIAgentCommentTriggered(workflow parser.WorkflowFile) []Finding {
+	var findings []Finding
+
+	// Must be triggered by comment events
+	hasCommentTrigger := false
+	triggerName := ""
+	switch on := workflow.Workflow.On.(type) {
+	case map[string]interface{}:
+		if _, ok := on["issue_comment"]; ok {
+			hasCommentTrigger = true
+			triggerName = "issue_comment"
+		}
+		if _, ok := on["pull_request_review_comment"]; ok {
+			hasCommentTrigger = true
+			if triggerName != "" {
+				triggerName += " + pull_request_review_comment"
+			} else {
+				triggerName = "pull_request_review_comment"
+			}
+		}
+	}
+
+	if !hasCommentTrigger {
+		return findings
+	}
+
+	lineMapper := linenum.NewLineMapper(workflow.Content)
+
+	// Known AI agent actions (comment-triggered code review / chat agents)
+	aiAgentActions := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)anthropics?/claude[-_]code[-_]action`),
+		regexp.MustCompile(`(?i)google[-_]gemini/code[-_]assist[-_]action`),
+		regexp.MustCompile(`(?i)github/copilot[-_]action`),
+		regexp.MustCompile(`(?i)openai/chatgpt[-_]action`),
+		regexp.MustCompile(`(?i)coderabbit`),
+		regexp.MustCompile(`(?i)sourcery[-_]ai`),
+		regexp.MustCompile(`(?i)sweep[-_]ai`),
+		regexp.MustCompile(`(?i)aider[-_]action`),
+		regexp.MustCompile(`(?i)devin[-_]action`),
+		regexp.MustCompile(`(?i)qodo/`),
+		regexp.MustCompile(`(?i)cursor[-_]action`),
+	}
+
+	// AI agent CLI patterns in run steps
+	aiRunPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\bclaude\s+(code|--prompt|-p)\b`),
+		regexp.MustCompile(`(?i)\bgemini\s+(run|review|respond)\b`),
+		regexp.MustCompile(`(?i)\baider\b.*\b(run|--message)\b`),
+		regexp.MustCompile(`(?i)\bcody\b.*\b(chat|respond)\b`),
+		regexp.MustCompile(`(?i)\bcopilot\b.*\b(review|respond)\b`),
+	}
+
+	for jobName, job := range workflow.Workflow.Jobs {
+		for stepIdx, step := range job.Steps {
+			isAIAgent := false
+			evidence := ""
+
+			// Check uses: for known AI agent actions
+			if step.Uses != "" {
+				for _, pattern := range aiAgentActions {
+					if pattern.MatchString(step.Uses) {
+						isAIAgent = true
+						evidence = "uses: " + step.Uses
+						break
+					}
+				}
+			}
+
+			// Check run: for AI CLI invocations
+			if !isAIAgent && step.Run != "" {
+				for _, pattern := range aiRunPatterns {
+					if pattern.MatchString(step.Run) {
+						isAIAgent = true
+						evidence = step.Run
+						break
+					}
+				}
+			}
+
+			if !isAIAgent {
+				continue
+			}
+
+			// Check if author_association is already gated
+			hasActorGate := false
+			if job.If != "" {
+				if strings.Contains(job.If, "author_association") {
+					hasActorGate = true
+				}
+			}
+			if step.If != "" {
+				if strings.Contains(step.If, "author_association") {
+					hasActorGate = true
+				}
+			}
+			// Also check the job-level if from raw content for complex expressions
+			contentStr := string(workflow.Content)
+			if strings.Contains(contentStr, "author_association") &&
+				(strings.Contains(contentStr, "'MEMBER'") || strings.Contains(contentStr, "'OWNER'") || strings.Contains(contentStr, "'COLLABORATOR'")) {
+				hasActorGate = true
+			}
+
+			if hasActorGate {
+				continue
+			}
+
+			// Determine what secrets are exposed
+			hasSecrets := false
+			secretEvidence := []string{}
+
+			if step.With != nil {
+				for key, value := range step.With {
+					if valueStr, ok := value.(string); ok {
+						if strings.Contains(valueStr, "secrets.") {
+							hasSecrets = true
+							secretEvidence = append(secretEvidence, key+"="+valueStr)
+						}
+					}
+				}
+			}
+
+			if step.Env != nil {
+				for key, value := range step.Env {
+					if strings.Contains(value, "secrets.") {
+						hasSecrets = true
+						secretEvidence = append(secretEvidence, key+"="+value)
+					}
+				}
+			}
+
+			if job.Env != nil {
+				for _, value := range job.Env {
+					if strings.Contains(value, "secrets.") {
+						hasSecrets = true
+						break
+					}
+				}
+			}
+
+			stepName := step.Name
+			if stepName == "" {
+				stepName = "Step " + string(rune('1'+stepIdx))
+			}
+
+			lineNumber := 1
+			if step.Uses != "" {
+				linePattern := linenum.FindPattern{
+					Key:   "uses",
+					Value: step.Uses,
+				}
+				lineResult := lineMapper.FindLineNumber(linePattern)
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+			} else if step.Run != "" {
+				linePattern := linenum.FindPattern{
+					Key:   "run",
+					Value: step.Run,
+				}
+				lineResult := lineMapper.FindLineNumber(linePattern)
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
+			}
+
+			// Determine severity and description based on exposure
+			var severity Severity
+			var description string
+			var ruleCategory Category
+
+			if hasSecrets {
+				ruleCategory = SecretExposure
+				severity = High
+				// If the job has write permissions, severity is Critical
+				if job.Permissions != nil && permsImplyWrite(job.Permissions) {
+					severity = Critical
+				}
+				secretInfo := ""
+				if len(secretEvidence) > 0 {
+					secretInfo = " Secrets passed: " + strings.Join(secretEvidence, ", ")
+				}
+				description = "A workflow runs an AI agent in response to issue comments or PR review comments " +
+					"without restricting to trusted actors (author_association). " +
+					"Any user who can comment (including external contributors on public repos) can trigger the agent " +
+					"and control its input via the comment body. With secrets available, an attacker can craft prompt " +
+					"injection payloads to exfiltrate API keys or abuse write permissions." + secretInfo
+			} else {
+				// Denial-of-wallet: no secrets but still burns API credits
+				ruleCategory = AccessControl
+				severity = Medium
+				description = "A workflow runs an AI agent in response to issue comments or PR review comments " +
+					"without restricting to trusted actors (author_association). " +
+					"Any user who can comment on public repos can trigger the agent, causing unbounded API cost. " +
+					"An attacker can spam mentions to inflict denial-of-wallet by exhausting the API budget."
+			}
+
+			finding := Finding{
+				RuleID:      "AI_AGENT_COMMENT_TRIGGERED",
+				RuleName:    "AI Agent Triggered by External Comment Without Actor Gate",
+				Description: description,
+				Severity:    severity,
+				Category:    ruleCategory,
+				FilePath:    workflow.Path,
+				JobName:     jobName,
+				StepName:    stepName,
+				Evidence:    evidence,
+				Remediation: "Restrict trigger to trusted actors: add `if: github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'OWNER'`. For cost control, add rate limiting or require a maintainer label. Never pass secrets directly to agent actions processing external input.",
 				LineNumber:  lineNumber,
 			}
 			findings = append(findings, finding)

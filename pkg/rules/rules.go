@@ -683,6 +683,15 @@ func StandardRules() []Rule {
 			Platform:    PlatformGitHub,
 			Check:       checkAIAgentOnUntrustedCode,
 		},
+		{
+			ID:          "AI_AGENT_COMMENT_TRIGGERED",
+			Name:        "AI Agent Triggered by External Comment Without Actor Gate",
+			Description: "An AI agent runs in response to issue/PR comments from any user without author_association gating, enabling prompt injection (with secrets) or denial-of-wallet (without secrets) attacks",
+			Severity:    High,
+			Category:    SecretExposure,
+			Platform:    PlatformGitHub,
+			Check:       CheckAIAgentCommentTriggered,
+		},
 	}
 }
 
@@ -3250,15 +3259,15 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 	}
 
 	// Check for dangerous external triggers
-	// Only flag triggers that combine external accessibility with write permissions,
-	// since read-only workflows triggered externally pose minimal risk.
+	// pull_request_target is always dangerous (elevated permissions on fork code).
+	// Other triggers are only flagged when the workflow has write permissions.
 	dangerousTriggers := map[string]string{
 		"pull_request_target": "Can be triggered by external pull requests with elevated permissions",
-		"issue_comment":       "Can be triggered by anyone who can comment on issues",
 	}
 
 	// These triggers are only concerning when the workflow has write permissions
 	writeRequiredTriggers := map[string]string{
+		"issue_comment":       "Can be triggered by anyone who can comment on issues",
 		"workflow_run":        "Can be triggered by completion of other workflows",
 		"repository_dispatch": "Can be triggered via API by repository collaborators",
 		"workflow_dispatch":   "Can be manually triggered with potential for abuse",

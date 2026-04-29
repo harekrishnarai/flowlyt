@@ -389,13 +389,13 @@ func DefaultConfig() Config {
 }
 
 // detectRepositoryOwner attempts to determine the repository owner from
-// the git remote URL or falls back to the directory name.
+// the git remote URL. Falls back to the parent directory name if parsing fails.
 func detectRepositoryOwner(repoPath string) string {
 	// Try reading .git/config for remote origin URL
 	gitConfigPath := filepath.Join(repoPath, ".git", "config")
 	data, err := os.ReadFile(gitConfigPath)
 	if err != nil {
-		return ""
+		return filepath.Base(filepath.Dir(repoPath))
 	}
 
 	content := string(data)
@@ -419,18 +419,23 @@ func detectRepositoryOwner(repoPath string) string {
 				continue
 			}
 			url := strings.TrimSpace(parts[1])
-			return ownerFromRemoteURL(url)
+			owner := ownerFromRemoteURL(url)
+			if owner != "" {
+				return owner
+			}
 		}
 	}
 
-	return ""
+	// Fallback: use parent directory name as a best-effort owner guess
+	return filepath.Base(filepath.Dir(repoPath))
 }
 
 // ownerFromRemoteURL extracts the owner/org from a git remote URL.
-// Supports: https://github.com/owner/repo.git, git@github.com:owner/repo.git
+// Supports: https://github.com/owner/repo.git, git@github.com:owner/repo.git,
+// ssh://git@github.com/owner/repo.git
 func ownerFromRemoteURL(url string) string {
-	// SSH format: git@github.com:owner/repo.git
-	if strings.Contains(url, ":") && strings.Contains(url, "@") {
+	// SSH scp-style format: git@github.com:owner/repo.git
+	if strings.Contains(url, ":") && strings.Contains(url, "@") && !strings.HasPrefix(url, "ssh://") {
 		colonIdx := strings.LastIndex(url, ":")
 		path := url[colonIdx+1:]
 		path = strings.TrimSuffix(path, ".git")
@@ -440,10 +445,11 @@ func ownerFromRemoteURL(url string) string {
 		}
 	}
 
+	// SSH URL format: ssh://git@github.com/owner/repo.git
 	// HTTPS format: https://github.com/owner/repo.git
 	url = strings.TrimSuffix(url, ".git")
 	parts := strings.Split(url, "/")
-	// URL like https://github.com/owner/repo → parts[3] is owner
+	// URL like https://github.com/owner/repo → parts[len-2] is owner
 	if len(parts) >= 4 {
 		return parts[len(parts)-2]
 	}

@@ -268,7 +268,7 @@ func checkUntrustedActionSources(workflow parser.WorkflowFile) []Finding {
 				isBranchRef := false
 				if len(actionParts) > 1 {
 					version := actionParts[1]
-					if len(version) == 40 {
+					if len(version) == 40 && isHexString(version) {
 						isPinnedToSHA = true
 					} else if !strings.HasPrefix(version, "v") {
 						isBranchRef = true

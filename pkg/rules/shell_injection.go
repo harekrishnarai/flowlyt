@@ -392,6 +392,13 @@ func isJobUsingSelfHostedRunner(job parser.Job) bool {
 		"ubuntu-slim",
 	}
 
+	// GitHub variant runner patterns: ubuntu-latest-4-cores, macos-13-large, windows-2022-16core
+	githubVariantPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`^ubuntu-(latest|[0-9]+\.[0-9]+)(-\d+-cores?|-xl)?$`),
+		regexp.MustCompile(`^macos-(latest|[0-9]+)(-large|-xlarge)?$`),
+		regexp.MustCompile(`^windows-(latest|[0-9]+)(-\d+core)?$`),
+	}
+
 	isManaged := func(label string) bool {
 		if githubHostedRunners[label] {
 			return true
@@ -402,9 +409,10 @@ func isJobUsingSelfHostedRunner(job parser.Job) bool {
 				return true
 			}
 		}
-		// GitHub variant suffixes: ubuntu-latest-xl, macos-13-large, etc.
-		if strings.HasPrefix(lower, "ubuntu-") || strings.HasPrefix(lower, "macos-") || strings.HasPrefix(lower, "windows-") {
-			return true
+		for _, pattern := range githubVariantPatterns {
+			if pattern.MatchString(lower) {
+				return true
+			}
 		}
 		return false
 	}

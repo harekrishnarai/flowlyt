@@ -363,6 +363,13 @@ func (cp *ConcurrentProcessor) analyzeWorkflowConcurrently(ctx context.Context, 
 	go func() {
 		defer wg.Done()
 
+		select {
+		case <-ctx.Done():
+			errChan <- ctx.Err()
+			return
+		default:
+		}
+
 		var standardFindings []rules.Finding
 		// Use the RuleEngine for context-aware analysis (severity adjustment, suppression)
 		engine := rules.NewRuleEngine(nil)

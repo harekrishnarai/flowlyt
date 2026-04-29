@@ -17,6 +17,7 @@ limitations under the License.
 package rules
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
@@ -191,11 +192,8 @@ jobs:
 			},
 			Jobs: map[string]parser.Job{
 				"review": {
-					Steps: []parser.Step{
-						{
-							Uses: "org/reusable-workflows/.github/workflows/review-pull-request.yml@main",
-						},
-					},
+					Uses:    "org/reusable-workflows/.github/workflows/review-pull-request.yml@main",
+					Secrets: "inherit",
 				},
 			},
 		},
@@ -267,5 +265,224 @@ jobs:
 	}
 	if !found {
 		t.Error("Expected AI_AGENT_ON_UNTRUSTED_CODE finding for oz-agent-action with secrets")
+	}
+}
+
+func TestCheckAIAgentCommentTriggered_ClaudeCodeAction(t *testing.T) {
+	workflow := parser.WorkflowFile{
+		Path: ".github/workflows/claude-mention.yml",
+		Content: []byte(`name: Claude Code Mention
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    if: contains(github.event.comment.body, '@claude')
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+`),
+		Workflow: parser.Workflow{
+			On: map[string]interface{}{
+				"issue_comment": map[string]interface{}{
+					"types": []interface{}{"created"},
+				},
+				"pull_request_review_comment": map[string]interface{}{
+					"types": []interface{}{"created"},
+				},
+			},
+			Jobs: map[string]parser.Job{
+				"claude": {
+					Permissions: map[string]interface{}{
+						"contents":      "read",
+						"pull-requests": "write",
+						"issues":        "write",
+						"id-token":      "write",
+					},
+					Steps: []parser.Step{
+						{
+							Uses: "actions/checkout@v4",
+							With: map[string]interface{}{
+								"fetch-depth": "1",
+							},
+						},
+						{
+							Uses: "anthropics/claude-code-action@v1",
+							With: map[string]interface{}{
+								"anthropic_api_key": "${{ secrets.ANTHROPIC_API_KEY }}",
+								"github_token":      "${{ secrets.GITHUB_TOKEN }}",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	findings := CheckAIAgentCommentTriggered(workflow)
+
+	if len(findings) == 0 {
+		t.Fatal("Expected finding for comment-triggered AI agent with secrets")
+	}
+
+	f := findings[0]
+	if f.RuleID != "AI_AGENT_COMMENT_TRIGGERED" {
+		t.Errorf("Expected AI_AGENT_COMMENT_TRIGGERED, got %s", f.RuleID)
+	}
+	if f.Severity != Critical {
+		t.Errorf("Expected Critical severity (has write permissions), got %v", f.Severity)
+	}
+	if !strings.Contains(f.Description, "secrets") {
+		t.Error("Description should mention secrets")
+	}
+}
+
+func TestCheckAIAgentCommentTriggered_NoSecrets(t *testing.T) {
+	workflow := parser.WorkflowFile{
+		Path: ".github/workflows/claude-mention.yml",
+		Content: []byte(`name: Claude Code Mention
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          model: claude-sonnet
+`),
+		Workflow: parser.Workflow{
+			On: map[string]interface{}{
+				"issue_comment": map[string]interface{}{
+					"types": []interface{}{"created"},
+				},
+			},
+			Jobs: map[string]parser.Job{
+				"claude": {
+					Steps: []parser.Step{
+						{
+							Uses: "anthropics/claude-code-action@v1",
+							With: map[string]interface{}{
+								"model": "claude-sonnet",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	findings := CheckAIAgentCommentTriggered(workflow)
+
+	if len(findings) == 0 {
+		t.Fatal("Expected denial-of-wallet finding even without secrets")
+	}
+	if findings[0].Severity != Medium {
+		t.Errorf("Expected Medium severity for denial-of-wallet, got %v", findings[0].Severity)
+	}
+	if !strings.Contains(findings[0].Description, "denial-of-wallet") {
+		t.Error("Description should mention denial-of-wallet")
+	}
+}
+
+func TestCheckAIAgentCommentTriggered_NotCommentTrigger(t *testing.T) {
+	workflow := parser.WorkflowFile{
+		Path: ".github/workflows/claude-pr.yml",
+		Content: []byte(`name: Claude on PR
+on:
+  pull_request:
+    types: [opened]
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+`),
+		Workflow: parser.Workflow{
+			On: map[string]interface{}{
+				"pull_request": map[string]interface{}{
+					"types": []interface{}{"opened"},
+				},
+			},
+			Jobs: map[string]parser.Job{
+				"claude": {
+					Steps: []parser.Step{
+						{
+							Uses: "anthropics/claude-code-action@v1",
+							With: map[string]interface{}{
+								"anthropic_api_key": "${{ secrets.ANTHROPIC_API_KEY }}",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	findings := CheckAIAgentCommentTriggered(workflow)
+
+	if len(findings) != 0 {
+		t.Errorf("Expected no findings for non-comment trigger, got %d", len(findings))
+	}
+}
+
+func TestCheckAIAgentCommentTriggered_AuthorAssociationGate(t *testing.T) {
+	workflow := parser.WorkflowFile{
+		Path: ".github/workflows/claude-mention.yml",
+		Content: []byte(`name: Claude Code Mention
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    if: github.event.comment.author_association == 'MEMBER'
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+`),
+		Workflow: parser.Workflow{
+			On: map[string]interface{}{
+				"issue_comment": map[string]interface{}{
+					"types": []interface{}{"created"},
+				},
+			},
+			Jobs: map[string]parser.Job{
+				"claude": {
+					If: "github.event.comment.author_association == 'MEMBER'",
+					Steps: []parser.Step{
+						{
+							Uses: "anthropics/claude-code-action@v1",
+							With: map[string]interface{}{
+								"anthropic_api_key": "${{ secrets.ANTHROPIC_API_KEY }}",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	findings := CheckAIAgentCommentTriggered(workflow)
+
+	if len(findings) != 0 {
+		t.Errorf("Expected no findings when author_association gate is present, got %d", len(findings))
 	}
 }
