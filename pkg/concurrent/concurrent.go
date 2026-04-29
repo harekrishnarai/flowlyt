@@ -364,17 +364,9 @@ func (cp *ConcurrentProcessor) analyzeWorkflowConcurrently(ctx context.Context, 
 		defer wg.Done()
 
 		var standardFindings []rules.Finding
-		for _, rule := range job.StandardRules {
-			select {
-			case <-ctx.Done():
-				errChan <- ctx.Err()
-				return
-			default:
-			}
-
-			findings := rule.Check(job.Workflow)
-			standardFindings = append(standardFindings, findings...)
-		}
+		// Use the RuleEngine for context-aware analysis (severity adjustment, suppression)
+		engine := rules.NewRuleEngine(nil)
+		standardFindings = engine.ExecuteRules(job.Workflow, job.StandardRules)
 
 		mu.Lock()
 		allFindings = append(allFindings, standardFindings...)

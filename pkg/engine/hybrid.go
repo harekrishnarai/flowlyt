@@ -18,6 +18,7 @@ package engine
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/harekrishnarai/flowlyt/pkg/platform/github"
 	"github.com/harekrishnarai/flowlyt/pkg/platform/gitlab"
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"gopkg.in/yaml.v3"
 )
 
 // HybridEngine combines Go-native rules with OPA policies
@@ -147,6 +149,9 @@ func (he *HybridEngine) AnalyzeRepository(repoPath string) (*AnalysisResult, err
 		Performance: PerformanceMetrics{},
 	}
 
+	// Detect repository owner from git remote or path
+	repoOwner := detectRepositoryOwner(repoPath)
+
 	// Try each platform to find workflows
 	var allWorkflows []*platform.Workflow
 
@@ -167,6 +172,7 @@ func (he *HybridEngine) AnalyzeRepository(repoPath string) (*AnalysisResult, err
 			if err != nil {
 				continue // Skip invalid workflows
 			}
+			workflow.RepositoryOwner = repoOwner
 			allWorkflows = append(allWorkflows, workflow)
 			result.Statistics.PlatformBreakdown[workflow.Platform]++
 		}
@@ -282,13 +288,22 @@ func (he *HybridEngine) analyzeWithGoRules(workflow *platform.Workflow) []rules.
 
 // convertToLegacyWorkflow converts new platform.Workflow to legacy parser.WorkflowFile
 func (he *HybridEngine) convertToLegacyWorkflow(workflow *platform.Workflow) parser.WorkflowFile {
-	// This is a temporary bridge - we'll eventually migrate all rules to use platform.Workflow
-	return parser.WorkflowFile{
-		Path:    workflow.FilePath,
-		Name:    workflow.Name,
-		Content: workflow.Content,
-		// For now, we'll need to implement conversion logic based on platform
+	wf := parser.WorkflowFile{
+		Path:            workflow.FilePath,
+		Name:            workflow.Name,
+		Content:         workflow.Content,
+		RepositoryOwner: workflow.RepositoryOwner,
 	}
+
+	// Parse the YAML content into the Workflow struct for rule analysis
+	if len(workflow.Content) > 0 {
+		var parsed parser.Workflow
+		if err := yaml.Unmarshal(workflow.Content, &parsed); err == nil {
+			wf.Workflow = parsed
+		}
+	}
+
+	return wf
 }
 
 // detectPlatformFromPath detects platform based on workflow file path
@@ -371,4 +386,67 @@ func DefaultConfig() Config {
 			Verbose:         false,
 		},
 	}
+}
+
+// detectRepositoryOwner attempts to determine the repository owner from
+// the git remote URL or falls back to the directory name.
+func detectRepositoryOwner(repoPath string) string {
+	// Try reading .git/config for remote origin URL
+	gitConfigPath := filepath.Join(repoPath, ".git", "config")
+	data, err := os.ReadFile(gitConfigPath)
+	if err != nil {
+		return ""
+	}
+
+	content := string(data)
+	// Look for url = patterns in [remote "origin"] section
+	lines := strings.Split(content, "\n")
+	inOrigin := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == `[remote "origin"]` {
+			inOrigin = true
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") {
+			inOrigin = false
+			continue
+		}
+		if inOrigin && strings.HasPrefix(trimmed, "url") {
+			// Extract URL
+			parts := strings.SplitN(trimmed, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			url := strings.TrimSpace(parts[1])
+			return ownerFromRemoteURL(url)
+		}
+	}
+
+	return ""
+}
+
+// ownerFromRemoteURL extracts the owner/org from a git remote URL.
+// Supports: https://github.com/owner/repo.git, git@github.com:owner/repo.git
+func ownerFromRemoteURL(url string) string {
+	// SSH format: git@github.com:owner/repo.git
+	if strings.Contains(url, ":") && strings.Contains(url, "@") {
+		colonIdx := strings.LastIndex(url, ":")
+		path := url[colonIdx+1:]
+		path = strings.TrimSuffix(path, ".git")
+		parts := strings.Split(path, "/")
+		if len(parts) >= 1 {
+			return parts[0]
+		}
+	}
+
+	// HTTPS format: https://github.com/owner/repo.git
+	url = strings.TrimSuffix(url, ".git")
+	parts := strings.Split(url, "/")
+	// URL like https://github.com/owner/repo → parts[3] is owner
+	if len(parts) >= 4 {
+		return parts[len(parts)-2]
+	}
+
+	return ""
 }

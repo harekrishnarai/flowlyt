@@ -62,7 +62,12 @@ func checkKnownVulnerableActions(workflow parser.WorkflowFile) []Finding {
 				stepName = "Step " + string(rune('1'+stepIdx))
 			}
 
-			// Parse action name and version
+			// Skip local actions — these are in the same repo and already covered by LOCAL_ACTION_USAGE
+			if strings.HasPrefix(step.Uses, "./") {
+				continue
+			}
+
+			// Parse action name
 			actionParts := strings.Split(step.Uses, "@")
 			actionName := actionParts[0]
 			version := ""
@@ -258,31 +263,36 @@ func checkUntrustedActionSources(workflow parser.WorkflowFile) []Finding {
 
 			// Check if action is from an untrusted source
 			if !vdb.IsTrustedPublisher(actionName) {
-				// Additional checks for suspicious patterns
-				isSuspicious := false
-				suspiciousReason := ""
-
-				// Check for actions using tags instead of SHA
+				// Determine version pinning status
+				isPinnedToSHA := false
+				isBranchRef := false
 				if len(actionParts) > 1 {
 					version := actionParts[1]
-					if !strings.HasPrefix(version, "v") && len(version) != 40 {
-						// Not a semantic version or SHA - might be a branch name
-						isSuspicious = true
-						suspiciousReason = "uses branch name instead of pinned version"
+					if len(version) == 40 {
+						isPinnedToSHA = true
+					} else if !strings.HasPrefix(version, "v") {
+						isBranchRef = true
 					}
+				}
+
+				// SHA-pinned third-party actions are low risk — supply chain attack
+				// requires compromising the exact commit, not just a tag/branch
+				if isPinnedToSHA {
+					continue
+				}
+
+				// Determine severity based on version pinning
+				severity := Medium
+				description := "Action is from an untrusted or unknown publisher"
+				if isBranchRef {
+					severity = High
+					description = "Action is from an untrusted publisher and uses branch name instead of pinned version"
 				}
 
 				// Check for actions with unusual naming patterns
 				if strings.Contains(actionName, "..") || strings.Contains(actionName, "--") {
-					isSuspicious = true
-					suspiciousReason = "unusual naming pattern"
-				}
-
-				severity := Medium
-				description := "Action is from an untrusted or unknown publisher"
-				if isSuspicious {
 					severity = High
-					description = "Action is from an untrusted publisher and " + suspiciousReason
+					description = "Action is from an untrusted publisher with unusual naming pattern"
 				}
 
 				pattern := linenum.FindPattern{
