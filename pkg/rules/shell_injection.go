@@ -427,8 +427,9 @@ func isJobUsingSelfHostedRunner(job parser.Job) bool {
 	case []interface{}:
 		for _, runner := range runsOn {
 			if runnerStr, ok := runner.(string); ok {
+				// Skip dynamic expressions — can't determine at static analysis time
 				if strings.Contains(runnerStr, "${{") {
-					return false
+					continue
 				}
 				if !isManaged(runnerStr) {
 					return true

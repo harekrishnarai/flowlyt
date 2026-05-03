@@ -290,9 +290,14 @@ func checkIndirectDockerWithSecrets(workflow parser.WorkflowFile, lineMapper *li
 			}
 
 			if !hasSecrets {
-				contentStr := string(workflow.Content)
-				if strings.Contains(contentStr, "secrets: inherit") {
-					hasSecrets = true
+				// Check job-level secrets field (for reusable workflow calls in same job)
+				if job.Secrets != nil {
+					switch s := job.Secrets.(type) {
+					case string:
+						if s == "inherit" {
+							hasSecrets = true
+						}
+					}
 				}
 			}
 
@@ -303,6 +308,18 @@ func checkIndirectDockerWithSecrets(workflow parser.WorkflowFile, lineMapper *li
 			stepName := step.Name
 			if stepName == "" {
 				stepName = "Step " + string(rune('1'+stepIdx))
+			}
+
+			lineNumber := 1
+			if step.Uses != "" {
+				linePattern := linenum.FindPattern{
+					Key:   "uses",
+					Value: step.Uses,
+				}
+				lineResult := lineMapper.FindLineNumber(linePattern)
+				if lineResult != nil {
+					lineNumber = lineResult.LineNumber
+				}
 			}
 
 			finding := Finding{
@@ -316,7 +333,7 @@ func checkIndirectDockerWithSecrets(workflow parser.WorkflowFile, lineMapper *li
 				StepName:    stepName,
 				Evidence:    "uses: " + step.Uses,
 				Remediation: "Audit the reusable workflow to ensure Docker containers use --network=none and secrets are not forwarded into containers processing fork code.",
-				LineNumber:  1,
+				LineNumber:  lineNumber,
 			}
 			findings = append(findings, finding)
 		}
@@ -359,6 +376,11 @@ func checkAIAgentOnUntrustedCode(workflow parser.WorkflowFile) []Finding {
 	networkNonePattern := regexp.MustCompile(`--network[=\s]+none`)
 
 	for jobName, job := range workflow.Workflow.Jobs {
+		// Only flag if the job checks out untrusted PR head code
+		if !jobCheckoutsUntrustedCode(job) {
+			continue
+		}
+
 		for stepIdx, step := range job.Steps {
 			isAIStep := false
 			evidence := ""
@@ -522,20 +544,13 @@ func CheckAIAgentCommentTriggered(workflow parser.WorkflowFile) []Finding {
 
 	// Must be triggered by comment events
 	hasCommentTrigger := false
-	triggerName := ""
 	switch on := workflow.Workflow.On.(type) {
 	case map[string]interface{}:
 		if _, ok := on["issue_comment"]; ok {
 			hasCommentTrigger = true
-			triggerName = "issue_comment"
 		}
 		if _, ok := on["pull_request_review_comment"]; ok {
 			hasCommentTrigger = true
-			if triggerName != "" {
-				triggerName += " + pull_request_review_comment"
-			} else {
-				triggerName = "pull_request_review_comment"
-			}
 		}
 	}
 
@@ -600,22 +615,13 @@ func CheckAIAgentCommentTriggered(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
-			// Check if author_association is already gated
+			// Check if author_association is already gated to trusted actors
 			hasActorGate := false
-			if job.If != "" {
-				if strings.Contains(job.If, "author_association") {
-					hasActorGate = true
-				}
+			actorGatePattern := regexp.MustCompile(`author_association\s*==\s*'(MEMBER|OWNER|COLLABORATOR)'`)
+			if job.If != "" && actorGatePattern.MatchString(job.If) {
+				hasActorGate = true
 			}
-			if step.If != "" {
-				if strings.Contains(step.If, "author_association") {
-					hasActorGate = true
-				}
-			}
-			// Also check the job-level if from raw content for complex expressions
-			contentStr := string(workflow.Content)
-			if strings.Contains(contentStr, "author_association") &&
-				(strings.Contains(contentStr, "'MEMBER'") || strings.Contains(contentStr, "'OWNER'") || strings.Contains(contentStr, "'COLLABORATOR'")) {
+			if step.If != "" && actorGatePattern.MatchString(step.If) {
 				hasActorGate = true
 			}
 
@@ -690,8 +696,13 @@ func CheckAIAgentCommentTriggered(workflow parser.WorkflowFile) []Finding {
 			if hasSecrets {
 				ruleCategory = SecretExposure
 				severity = High
-				// If the job has write permissions, severity is Critical
-				if job.Permissions != nil && permsImplyWrite(job.Permissions) {
+				// If the job effectively has write permissions, severity is Critical.
+				// Job-level permissions inherit from workflow-level when nil.
+				effectivePermissions := job.Permissions
+				if effectivePermissions == nil {
+					effectivePermissions = workflow.Workflow.Permissions
+				}
+				if permsImplyWrite(effectivePermissions) {
 					severity = Critical
 				}
 				secretInfo := ""

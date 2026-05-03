@@ -17,6 +17,7 @@ limitations under the License.
 package rules
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
@@ -63,7 +64,7 @@ func checkKnownVulnerableActions(workflow parser.WorkflowFile) []Finding {
 			}
 
 			// Skip local actions — these are in the same repo and already covered by LOCAL_ACTION_USAGE
-			if strings.HasPrefix(step.Uses, "./") {
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") {
 				continue
 			}
 
@@ -270,7 +271,7 @@ func checkUntrustedActionSources(workflow parser.WorkflowFile) []Finding {
 					version := actionParts[1]
 					if len(version) == 40 && isHexString(version) {
 						isPinnedToSHA = true
-					} else if !strings.HasPrefix(version, "v") {
+					} else if !strings.HasPrefix(version, "v") && !isSemverLike(version) {
 						isBranchRef = true
 					}
 				}
@@ -417,4 +418,12 @@ func checkDeprecatedActions(workflow parser.WorkflowFile) []Finding {
 	}
 
 	return findings
+}
+
+// isSemverLike returns true if the string looks like a semantic version
+// without a v prefix (e.g., "1.2.3", "2.0", "1.0.0-beta").
+var semverLikePattern = regexp.MustCompile(`^\d+\.\d+(\.\d+)?`)
+
+func isSemverLike(s string) bool {
+	return semverLikePattern.MatchString(s)
 }

@@ -224,6 +224,9 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: AI Code Review
         uses: org/oz-agent-action@main
         with:
@@ -238,6 +241,12 @@ jobs:
 			Jobs: map[string]parser.Job{
 				"review": {
 					Steps: []parser.Step{
+						{
+							Uses: "actions/checkout@v4",
+							With: map[string]interface{}{
+								"ref": "${{ github.event.pull_request.head.sha }}",
+							},
+						},
 						{
 							Name: "AI Code Review",
 							Uses: "org/oz-agent-action@main",
