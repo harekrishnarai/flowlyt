@@ -408,7 +408,7 @@ func detectRepositoryOwner(repoPath string) string {
 	gitConfigPath := filepath.Join(repoPath, ".git", "config")
 	data, err := os.ReadFile(gitConfigPath)
 	if err != nil {
-		return filepath.Base(repoPath)
+		return ""
 	}
 
 	content := string(data)
@@ -439,8 +439,9 @@ func detectRepositoryOwner(repoPath string) string {
 		}
 	}
 
-	// Fallback: use repository directory name as a best-effort owner guess
-	return filepath.Base(repoPath)
+	// Fallback: cannot determine owner without git remote — return empty
+	// so same-org checks are skipped rather than making wrong assumptions
+	return ""
 }
 
 // ownerFromRemoteURL extracts the owner/org from a git remote URL.

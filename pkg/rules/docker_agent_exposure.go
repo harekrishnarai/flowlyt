@@ -469,8 +469,7 @@ func checkAIAgentOnUntrustedCode(workflow parser.WorkflowFile) []Finding {
 			}
 			if !hasSecrets && step.Env != nil {
 				for _, value := range step.Env {
-					if strings.Contains(strings.ToUpper(value), "KEY") ||
-						strings.Contains(strings.ToUpper(value), "TOKEN") {
+					if strings.Contains(value, "secrets.") {
 						hasSecrets = true
 						break
 					}
