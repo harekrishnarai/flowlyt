@@ -426,8 +426,8 @@ func detectRepositoryOwner(repoPath string) string {
 		}
 	}
 
-	// Fallback: use parent directory name as a best-effort owner guess
-	return filepath.Base(filepath.Dir(repoPath))
+	// Fallback: use repository directory name as a best-effort owner guess
+	return filepath.Base(repoPath)
 }
 
 // ownerFromRemoteURL extracts the owner/org from a git remote URL.

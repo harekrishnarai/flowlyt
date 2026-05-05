@@ -1982,6 +1982,8 @@ func CheckAllRules(workflow parser.WorkflowFile) []Finding {
 
 	// Phase 4: Docker agent exposure (AI agents on fork code with secrets)
 	findings = append(findings, CheckDockerAgentExposure(workflow)...)
+	findings = append(findings, checkAIAgentOnUntrustedCode(workflow)...)
+	findings = append(findings, CheckAIAgentCommentTriggered(workflow)...)
 
 	return findings
 }
