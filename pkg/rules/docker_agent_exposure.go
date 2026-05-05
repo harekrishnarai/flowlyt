@@ -98,12 +98,12 @@ func checkReusableWorkflowAgentExposure(workflow parser.WorkflowFile) []Finding 
 			continue
 		}
 
-		severity := High
+		severity := Medium
 		if job.Secrets != nil {
 			switch s := job.Secrets.(type) {
 			case string:
 				if s == "inherit" {
-					severity = Critical
+					severity = High
 				}
 			}
 		}
@@ -111,7 +111,7 @@ func checkReusableWorkflowAgentExposure(workflow parser.WorkflowFile) []Finding 
 		finding := Finding{
 			RuleID:      "DOCKER_EXEC_WITH_SECRETS_ON_FORK_CODE",
 			RuleName:    "Reusable Agent Workflow Called With Secrets on pull_request_target",
-			Description: "A pull_request_target workflow calls a reusable workflow that runs an AI agent or automated review, passing secrets including API keys or private keys. The downstream workflow checks out fork code and processes it in a container with these secrets available, enabling secret exfiltration by external attackers.",
+			Description: "A pull_request_target workflow calls a reusable workflow that appears to run an AI agent or automated review, passing secrets. Verify whether the called workflow checks out the PR head ref — if it does, fork code runs in a container with secrets available, enabling exfiltration.",
 			Severity:    severity,
 			Category:    SecretExposure,
 			FilePath:    workflow.Path,
@@ -189,8 +189,13 @@ func checkDockerExecWithSecrets(workflow parser.WorkflowFile) []Finding {
 						keyUpper := strings.ToUpper(key)
 						if strings.Contains(keyUpper, "KEY") || strings.Contains(keyUpper, "TOKEN") ||
 							strings.Contains(keyUpper, "SECRET") || strings.Contains(keyUpper, "PASSWORD") {
-							hasSecretForward = true
-							break
+							// Only flag if the docker run command actually forwards this env var
+							if strings.Contains(step.Run, "-e "+key) || strings.Contains(step.Run, "--env "+key) ||
+								strings.Contains(step.Run, "-e $"+key) || strings.Contains(step.Run, "--env $"+key) ||
+								strings.Contains(step.Run, "-e ${"+key+"}") || strings.Contains(step.Run, "--env ${"+key+"}") {
+								hasSecretForward = true
+								break
+							}
 						}
 					}
 				}
@@ -545,6 +550,19 @@ func CheckAIAgentCommentTriggered(workflow parser.WorkflowFile) []Finding {
 	// Must be triggered by comment events
 	hasCommentTrigger := false
 	switch on := workflow.Workflow.On.(type) {
+	case string:
+		if on == "issue_comment" || on == "pull_request_review_comment" {
+			hasCommentTrigger = true
+		}
+	case []interface{}:
+		for _, trigger := range on {
+			if t, ok := trigger.(string); ok {
+				if t == "issue_comment" || t == "pull_request_review_comment" {
+					hasCommentTrigger = true
+					break
+				}
+			}
+		}
 	case map[string]interface{}:
 		if _, ok := on["issue_comment"]; ok {
 			hasCommentTrigger = true

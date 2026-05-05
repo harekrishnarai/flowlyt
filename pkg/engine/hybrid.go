@@ -389,13 +389,13 @@ func DefaultConfig() Config {
 }
 
 // detectRepositoryOwner attempts to determine the repository owner from
-// the git remote URL. Falls back to the parent directory name if parsing fails.
+// the git remote URL. Falls back to the repository directory name if parsing fails.
 func detectRepositoryOwner(repoPath string) string {
 	// Try reading .git/config for remote origin URL
 	gitConfigPath := filepath.Join(repoPath, ".git", "config")
 	data, err := os.ReadFile(gitConfigPath)
 	if err != nil {
-		return filepath.Base(filepath.Dir(repoPath))
+		return filepath.Base(repoPath)
 	}
 
 	content := string(data)

@@ -129,6 +129,11 @@ func checkUnpinnableActions(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
+			// Skip local actions — already covered by LOCAL_ACTION_USAGE
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") {
+				continue
+			}
+
 			stepName := step.Name
 			if stepName == "" {
 				stepName = "Step " + string(rune('1'+stepIdx))
@@ -183,6 +188,11 @@ func checkTyposquattingActions(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
+			// Skip local actions — already covered by LOCAL_ACTION_USAGE
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") {
+				continue
+			}
+
 			stepName := step.Name
 			if stepName == "" {
 				stepName = "Step " + string(rune('1'+stepIdx))
@@ -234,6 +244,11 @@ func checkUntrustedActionSources(workflow parser.WorkflowFile) []Finding {
 	for jobName, job := range workflow.Workflow.Jobs {
 		for stepIdx, step := range job.Steps {
 			if step.Uses == "" {
+				continue
+			}
+
+			// Skip local actions — already covered by LOCAL_ACTION_USAGE
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") {
 				continue
 			}
 

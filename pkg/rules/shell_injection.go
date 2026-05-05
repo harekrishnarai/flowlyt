@@ -419,17 +419,25 @@ func isJobUsingSelfHostedRunner(job parser.Job) bool {
 
 	switch runsOn := job.RunsOn.(type) {
 	case string:
-		// Dynamic expressions — can't determine at static analysis time
-		if strings.Contains(runsOn, "${{") {
+		// Matrix expansions can't be resolved statically — skip
+		if strings.Contains(runsOn, "${{ matrix.") {
 			return false
+		}
+		// Other dynamic expressions (e.g. inputs.runner) may resolve to self-hosted
+		if strings.Contains(runsOn, "${{") {
+			return true
 		}
 		return !isManaged(runsOn)
 	case []interface{}:
 		for _, runner := range runsOn {
 			if runnerStr, ok := runner.(string); ok {
-				// Skip dynamic expressions — can't determine at static analysis time
-				if strings.Contains(runnerStr, "${{") {
+				// Matrix expansions can't be resolved statically — skip this label
+				if strings.Contains(runnerStr, "${{ matrix.") {
 					continue
+				}
+				// Other dynamic expressions may resolve to self-hosted
+				if strings.Contains(runnerStr, "${{") {
+					return true
 				}
 				if !isManaged(runnerStr) {
 					return true

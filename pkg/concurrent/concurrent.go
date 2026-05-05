@@ -372,7 +372,7 @@ func (cp *ConcurrentProcessor) analyzeWorkflowConcurrently(ctx context.Context, 
 
 		var standardFindings []rules.Finding
 		// Use the RuleEngine for context-aware analysis (severity adjustment, suppression)
-		engine := rules.NewRuleEngine(nil)
+		engine := rules.NewRuleEngine(job.Config)
 		standardFindings = engine.ExecuteRules(job.Workflow, job.StandardRules)
 
 		mu.Lock()
