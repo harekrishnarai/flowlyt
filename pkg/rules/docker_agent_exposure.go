@@ -43,6 +43,7 @@ func CheckDockerAgentExposure(workflow parser.WorkflowFile) []Finding {
 // that pass secrets to agent/review/bot workflows under pull_request_target.
 func checkReusableWorkflowAgentExposure(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
+	lineMapper := linenum.NewLineMapper(workflow.Content)
 
 	agentWorkflowPatterns := []*regexp.Regexp{
 		regexp.MustCompile(`(?i)review.*pull.*request`),
@@ -108,6 +109,16 @@ func checkReusableWorkflowAgentExposure(workflow parser.WorkflowFile) []Finding 
 			}
 		}
 
+		lineNumber := 1
+		linePattern := linenum.FindPattern{
+			Key:   "uses",
+			Value: job.Uses,
+		}
+		lineResult := lineMapper.FindLineNumber(linePattern)
+		if lineResult != nil {
+			lineNumber = lineResult.LineNumber
+		}
+
 		finding := Finding{
 			RuleID:      "DOCKER_EXEC_WITH_SECRETS_ON_FORK_CODE",
 			RuleName:    "Reusable Agent Workflow Called With Secrets on pull_request_target",
@@ -119,7 +130,7 @@ func checkReusableWorkflowAgentExposure(workflow parser.WorkflowFile) []Finding 
 			StepName:    "",
 			Evidence:    "uses: " + job.Uses,
 			Remediation: "Ensure downstream Docker containers use --network=none. Do not forward secrets into containers processing fork code. Require a maintainer label before running agents on fork PRs.",
-			LineNumber:  1,
+			LineNumber:  lineNumber,
 		}
 		findings = append(findings, finding)
 	}
@@ -144,6 +155,7 @@ func checkDockerExecWithSecrets(workflow parser.WorkflowFile) []Finding {
 		regexp.MustCompile(`-e\s+\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)\w*`),
 		regexp.MustCompile(`--env\s+\w*(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL)\w*`),
 		regexp.MustCompile(`-e\s+\$\{\{\s*secrets\.\w+\s*\}\}`),
+		regexp.MustCompile(`-e\s+\w+=\$\{\{\s*secrets\.\w+\s*\}\}`),
 		regexp.MustCompile(`--env\s+\w+=\$\{\{\s*secrets\.\w+\s*\}\}`),
 	}
 
@@ -196,6 +208,19 @@ func checkDockerExecWithSecrets(workflow parser.WorkflowFile) []Finding {
 								hasSecretForward = true
 								break
 							}
+						}
+					}
+				}
+			}
+
+			if !hasSecretForward && step.Env != nil {
+				for key, value := range step.Env {
+					if strings.Contains(value, "secrets.") {
+						if strings.Contains(step.Run, "-e "+key) || strings.Contains(step.Run, "--env "+key) ||
+							strings.Contains(step.Run, "-e $"+key) || strings.Contains(step.Run, "--env $"+key) ||
+							strings.Contains(step.Run, "-e ${"+key+"}") || strings.Contains(step.Run, "--env ${"+key+"}") {
+							hasSecretForward = true
+							break
 						}
 					}
 				}
@@ -259,6 +284,11 @@ func checkIndirectDockerWithSecrets(workflow parser.WorkflowFile, lineMapper *li
 	}
 
 	for jobName, job := range workflow.Workflow.Jobs {
+		// Only flag if the job checks out untrusted PR head code
+		if !jobCheckoutsUntrustedCode(job) {
+			continue
+		}
+
 		for stepIdx, step := range job.Steps {
 			if step.Uses == "" {
 				continue

@@ -420,7 +420,7 @@ func isJobUsingSelfHostedRunner(job parser.Job) bool {
 	switch runsOn := job.RunsOn.(type) {
 	case string:
 		// Matrix expansions can't be resolved statically — skip
-		if strings.Contains(runsOn, "${{ matrix.") {
+		if strings.Contains(runsOn, "${{ matrix.") || strings.Contains(runsOn, "${{matrix.") {
 			return false
 		}
 		// Other dynamic expressions (e.g. inputs.runner) may resolve to self-hosted
@@ -432,7 +432,7 @@ func isJobUsingSelfHostedRunner(job parser.Job) bool {
 		for _, runner := range runsOn {
 			if runnerStr, ok := runner.(string); ok {
 				// Matrix expansions can't be resolved statically — skip this label
-				if strings.Contains(runnerStr, "${{ matrix.") {
+				if strings.Contains(runnerStr, "${{ matrix.") || strings.Contains(runnerStr, "${{matrix.") {
 					continue
 				}
 				// Other dynamic expressions may resolve to self-hosted

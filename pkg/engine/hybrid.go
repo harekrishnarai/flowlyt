@@ -232,6 +232,19 @@ func (he *HybridEngine) AnalyzeWorkflow(workflowPath string) (*AnalysisResult, e
 		return nil, fmt.Errorf("failed to parse workflow: %w", err)
 	}
 
+	// Attempt to set RepositoryOwner by walking up to find the repo root
+	if workflow.RepositoryOwner == "" {
+		absPath, _ := filepath.Abs(workflowPath)
+		dir := filepath.Dir(absPath)
+		for dir != "/" && dir != "." {
+			if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+				workflow.RepositoryOwner = detectRepositoryOwner(dir)
+				break
+			}
+			dir = filepath.Dir(dir)
+		}
+	}
+
 	result.Workflows = []*platform.Workflow{workflow}
 	result.Statistics.TotalWorkflows = 1
 	result.Statistics.PlatformBreakdown[workflow.Platform] = 1
