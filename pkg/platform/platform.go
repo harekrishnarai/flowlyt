@@ -32,16 +32,17 @@ type Platform interface {
 
 // Workflow represents a generic CI/CD workflow structure
 type Workflow struct {
-	Platform    string                 `json:"platform"`
-	Name        string                 `json:"name"`
-	FilePath    string                 `json:"file_path"`
-	Content     []byte                 `json:"content,omitempty"`
-	Triggers    []Trigger              `json:"triggers"`
-	Jobs        []Job                  `json:"jobs"`
-	Environment map[string]string      `json:"environment,omitempty"`
-	Permissions interface{}            `json:"permissions,omitempty"`
-	Variables   map[string]interface{} `json:"variables,omitempty"`
-	Metadata    map[string]interface{} `json:"metadata,omitempty"`
+	Platform        string                 `json:"platform"`
+	Name            string                 `json:"name"`
+	FilePath        string                 `json:"file_path"`
+	Content         []byte                 `json:"content,omitempty"`
+	Triggers        []Trigger              `json:"triggers"`
+	Jobs            []Job                  `json:"jobs"`
+	Environment     map[string]string      `json:"environment,omitempty"`
+	Permissions     interface{}            `json:"permissions,omitempty"`
+	Variables       map[string]interface{} `json:"variables,omitempty"`
+	Metadata        map[string]interface{} `json:"metadata,omitempty"`
+	RepositoryOwner string                 `json:"repository_owner,omitempty"`
 }
 
 // Job represents a job in a CI/CD workflow

@@ -51,6 +51,9 @@ type Job struct {
 	Permissions     interface{}            `yaml:"permissions,omitempty"`
 	Needs           interface{}            `yaml:"needs,omitempty"`
 	If              string                 `yaml:"if,omitempty"`
+	Uses            string                 `yaml:"uses,omitempty"`
+	With            map[string]interface{} `yaml:"with,omitempty"`
+	Secrets         interface{}            `yaml:"secrets,omitempty"`
 	Steps           []Step                 `yaml:"steps"`
 	Env             map[string]string      `yaml:"env,omitempty"`
 	Defaults        map[string]interface{} `yaml:"defaults,omitempty"`

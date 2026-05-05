@@ -423,8 +423,8 @@ jobs:
 			hasIssueCommentFinding = true
 		}
 	}
-	if !hasIssueCommentFinding {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should still fire on issue_comment regardless of permissions")
+	if hasIssueCommentFinding {
+		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on issue_comment with read-only permissions")
 	}
 
 	// Regression: flowlyt-scan.yml — has security-events: write but also contents: read.

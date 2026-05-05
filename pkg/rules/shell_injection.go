@@ -359,12 +359,13 @@ func hasUntrustedWorkflowTriggers(workflow parser.WorkflowFile) bool {
 
 // isJobUsingSelfHostedRunner checks if a job uses self-hosted runners
 func isJobUsingSelfHostedRunner(job parser.Job) bool {
-	// GitHub-hosted runner labels
+	// GitHub-hosted runner labels (exact matches)
 	githubHostedRunners := map[string]bool{
 		"ubuntu-latest":          true,
 		"ubuntu-20.04":           true,
 		"ubuntu-18.04":           true,
 		"ubuntu-22.04":           true,
+		"ubuntu-24.04":           true,
 		"windows-latest":         true,
 		"windows-2019":           true,
 		"windows-2022":           true,
@@ -372,28 +373,73 @@ func isJobUsingSelfHostedRunner(job parser.Job) bool {
 		"macos-11":               true,
 		"macos-12":               true,
 		"macos-13":               true,
+		"macos-14":               true,
+		"macos-15":               true,
 		"macos-latest-large":     true,
+		"macos-latest-xlarge":    true,
 		"ubuntu-latest-4-cores":  true,
 		"ubuntu-latest-8-cores":  true,
 		"ubuntu-latest-16-cores": true,
 	}
 
+	// Known managed runner prefixes from trusted CI-as-a-service providers
+	// (Namespace.so, Actuated, BuildJet, etc.)
+	managedRunnerPrefixes := []string{
+		"namespace-profile-",
+		"nscloud-",
+		"buildjet-",
+		"actuated-",
+		"ubuntu-slim",
+	}
+
+	// GitHub variant runner patterns: ubuntu-latest-4-cores, macos-13-large, windows-2022-16core
+	githubVariantPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`^ubuntu-(latest|[0-9]+\.[0-9]+)(-\d+-cores?|-xl)?$`),
+		regexp.MustCompile(`^macos-(latest|[0-9]+)(-large|-xlarge)?$`),
+		regexp.MustCompile(`^windows-(latest|[0-9]+)(-\d+core)?$`),
+	}
+
+	isManaged := func(label string) bool {
+		if githubHostedRunners[label] {
+			return true
+		}
+		lower := strings.ToLower(label)
+		for _, prefix := range managedRunnerPrefixes {
+			if strings.HasPrefix(lower, prefix) {
+				return true
+			}
+		}
+		for _, pattern := range githubVariantPatterns {
+			if pattern.MatchString(lower) {
+				return true
+			}
+		}
+		return false
+	}
+
 	switch runsOn := job.RunsOn.(type) {
 	case string:
-		// Handle matrix expressions like ${{ matrix.os }}
-		if strings.Contains(runsOn, "${{") && strings.Contains(runsOn, "matrix") {
-			// For matrix expressions, be conservative and don't flag as self-hosted
-			// unless we can definitively determine otherwise
+		// Matrix expansions can't be resolved statically — skip
+		if strings.Contains(runsOn, "${{ matrix.") || strings.Contains(runsOn, "${{matrix.") {
 			return false
 		}
-		return !githubHostedRunners[runsOn]
+		// Other dynamic expressions (e.g. inputs.runner) may resolve to self-hosted
+		if strings.Contains(runsOn, "${{") {
+			return true
+		}
+		return !isManaged(runsOn)
 	case []interface{}:
 		for _, runner := range runsOn {
 			if runnerStr, ok := runner.(string); ok {
-				if strings.Contains(runnerStr, "${{") && strings.Contains(runnerStr, "matrix") {
-					return false // Conservative approach for matrix runners
+				// Matrix expansions can't be resolved statically — skip this label
+				if strings.Contains(runnerStr, "${{ matrix.") || strings.Contains(runnerStr, "${{matrix.") {
+					continue
 				}
-				if !githubHostedRunners[runnerStr] {
+				// Other dynamic expressions may resolve to self-hosted
+				if strings.Contains(runnerStr, "${{") {
+					return true
+				}
+				if !isManaged(runnerStr) {
 					return true
 				}
 			}

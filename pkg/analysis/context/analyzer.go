@@ -218,6 +218,12 @@ func (ca *ContextAnalyzer) ShouldSuppress(ruleID string, ctx *WorkflowContext) b
 		// Suppress for read-only workflows with no permission needs
 		return ctx.Intent.IsReadOnly() && ctx.PermissionNeeds.IsEmpty()
 
+	case "ARTIPACKED_VULNERABILITY":
+		// Suppress for trusted workflows that don't handle untrusted input.
+		// The token exposure via persist-credentials is only exploitable if an
+		// attacker can read .git/config from an uploaded artifact or step output.
+		return ctx.IsTrusted && !ctx.HasUntrustedInput
+
 	default:
 		return false
 	}

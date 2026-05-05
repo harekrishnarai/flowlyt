@@ -665,6 +665,33 @@ func StandardRules() []Rule {
 			Platform:    PlatformAll,
 			Check:       checkIndirectPPEBuildTool,
 		},
+		{
+			ID:          "DOCKER_EXEC_WITH_SECRETS_ON_FORK_CODE",
+			Name:        "Docker Container Runs Fork Code With Secrets (No Network Isolation)",
+			Description: "A pull_request_target workflow runs a Docker container or reusable agent workflow with secrets forwarded while processing fork code without network isolation",
+			Severity:    Critical,
+			Category:    SecretExposure,
+			Platform:    PlatformGitHub,
+			Check:       CheckDockerAgentExposure,
+		},
+		{
+			ID:          "AI_AGENT_ON_UNTRUSTED_CODE",
+			Name:        "AI Agent Processes Untrusted Fork Code With Secrets",
+			Description: "An AI agent/bot processes fork-controlled code in a pull_request_target workflow with secrets available, enabling indirect prompt injection to exfiltrate secrets",
+			Severity:    High,
+			Category:    SecretExposure,
+			Platform:    PlatformGitHub,
+			Check:       checkAIAgentOnUntrustedCode,
+		},
+		{
+			ID:          "AI_AGENT_COMMENT_TRIGGERED",
+			Name:        "AI Agent Triggered by External Comment Without Actor Gate",
+			Description: "An AI agent runs in response to issue/PR comments from any user without author_association gating, enabling prompt injection (with secrets) or denial-of-wallet (without secrets) attacks",
+			Severity:    High,
+			Category:    SecretExposure,
+			Platform:    PlatformGitHub,
+			Check:       CheckAIAgentCommentTriggered,
+		},
 	}
 }
 
@@ -1953,6 +1980,11 @@ func CheckAllRules(workflow parser.WorkflowFile) []Finding {
 	findings = append(findings, CheckSelfHostedRunnerSecurity(workflow)...)
 	findings = append(findings, CheckAdvancedPrivilegeAnalysis(workflow)...)
 
+	// Phase 4: Docker agent exposure (AI agents on fork code with secrets)
+	findings = append(findings, CheckDockerAgentExposure(workflow)...)
+	findings = append(findings, checkAIAgentOnUntrustedCode(workflow)...)
+	findings = append(findings, CheckAIAgentCommentTriggered(workflow)...)
+
 	return findings
 }
 
@@ -1963,16 +1995,14 @@ func checkDangerousWriteOperations(workflow parser.WorkflowFile) []Finding {
 
 	lineMapper := linenum.NewLineMapper(workflow.Content)
 
-	// Patterns that indicate dangerous writes to GitHub environment variables
+	// Patterns that indicate dangerous writes to GitHub environment variables.
+	// Only flag expression interpolation (${{ ... }}) which can contain attacker-controlled
+	// values from PR titles, branch names, issue bodies, etc.
 	dangerousPatterns := []*regexp.Regexp{
-		// Only flag patterns with user input that could be dangerous
-		regexp.MustCompile(`echo\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_OUTPUT`),   // Echo with user input to GITHUB_OUTPUT
-		regexp.MustCompile(`echo\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_ENV`),      // Echo with user input to GITHUB_ENV
-		regexp.MustCompile(`printf\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_OUTPUT`), // Printf with user input to GITHUB_OUTPUT
-		regexp.MustCompile(`printf\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_ENV`),    // Printf with user input to GITHUB_ENV
-		// Flag variables that might contain user input
-		regexp.MustCompile(`echo\s+.*\$[A-Z_]+.*>>\s*\$GITHUB_OUTPUT`), // Echo variable to GITHUB_OUTPUT
-		regexp.MustCompile(`echo\s+.*\$[A-Z_]+.*>>\s*\$GITHUB_ENV`),    // Echo variable to GITHUB_ENV
+		regexp.MustCompile(`echo\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_OUTPUT`),
+		regexp.MustCompile(`echo\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_ENV`),
+		regexp.MustCompile(`printf\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_OUTPUT`),
+		regexp.MustCompile(`printf\s+.*\$\{\{[^}]*\}\}.*>>\s*\$GITHUB_ENV`),
 	}
 
 	for jobName, job := range workflow.Workflow.Jobs {
@@ -3231,19 +3261,22 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 	}
 
 	// Check for dangerous external triggers
+	// pull_request_target is always dangerous (elevated permissions on fork code).
+	// Other triggers are only flagged when the workflow has write permissions.
 	dangerousTriggers := map[string]string{
-		"issue_comment":       "Can be triggered by anyone who can comment on issues",
 		"pull_request_target": "Can be triggered by external pull requests with elevated permissions",
-		"workflow_run":        "Can be triggered by completion of other workflows",
-		"repository_dispatch": "Can be triggered via API by repository collaborators",
 	}
 
-	// workflow_dispatch is only concerning in certain contexts
-	workflowDispatchTriggers := map[string]string{
-		"workflow_dispatch": "Can be manually triggered with potential for abuse",
+	// These triggers are only concerning when the workflow has write permissions
+	writeRequiredTriggers := map[string]string{
+		"issue_comment":       "Can be triggered by anyone who can comment on issues",
+		"workflow_run":        "Can be triggered by completion of other workflows",
+		"repository_dispatch": "Can be triggered via API by repository collaborators",
+		"workflow_dispatch":   "Can be manually triggered with potential for abuse",
 	}
 
 	for _, trigger := range triggerEvents {
+		// pull_request_target is always dangerous — elevated permissions on fork code
 		if risk, isDangerous := dangerousTriggers[trigger]; isDangerous {
 			lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 				Key:   "on",
@@ -3268,15 +3301,11 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 			})
 		}
 
-		// workflow_dispatch: only flag when the workflow has effective write
-		// permissions. A read-only workflow_dispatch poses no meaningful risk.
-		if risk, isWorkflowDispatch := workflowDispatchTriggers[trigger]; isWorkflowDispatch {
-			// Check workflow-level permissions first, then any job-level permissions.
+		// Other external triggers: only flag when the workflow has effective write
+		// permissions. A read-only workflow with these triggers poses minimal risk.
+		if risk, isWriteRequired := writeRequiredTriggers[trigger]; isWriteRequired {
 			workflowHasWrite := permsImplyWrite(workflow.Workflow.Permissions)
 			if !workflowHasWrite {
-				// Check if any job explicitly grants write permissions.
-				// A nil job.Permissions means "inherit from workflow" — skip it;
-				// only an explicit job-level block can upgrade permissions.
 				for _, job := range workflow.Workflow.Jobs {
 					if job.Permissions != nil && permsImplyWrite(job.Permissions) {
 						workflowHasWrite = true
@@ -3285,11 +3314,10 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 				}
 			}
 			if !workflowHasWrite {
-				continue // suppressed — restricted permissions, no real risk
+				continue
 			}
 
 			severity := Medium
-			// Reduce severity for test/dev workflows
 			if strings.Contains(workflow.Path, "test") ||
 				strings.Contains(workflow.Path, "dev") ||
 				strings.Contains(workflow.Path, "debug") ||

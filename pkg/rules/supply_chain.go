@@ -17,6 +17,7 @@ limitations under the License.
 package rules
 
 import (
+	"regexp"
 	"strings"
 
 	"github.com/harekrishnarai/flowlyt/pkg/linenum"
@@ -62,7 +63,12 @@ func checkKnownVulnerableActions(workflow parser.WorkflowFile) []Finding {
 				stepName = "Step " + string(rune('1'+stepIdx))
 			}
 
-			// Parse action name and version
+			// Skip local actions — these are in the same repo and already covered by LOCAL_ACTION_USAGE
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") {
+				continue
+			}
+
+			// Parse action name
 			actionParts := strings.Split(step.Uses, "@")
 			actionName := actionParts[0]
 			version := ""
@@ -123,6 +129,11 @@ func checkUnpinnableActions(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
+			// Skip local actions — already covered by LOCAL_ACTION_USAGE
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") {
+				continue
+			}
+
 			stepName := step.Name
 			if stepName == "" {
 				stepName = "Step " + string(rune('1'+stepIdx))
@@ -174,6 +185,11 @@ func checkTyposquattingActions(workflow parser.WorkflowFile) []Finding {
 	for jobName, job := range workflow.Workflow.Jobs {
 		for stepIdx, step := range job.Steps {
 			if step.Uses == "" {
+				continue
+			}
+
+			// Skip local actions — already covered by LOCAL_ACTION_USAGE
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") {
 				continue
 			}
 
@@ -231,6 +247,11 @@ func checkUntrustedActionSources(workflow parser.WorkflowFile) []Finding {
 				continue
 			}
 
+			// Skip local actions — already covered by LOCAL_ACTION_USAGE
+			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") {
+				continue
+			}
+
 			stepName := step.Name
 			if stepName == "" {
 				stepName = "Step " + string(rune('1'+stepIdx))
@@ -258,31 +279,36 @@ func checkUntrustedActionSources(workflow parser.WorkflowFile) []Finding {
 
 			// Check if action is from an untrusted source
 			if !vdb.IsTrustedPublisher(actionName) {
-				// Additional checks for suspicious patterns
-				isSuspicious := false
-				suspiciousReason := ""
-
-				// Check for actions using tags instead of SHA
+				// Determine version pinning status
+				isPinnedToSHA := false
+				isBranchRef := false
 				if len(actionParts) > 1 {
 					version := actionParts[1]
-					if !strings.HasPrefix(version, "v") && len(version) != 40 {
-						// Not a semantic version or SHA - might be a branch name
-						isSuspicious = true
-						suspiciousReason = "uses branch name instead of pinned version"
+					if len(version) == 40 && isHexString(version) {
+						isPinnedToSHA = true
+					} else if !strings.HasPrefix(version, "v") && !isSemverLike(version) {
+						isBranchRef = true
 					}
+				}
+
+				// SHA-pinned third-party actions are low risk — supply chain attack
+				// requires compromising the exact commit, not just a tag/branch
+				if isPinnedToSHA {
+					continue
+				}
+
+				// Determine severity based on version pinning
+				severity := Medium
+				description := "Action is from an untrusted or unknown publisher"
+				if isBranchRef {
+					severity = High
+					description = "Action is from an untrusted publisher and uses branch name instead of pinned version"
 				}
 
 				// Check for actions with unusual naming patterns
 				if strings.Contains(actionName, "..") || strings.Contains(actionName, "--") {
-					isSuspicious = true
-					suspiciousReason = "unusual naming pattern"
-				}
-
-				severity := Medium
-				description := "Action is from an untrusted or unknown publisher"
-				if isSuspicious {
 					severity = High
-					description = "Action is from an untrusted publisher and " + suspiciousReason
+					description = "Action is from an untrusted publisher with unusual naming pattern"
 				}
 
 				pattern := linenum.FindPattern{
@@ -407,4 +433,12 @@ func checkDeprecatedActions(workflow parser.WorkflowFile) []Finding {
 	}
 
 	return findings
+}
+
+// isSemverLike returns true if the string looks like a semantic version
+// without a v prefix (e.g., "1.2.3", "2.0", "1.0.0-beta").
+var semverLikePattern = regexp.MustCompile(`^\d+\.\d+(\.\d+)?`)
+
+func isSemverLike(s string) bool {
+	return semverLikePattern.MatchString(s)
 }
