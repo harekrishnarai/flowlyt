@@ -32,6 +32,9 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 - **Arbitrary ref scanning** — GitHub fetches workflow content at the requested
   ref via the contents API; GitLab uses `git clone --branch` for branches/tags
   and falls back to a full clone + `git checkout` for commit SHAs.
+- **Homebrew install** — `brew install harekrishnarai/flowlyt/flowlyt`. The
+  release workflow publishes a formula to the `homebrew-flowlyt` tap from the
+  signed release binaries.
 
 ### 🎯 Accuracy & Precision
 

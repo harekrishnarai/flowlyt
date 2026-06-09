@@ -6,6 +6,15 @@ Presented at AppSec Village DEF CON 33 and Black Hat Europe 2025.
 
 ## Installation
 
+### Homebrew (macOS / Linux)
+
+```bash
+brew install harekrishnarai/flowlyt/flowlyt
+# or: brew tap harekrishnarai/flowlyt && brew install flowlyt
+```
+
+### Go
+
 ```bash
 go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
 ```
