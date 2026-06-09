@@ -419,6 +419,15 @@ func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 }
 
 // checkImpostorCommit detects commits that may be impersonating legitimate authors
+// gitIdentityVarRe matches a git committer identity sourced from a variable
+// (e.g. `git config user.name "${{ github.actor }}"`) — the identity is not
+// fixed and could be attacker-influenced.
+var gitIdentityVarRe = regexp.MustCompile(`(?i)git\s+config\s+.*user\.(name|email).*\$[\{(]`)
+
+// gitIdentityBotRe matches setting the official github-actions / dependabot bot
+// identity, which is the standard, legitimate way for CI to commit.
+var gitIdentityBotRe = regexp.MustCompile(`(?i)git\s+config\s+.*user\.(name|email).*(github-actions|dependabot)`)
+
 func checkImpostorCommit(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
@@ -434,55 +443,55 @@ func checkImpostorCommit(workflow parser.WorkflowFile) []Finding {
 				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
-			// Check for git config commands that might impersonate others
-			gitConfigPatterns := []string{
-				`git\s+config\s+.*user\.name.*github-actions`,
-				`git\s+config\s+.*user\.email.*github-actions`,
-				`git\s+config\s+.*user\.name.*dependabot`,
-				`git\s+config\s+.*user\.email.*dependabot`,
-				`git\s+config\s+.*user\.name.*\$\{`,  // Variable-based user names
-				`git\s+config\s+.*user\.email.*\$\{`, // Variable-based emails
-			}
-
-			for _, pattern := range gitConfigPatterns {
-				re := regexp.MustCompile(`(?i)` + pattern)
-				if re.MatchString(step.Run) {
-					linePattern := linenum.FindPattern{
-						Key:   "run",
-						Value: step.Run,
-					}
-					lineResult := lineMapper.FindLineNumber(linePattern)
-					lineNumber := 0
-					if lineResult != nil {
-						lineNumber = lineResult.LineNumber
-					}
-
-					severity := High
-					if strings.Contains(step.Run, "${") {
-						severity = Critical // Variable-based identity is more dangerous
-					} else {
-						// Known official GitHub service bots are legitimate automation.
-						// Still emit the finding but at LOW so it can be triaged separately.
-						runLower := strings.ToLower(step.Run)
-						if knownBotRe.MatchString(runLower) {
-							severity = Low
-						}
-					}
-
-					findings = append(findings, Finding{
-						RuleID:      "IMPOSTOR_COMMIT",
-						RuleName:    "Impostor Commit Detection",
-						Description: "Git configuration may impersonate legitimate authors or services",
-						Severity:    severity,
-						Category:    SupplyChain,
-						FilePath:    workflow.Path,
-						JobName:     jobName,
-						StepName:    stepName,
-						Evidence:    step.Run,
-						Remediation: "Use official actions for git operations or verify committer identity",
-						LineNumber:  lineNumber,
-					})
+			// Evaluate each line of the run block individually so the severity
+			// reflects the matched line (not unrelated `${...}` elsewhere in the
+			// block) and the finding points at the exact line.
+			seen := make(map[int]bool)
+			for _, raw := range strings.Split(step.Run, "\n") {
+				line := strings.TrimSpace(raw)
+				if line == "" {
+					continue
 				}
+
+				var severity Severity
+				var desc string
+				switch {
+				case gitIdentityVarRe.MatchString(line):
+					// Committer identity sourced from a variable could be
+					// attacker-influenced — the genuinely risky case.
+					severity = Critical
+					desc = "Git committer identity is set from a variable, which could impersonate another author"
+				case gitIdentityBotRe.MatchString(line):
+					// Setting the official github-actions/dependabot bot identity
+					// is standard, legitimate automation — deprioritised to LOW.
+					severity = Low
+					desc = "Workflow sets the github-actions/dependabot bot git identity (standard automation)"
+				default:
+					continue
+				}
+
+				lineNumber := 0
+				if res := lineMapper.FindLineNumber(linenum.FindPattern{Value: line}); res != nil {
+					lineNumber = res.LineNumber
+				}
+				if lineNumber > 0 && seen[lineNumber] {
+					continue
+				}
+				seen[lineNumber] = true
+
+				findings = append(findings, Finding{
+					RuleID:      "IMPOSTOR_COMMIT",
+					RuleName:    "Impostor Commit Detection",
+					Description: desc,
+					Severity:    severity,
+					Category:    SupplyChain,
+					FilePath:    workflow.Path,
+					JobName:     jobName,
+					StepName:    stepName,
+					Evidence:    line,
+					Remediation: "Use official actions for git operations or verify the committer identity is not user-controlled",
+					LineNumber:  lineNumber,
+				})
 			}
 		}
 	}

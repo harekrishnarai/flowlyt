@@ -79,11 +79,30 @@ func checkGithubEnvUntrustedWrite(workflow parser.WorkflowFile) []Finding {
 				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
-			pat := linenum.FindPattern{Key: "run", Value: step.Run}
-			lineResult := lineMapper.FindLineNumber(pat)
+			// Pinpoint the exact offending line inside the run block (rather than
+			// the `run:` block-scalar line) for accurate localization + evidence.
+			offending := ""
+			for _, raw := range strings.Split(step.Run, "\n") {
+				l := strings.TrimSpace(raw)
+				writesLine := strings.Contains(l, "$GITHUB_ENV") && strings.Contains(l, ">>")
+				if writesLine && (strings.Contains(l, "${{") || ldPreloadRe.MatchString(l)) {
+					offending = l
+					break
+				}
+				if writesLine && offending == "" {
+					offending = l // fallback: the write itself, if the expression is on another line
+				}
+			}
+
 			lineNumber := 0
-			if lineResult != nil {
-				lineNumber = lineResult.LineNumber
+			evidence := step.Run
+			if offending != "" {
+				if res := lineMapper.FindLineNumber(linenum.FindPattern{Value: offending}); res != nil {
+					lineNumber = res.LineNumber
+				}
+				evidence = offending
+			} else if res := lineMapper.FindLineNumber(linenum.FindPattern{Key: "run", Value: step.Run}); res != nil {
+				lineNumber = res.LineNumber
 			}
 
 			findings = append(findings, Finding{
@@ -95,7 +114,7 @@ func checkGithubEnvUntrustedWrite(workflow parser.WorkflowFile) []Finding {
 				FilePath:    workflow.Path,
 				JobName:     jobName,
 				StepName:    stepName,
-				Evidence:    step.Run,
+				Evidence:    evidence,
 				Remediation: "Validate and sanitize all data before writing to $GITHUB_ENV. Never write untrusted ${{ }} expressions directly to $GITHUB_ENV.",
 				LineNumber:  lineNumber,
 			})
