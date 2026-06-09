@@ -19,7 +19,7 @@ package rules
 import (
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // TestOA001_WorkflowLevelPermission verifies that a multi-job workflow with

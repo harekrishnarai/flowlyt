@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/astutil"
-	"github.com/harekrishnarai/flowlyt/pkg/config"
-	"github.com/harekrishnarai/flowlyt/pkg/github"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/harekrishnarai/flowlyt/pkg/shell"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/astutil"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/config"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/github"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/shell"
 	"gopkg.in/yaml.v3"
 )
 
@@ -241,8 +241,9 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 		return result
 	}
 
-	// Fetch workflow files directly via API (much faster than cloning)
-	workflowContents, err := a.client.GetWorkflowFilesContents(owner, repoName)
+	// Fetch workflow files directly via API (much faster than cloning).
+	// Organization scans always use each repository's default branch.
+	workflowContents, err := a.client.GetWorkflowFilesContents(owner, repoName, "")
 	if err != nil {
 		result.Error = fmt.Errorf("failed to fetch workflow files: %w", err)
 		result.Duration = time.Since(startTime)

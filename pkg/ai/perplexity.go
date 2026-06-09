@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // PerplexityClient implements the Client interface for Perplexity AI API

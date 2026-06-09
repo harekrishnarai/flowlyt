@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/context"
-	"github.com/harekrishnarai/flowlyt/pkg/constants"
-	"github.com/harekrishnarai/flowlyt/pkg/linenum"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/context"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // ConfigInterface defines the interface for configuration
@@ -453,8 +453,8 @@ func StandardRules() []Rule {
 			Check:       checkBotIdentity,
 		},
 		{
-			ID:          "EXTERNAL_TRIGGER_DEBUG",
-			Name:        "External Trigger Debug",
+			ID:          "UNTRUSTED_TRIGGER",
+			Name:        "Untrusted Workflow Trigger",
 			Description: "Detects workflows that can be externally triggered with potential security risks",
 			Severity:    High,
 			Category:    AccessControl,

@@ -19,8 +19,8 @@ package rules_test
 import (
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // makeWorkflow parses inline YAML into a WorkflowFile ready for rule checks.

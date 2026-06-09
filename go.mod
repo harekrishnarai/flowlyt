@@ -1,4 +1,4 @@
-module github.com/harekrishnarai/flowlyt
+module github.com/harekrishnarai/flowlyt/v2
 
 go 1.25.8
 

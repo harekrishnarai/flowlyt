@@ -20,8 +20,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/linenum"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // CheckShellInjectionVulnerabilities is the main entry point for shell injection checks

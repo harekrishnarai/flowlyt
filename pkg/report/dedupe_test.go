@@ -19,7 +19,7 @@ package report
 import (
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // TestDeduplicateFindings guards the fix where the summary count was computed on

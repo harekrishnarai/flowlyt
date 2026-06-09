@@ -23,11 +23,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/config"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/policies"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/harekrishnarai/flowlyt/pkg/shell"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/config"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/policies"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/shell"
 )
 
 // ProcessorConfig contains configuration for concurrent processing

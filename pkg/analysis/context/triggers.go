@@ -17,7 +17,7 @@ limitations under the License.
 package context
 
 import (
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // TriggerRisk represents the risk level of a workflow trigger

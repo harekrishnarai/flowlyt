@@ -351,17 +351,26 @@ func (c *Client) cloneWithProgress(cloneURL, destDir, branch string, progressCal
 }
 
 // GetWorkflowFiles gets the GitHub Actions workflow files from a repository
-func (c *Client) GetWorkflowFiles(owner, repo string) ([]*github.RepositoryContent, error) {
+// refContentOpts returns GitHub content options pinned to ref (branch, tag, or
+// commit SHA), or nil to use the repository's default branch.
+func refContentOpts(ref string) *github.RepositoryContentGetOptions {
+	if strings.TrimSpace(ref) == "" {
+		return nil
+	}
+	return &github.RepositoryContentGetOptions{Ref: ref}
+}
+
+func (c *Client) GetWorkflowFiles(owner, repo, ref string) ([]*github.RepositoryContent, error) {
 	// Path to workflows directory
 	workflowsPath := ".github/workflows"
 
-	// List files in the workflows directory
+	// List files in the workflows directory at the requested ref (default branch if empty)
 	_, directoryContent, _, err := c.client.Repositories.GetContents(
 		c.ctx,
 		owner,
 		repo,
 		workflowsPath,
-		nil,
+		refContentOpts(ref),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list workflow files: %w", err)
@@ -379,8 +388,8 @@ func (c *Client) GetWorkflowFiles(owner, repo string) ([]*github.RepositoryConte
 }
 
 // GetWorkflowFilesContents fetches all workflow files from a repository using the GitHub API.
-func (c *Client) GetWorkflowFilesContents(owner, repo string) (map[string][]byte, error) {
-	workflowFiles, err := c.GetWorkflowFiles(owner, repo)
+func (c *Client) GetWorkflowFilesContents(owner, repo, ref string) (map[string][]byte, error) {
+	workflowFiles, err := c.GetWorkflowFiles(owner, repo, ref)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list workflow files: %w", err)
 	}
@@ -392,7 +401,7 @@ func (c *Client) GetWorkflowFilesContents(owner, repo string) (map[string][]byte
 			owner,
 			repo,
 			file.GetPath(),
-			nil,
+			refContentOpts(ref),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get content for file %s: %w", file.GetPath(), err)
@@ -409,9 +418,9 @@ func (c *Client) GetWorkflowFilesContents(owner, repo string) (map[string][]byte
 }
 
 // DownloadWorkflowFiles downloads workflow files to a local directory
-func (c *Client) DownloadWorkflowFiles(owner, repo, destDir string) ([]string, error) {
+func (c *Client) DownloadWorkflowFiles(owner, repo, destDir, ref string) ([]string, error) {
 	// Get workflow files
-	workflowFiles, err := c.GetWorkflowFiles(owner, repo)
+	workflowFiles, err := c.GetWorkflowFiles(owner, repo, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +440,7 @@ func (c *Client) DownloadWorkflowFiles(owner, repo, destDir string) ([]string, e
 			owner,
 			repo,
 			file.GetPath(),
-			nil,
+			refContentOpts(ref),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get file %s: %w", file.GetPath(), err)

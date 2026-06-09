@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 func TestNewClient(t *testing.T) {

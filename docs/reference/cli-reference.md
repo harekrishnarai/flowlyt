@@ -72,8 +72,20 @@ flowlyt --url https://github.com/user/repository
 # GitLab repository
 flowlyt --url https://gitlab.com/user/repository
 
-# GitHub repository with specific branch
-flowlyt --url https://github.com/user/repository/tree/main
+# Scan a specific ref (branch, tag, or commit SHA) with --ref
+flowlyt --url https://github.com/user/repository --ref develop
+```
+
+#### `--ref` (alias: `--branch`)
+Git ref to scan: a branch name, tag, or commit SHA. When omitted, the
+repository's default branch is auto-detected. Both the scanned content and the
+file links in the report use this ref. `--branch` is accepted as an alias for
+backward compatibility.
+
+```bash
+flowlyt --url https://github.com/user/repository --ref main
+flowlyt --url https://github.com/user/repository --ref v2.0.0
+flowlyt --url https://github.com/user/repository --ref 5c9ec1c5f51d682dbf65b0c16f856d8b9303adff
 ```
 
 #### `--workflow`, `-w`

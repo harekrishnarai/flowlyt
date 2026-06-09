@@ -110,7 +110,10 @@ func (c *Client) CloneRepository(repoURL, tempDir string) (string, error) {
 	return c.CloneRepositoryWithBranch(repoURL, tempDir, "")
 }
 
-// CloneRepositoryWithBranch clones a specific branch of a GitLab repository
+// CloneRepositoryWithBranch clones a GitLab repository at a specific ref, which
+// may be a branch, a tag, or a commit SHA. Branches and tags use a shallow
+// `git clone --branch`; a SHA (which `--branch` cannot handle) falls back to a
+// full clone followed by `git checkout <ref>`.
 func (c *Client) CloneRepositoryWithBranch(repoURL, tempDir, branch string) (string, error) {
 	_, _, repo, err := ParseRepositoryURL(repoURL)
 	if err != nil {
@@ -164,7 +167,21 @@ func (c *Client) CloneRepositoryWithBranch(repoURL, tempDir, branch string) (str
 	// Execute the clone command
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return "", fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, string(output))
+		if branch == "" {
+			return "", fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, string(output))
+		}
+		// `git clone --branch` only accepts branch and tag names. The ref may be
+		// a commit SHA; fall back to a full clone followed by an explicit
+		// checkout, which works for branches, tags, and SHAs alike.
+		_ = os.RemoveAll(repoPath)
+		fullOut, fullErr := exec.Command("git", "clone", cloneURL, repoPath).CombinedOutput()
+		if fullErr != nil {
+			return "", fmt.Errorf("failed to clone repository: %w\nOutput: %s", fullErr, string(fullOut))
+		}
+		coOut, coErr := exec.Command("git", "-C", repoPath, "checkout", branch).CombinedOutput()
+		if coErr != nil {
+			return "", fmt.Errorf("failed to checkout ref %q: %w\nOutput: %s", branch, coErr, string(coOut))
+		}
 	}
 
 	return repoPath, nil

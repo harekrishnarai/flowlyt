@@ -19,7 +19,7 @@ package rules
 import (
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // artifactDownloadActions lists known artifact download actions that pull from workflow runs.

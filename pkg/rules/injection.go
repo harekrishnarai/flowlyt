@@ -21,9 +21,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/ast"
-	"github.com/harekrishnarai/flowlyt/pkg/linenum"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/ast"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // memdumpPatterns are compiled once at package level for efficiency.

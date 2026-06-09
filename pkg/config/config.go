@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/harekrishnarai/flowlyt/pkg/constants"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
 	"gopkg.in/yaml.v3"
 )
 

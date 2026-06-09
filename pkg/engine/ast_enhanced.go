@@ -23,11 +23,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/ast"
-	"github.com/harekrishnarai/flowlyt/pkg/constants"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/platform"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/ast"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // ASTEnhancedEngine extends the hybrid engine with AST-based analysis

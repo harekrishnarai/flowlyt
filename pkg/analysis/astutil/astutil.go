@@ -22,11 +22,30 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/ast"
-	"github.com/harekrishnarai/flowlyt/pkg/constants"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/ast"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
+
+// describeSink returns a human-readable description of a data-flow sink.
+func describeSink(flow *ast.DataFlow) string {
+	name := flow.SinkName
+	if name == "" {
+		name = flow.SinkID
+	}
+	switch flow.SinkType {
+	case "network":
+		return fmt.Sprintf("a network call (%s)", name)
+	case "log":
+		return fmt.Sprintf("log output (%s)", name)
+	case "file":
+		return fmt.Sprintf("a file write (%s)", name)
+	default:
+		return name
+	}
+}
 
 // Insight captures parsed AST information for downstream enrichment.
 type Insight struct {
@@ -35,6 +54,7 @@ type Insight struct {
 	DataFlows    []*ast.DataFlow
 	Triggers     []string
 	JobRunners   map[string]string
+	Content      []byte // raw workflow bytes, used to resolve line numbers
 }
 
 // Stats tracks AST post-processing effects for reporting.
@@ -86,6 +106,7 @@ func CollectInsights(workflowFiles []parser.WorkflowFile) map[string]*Insight {
 			DataFlows:    result.DataFlows,
 			Triggers:     triggers,
 			JobRunners:   jobRunners,
+			Content:      workflowFile.Content,
 		}
 	}
 
@@ -153,6 +174,11 @@ func GenerateDataFlowFindings(insights map[string]*Insight) []rules.Finding {
 			continue
 		}
 
+		var mapper *linenum.LineMapper
+		if len(insight.Content) > 0 {
+			mapper = linenum.NewLineMapper(insight.Content)
+		}
+
 		for _, flow := range insight.DataFlows {
 			if flow == nil || !flow.Tainted {
 				continue
@@ -175,16 +201,40 @@ func GenerateDataFlowFindings(insights map[string]*Insight) []rules.Finding {
 			}
 			seen[cacheKey] = struct{}{}
 
+			// Describe the flow in terms of the real source and sink rather than
+			// internal node IDs. Fall back to the IDs only if names are missing.
+			source := flow.SourceName
+			if source == "" {
+				source = flow.SourceID
+			}
+			sink := describeSink(flow)
+			description := fmt.Sprintf("%s: sensitive value '%s' flows to %s", flow.Risk, source, sink)
+
+			// Resolve a line number by locating where the source is referenced.
+			lineNumber := 0
+			if mapper != nil {
+				for _, needle := range []string{flow.SourceName, flow.SinkName} {
+					if needle == "" {
+						continue
+					}
+					if res := mapper.FindLineNumber(linenum.FindPattern{Value: needle}); res != nil {
+						lineNumber = res.LineNumber
+						break
+					}
+				}
+			}
+
 			finding := rules.Finding{
 				RuleID:      "AST_SENSITIVE_DATA_FLOW",
 				RuleName:    "Sensitive Data Flow",
-				Description: fmt.Sprintf("Sensitive data from %s reaches %s (%s)", flow.SourceID, flow.SinkID, flow.Risk),
+				Description: description,
 				Severity:    severity,
 				Category:    rules.DataExposure,
 				FilePath:    filePath,
 				JobName:     jobDisplay,
 				StepName:    stepName,
-				Evidence:    fmt.Sprintf("Flow path: %s", strings.Join(flow.Path, " -> ")),
+				LineNumber:  lineNumber,
+				Evidence:    fmt.Sprintf("%s -> %s", source, sink),
 				Remediation: "Review this workflow to ensure secrets are not exposed to network, logs, or untrusted contexts.",
 			}
 

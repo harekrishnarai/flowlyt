@@ -24,21 +24,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/ai"
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/astutil"
-	"github.com/harekrishnarai/flowlyt/pkg/concurrent"
-	"github.com/harekrishnarai/flowlyt/pkg/config"
-	"github.com/harekrishnarai/flowlyt/pkg/constants"
-	"github.com/harekrishnarai/flowlyt/pkg/errors"
-	"github.com/harekrishnarai/flowlyt/pkg/github"
-	"github.com/harekrishnarai/flowlyt/pkg/gitlab"
-	"github.com/harekrishnarai/flowlyt/pkg/organization"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/policies"
-	"github.com/harekrishnarai/flowlyt/pkg/report"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/harekrishnarai/flowlyt/pkg/terminal"
-	"github.com/harekrishnarai/flowlyt/pkg/validation"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/ai"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/astutil"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/concurrent"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/config"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/errors"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/github"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/gitlab"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/organization"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/policies"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/report"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/terminal"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/validation"
 	"github.com/urfave/cli/v2"
 )
 
@@ -114,9 +114,10 @@ func main() {
 						Value:   constants.DefaultOutputFormat,
 					},
 					&cli.StringFlag{
-						Name:  "branch",
-						Usage: "Branch name to scan and use for file links (auto-detects default branch if not specified)",
-						Value: "",
+						Name:    "ref",
+						Aliases: []string{"branch"},
+						Usage:   "Git ref to scan: branch, tag, or commit SHA (also used for file links; auto-detects the default branch if not specified)",
+						Value:   "",
 					},
 					&cli.StringFlag{
 						Name:  "output-file",
@@ -413,8 +414,13 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 			} else {
 				ghClient = github.NewClient()
 			}
-			fmt.Printf("� Downloading workflow files from GitHub repository: %s/%s\n", owner, repo)
-			workflowContents, err = ghClient.GetWorkflowFilesContents(owner, repo)
+			ref := c.String("ref")
+			if ref != "" {
+				fmt.Printf("Downloading workflow files from GitHub repository: %s/%s (ref: %s)\n", owner, repo, ref)
+			} else {
+				fmt.Printf("Downloading workflow files from GitHub repository: %s/%s\n", owner, repo)
+			}
+			workflowContents, err = ghClient.GetWorkflowFilesContents(owner, repo, ref)
 			if err != nil {
 				if github.IsRateLimitError(err) {
 					return "", nil, fmt.Errorf("GitHub API rate limit exceeded\n\nTip: Authenticate to get a higher rate limit:\n  flowlyt scan --github-token $(gh auth token) ...\n  or set: export GITHUB_TOKEN=$(gh auth token)")
@@ -456,9 +462,9 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 	case constants.PlatformGitLab:
 		// For GitLab, we still need to use cloning for now as GitLab API implementation would be similar
 		// but requires separate implementation. This could be added in a future enhancement.
-		branch := c.String("branch")
-		if branch != "" {
-			term.Info(fmt.Sprintf("Cloning GitLab repository: %s (branch: %s)...", repoURL, branch))
+		ref := c.String("ref")
+		if ref != "" {
+			term.Info(fmt.Sprintf("Cloning GitLab repository: %s (ref: %s)...", repoURL, ref))
 		} else {
 			term.Info(fmt.Sprintf("Cloning GitLab repository: %s...", repoURL))
 		}
@@ -469,7 +475,7 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 		}
 
 		tempDir := c.String("temp-dir")
-		repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, branch)
+		repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, ref)
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to clone GitLab repository: %w", err)
 		}
@@ -600,7 +606,7 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 
 	// Enhance findings with GitHub URLs if scanning a remote GitHub repository
 	if repoURL != "" && github.IsGitHubRepository(repoURL) {
-		branch := c.String("branch")
+		branch := c.String("ref")
 		if strings.TrimSpace(branch) == "" {
 			// Auto-detect default branch
 			owner, repo, parseErr := github.ParseRepositoryURL(repoURL)
@@ -626,7 +632,7 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 
 	// Enhance findings with GitLab URLs if scanning a remote GitLab repository
 	if repoURL != "" && gitlab.IsGitLabURL(repoURL) {
-		branch := c.String("branch")
+		branch := c.String("ref")
 		if strings.TrimSpace(branch) == "" {
 			// Try to detect GitLab default branch
 			instanceURL, owner, repo, parseErr := gitlab.ParseRepositoryURL(repoURL)
@@ -842,10 +848,13 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 		}
 	}
 
-	// Print scan completion message
-	fmt.Printf("\n✅ Scan completed in %s\n", time.Since(startTime).Round(time.Millisecond))
-	fmt.Printf("Found %d issues (%d Critical, %d High, %d Medium, %d Low, %d Info)\n",
-		summary.Total, summary.Critical, summary.High, summary.Medium, summary.Low, summary.Info)
+	// Print a concise completion line only for machine/file formats; the CLI
+	// report already prints its own header, duration, and summary.
+	if actualOutputFormat != constants.OutputFormatCLI {
+		fmt.Printf("\nScan completed in %s — %d issue(s) (%d critical, %d high, %d medium, %d low, %d info)\n",
+			time.Since(startTime).Round(time.Millisecond),
+			summary.Total, summary.Critical, summary.High, summary.Medium, summary.Low, summary.Info)
+	}
 
 	return nil
 }
@@ -957,10 +966,6 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 
 	// Get platform from CLI
 	platform := c.String("platform")
-
-	fmt.Printf("🔍 Flowlyt - Multi-Platform CI/CD Security Analyzer\n")
-	fmt.Printf("Platform: %s\n", strings.ToUpper(platform))
-	fmt.Println("=======================================")
 
 	// Handle repository acquisition
 	repoLocalPath, cleanup, err := acquireRepository(c, repoURL, repoPath, platform)

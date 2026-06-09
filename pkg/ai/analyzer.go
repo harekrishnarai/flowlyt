@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/harekrishnarai/flowlyt/pkg/terminal"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/terminal"
 )
 
 // EnhancedFinding represents a finding enhanced with AI verification
@@ -145,14 +145,12 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 		toDispatchByClass[class] = append(toDispatchByClass[class], f)
 	}
 
-	// Set up streaming progress bar
-	term := terminal.Default()
-	var bar *terminal.ProgressBar
-	if term.IsTTY() {
-		bar = term.NewProgressBar(dispatchCount)
-		bar.SetPrefix("🤖 AI analysis")
-		bar.SetStyle(terminal.DefaultProgressStyle)
-	}
+	// Minimal progress: a single in-place line on an interactive terminal,
+	// nothing when output is piped/redirected. Individual findings are not
+	// printed here — they appear (with their AI verdict) in the final report,
+	// so streaming them would just clutter the terminal.
+	showProgress := terminal.Default().IsTTY()
+	done := 0
 
 	// Dispatch batches per class (synchronously)
 	for _, class := range classOrder {
@@ -208,20 +206,15 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 			}
 			enhancedFindings = append(enhancedFindings, batchEnhanced...)
 
-			// Print findings first so they scroll above the progress bar.
-			for _, ef := range batchEnhanced {
-				printFindingResult(term, ef)
-			}
-			if bar != nil {
-				bar.SetSuffix(fmt.Sprintf("(%s batch %d/%d)", class, batchNum, totalBatches))
-				bar.Add(len(batch))
-				term.Println("") // commit the bar line so findings in the next batch print above it
+			done += len(batch)
+			if showProgress {
+				fmt.Fprintf(os.Stderr, "\rAI analysis: %d/%d findings", done, dispatchCount)
 			}
 		}
 	}
 
-	if bar != nil {
-		bar.Finish()
+	if showProgress {
+		fmt.Fprintf(os.Stderr, "\rAI analysis: %d/%d findings — done\n", done, dispatchCount)
 	}
 
 	enhancedFindings = append(enhancedFindings, skippedFindings...)
@@ -447,32 +440,6 @@ func (a *Analyzer) Close() error {
 		return a.client.Close()
 	}
 	return nil
-}
-
-// printFindingResult prints a per-finding result to the terminal during streaming.
-func printFindingResult(term *terminal.Terminal, ef EnhancedFinding) {
-	if !term.IsTTY() {
-		return
-	}
-	if ef.AISkipped || ef.AIVerification == nil {
-		return
-	}
-	v := ef.AIVerification
-	if v.IsLikelyFalsePositive {
-		dim := terminal.NewStyle().WithDim()
-		term.PrintStyled(fmt.Sprintf("  ~  %-42s %s  FALSE POSITIVE  %.0f%%\n",
-			ef.RuleID, v.Severity, v.Confidence*100), dim)
-	} else {
-		red := terminal.NewStyle().WithForeground(terminal.ColorCritical).WithBold()
-		term.PrintStyled(fmt.Sprintf("  ✗  %-42s %s  TRUE POSITIVE   %.0f%%\n",
-			ef.RuleID, v.Severity, v.Confidence*100), red)
-		if v.Reasoning != "" {
-			term.Printf("     %s\n", v.Reasoning)
-		}
-		if v.Remediation != "" {
-			term.Printf("     Fix: %s\n", v.Remediation)
-		}
-	}
 }
 
 // PrintAISummary prints a summary box of AI analysis results to the terminal.

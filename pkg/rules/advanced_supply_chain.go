@@ -21,9 +21,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/linenum"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/vulndb"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/vulndb"
 )
 
 // AdvancedSupplyChainAnalyzer provides comprehensive supply chain security analysis

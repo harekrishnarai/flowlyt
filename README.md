@@ -6,8 +6,17 @@ Presented at AppSec Village DEF CON 33 and Black Hat Europe 2025.
 
 ## Installation
 
+### Homebrew (macOS / Linux)
+
 ```bash
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+brew install harekrishnarai/flowlyt/flowlyt
+# or: brew tap harekrishnarai/flowlyt && brew install flowlyt
+```
+
+### Go
+
+```bash
+go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
 ```
 
 Or build from source:
@@ -44,6 +53,18 @@ flowlyt scan --url https://github.com/owner/repo --github-token <your-github-tok
 export GITLAB_TOKEN=glpat_your_token
 flowlyt scan --platform gitlab --url https://gitlab.com/owner/repo --gitlab-token glpat_your_token
 ```
+
+### Scan a specific ref (branch, tag, or commit SHA)
+
+```bash
+# Defaults to the repository's default branch when --ref is omitted
+flowlyt scan --url https://github.com/owner/repo --ref develop
+flowlyt scan --url https://github.com/owner/repo --ref v2.40.0
+flowlyt scan --url https://github.com/owner/repo --ref 5c9ec1c5f51d682dbf65b0c16f856d8b9303adff
+```
+
+`--branch` is kept as an alias of `--ref` for backward compatibility. Both the
+scanned content and the file links in the report use the given ref.
 
 ### Output formats
 
@@ -87,7 +108,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Flowlyt
-        uses: harekrishnarai/flowlyt@v1.1.0
+        uses: harekrishnarai/flowlyt@v2.0.0
         with:
           output-format: 'sarif'
           output-file: 'flowlyt-results.sarif'

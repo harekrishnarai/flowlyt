@@ -20,7 +20,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // CheckOIDCAbuse is the entry point for OIDC token abuse detection.
@@ -47,6 +48,14 @@ func checkOIDCWorkflowLevelPermission(workflow parser.WorkflowFile) []Finding {
 		return findings
 	}
 
+	// Locate the workflow-level id-token line so the finding points at it.
+	lineNumber := 0
+	if len(workflow.Content) > 0 {
+		if res := linenum.NewLineMapper(workflow.Content).FindLineNumber(linenum.FindPattern{Value: "id-token"}); res != nil {
+			lineNumber = res.LineNumber
+		}
+	}
+
 	findings = append(findings, Finding{
 		RuleID:      "OIDC_WORKFLOW_LEVEL_PERMISSION",
 		RuleName:    "OIDC id-token:write at Workflow Level",
@@ -56,6 +65,7 @@ func checkOIDCWorkflowLevelPermission(workflow parser.WorkflowFile) []Finding {
 		FilePath:    workflow.Path,
 		JobName:     "",
 		StepName:    "",
+		LineNumber:  lineNumber,
 		Evidence:    "permissions.id-token: write (workflow-level affects all jobs)",
 		Remediation: "Move 'id-token: write' to the specific job that needs it (the deploy job). Remove it from workflow-level permissions.",
 	})

@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // ClaudeClient implements the Client interface for Anthropic Claude API

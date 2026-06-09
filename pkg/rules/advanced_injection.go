@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // AdvancedInjectionDetector detects obfuscated and indirect injection attacks

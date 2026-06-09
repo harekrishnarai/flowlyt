@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/ast"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/ast"
 )
 
 // Enhanced example workflow with complex patterns for P1 testing

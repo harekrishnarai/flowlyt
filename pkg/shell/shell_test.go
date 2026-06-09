@@ -19,8 +19,8 @@ package shell_test
 import (
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/shell"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/shell"
 )
 
 func TestShellAnalyzer(t *testing.T) {

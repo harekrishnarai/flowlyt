@@ -420,7 +420,7 @@ jobs:
           go-version: '1.24.6'
           
       - name: Install Flowlyt
-        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
         
       - name: Run security analysis
         run: |
@@ -501,7 +501,7 @@ security_scan:
   image: golang:1.24.6-alpine
   before_script:
     - apk add --no-cache git
-    - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@${FLOWLYT_VERSION}
+    - go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@${FLOWLYT_VERSION}
     - export PATH=$PATH:$(go env GOPATH)/bin
   script:
     - |
@@ -599,7 +599,7 @@ pipeline {
                         fi
                         
                         # Install Flowlyt
-                        go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@${FLOWLYT_VERSION}
+                        go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@${FLOWLYT_VERSION}
                     '''
                 }
             }

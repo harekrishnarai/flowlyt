@@ -22,7 +22,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/ast"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/ast"
 )
 
 // generateLargeWorkflow creates a workflow with many jobs and steps for performance testing

@@ -127,6 +127,79 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Publish Homebrew formula
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          TAP_REPO: harekrishnarai/homebrew-flowlyt
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN secret not set — skipping Homebrew formula publish."
+            echo "To enable: create the '${TAP_REPO}' repo and add a HOMEBREW_TAP_TOKEN secret (PAT with contents:write on that repo)."
+            exit 0
+          fi
+          version="${VERSION#v}"
+          sha() { awk -v f="$1" '$2==f {print $1}' checksums.txt; }
+          darwin_arm="$(sha flowlyt-darwin-arm64)"
+          darwin_amd="$(sha flowlyt-darwin-amd64)"
+          linux_arm="$(sha flowlyt-linux-arm64)"
+          linux_amd="$(sha flowlyt-linux-amd64)"
+          base="https://github.com/harekrishnarai/flowlyt/releases/download/${VERSION}"
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git" tap-repo
+          mkdir -p tap-repo/Formula
+          cat > tap-repo/Formula/flowlyt.rb <<RUBY
+          class Flowlyt < Formula
+            desc "Multi-Platform CI/CD Security Analyzer"
+            homepage "https://github.com/harekrishnarai/flowlyt"
+            version "${version}"
+            license "Apache-2.0"
+
+            on_macos do
+              on_arm do
+                url "${base}/flowlyt-darwin-arm64"
+                sha256 "${darwin_arm}"
+              end
+              on_intel do
+                url "${base}/flowlyt-darwin-amd64"
+                sha256 "${darwin_amd}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "${base}/flowlyt-linux-arm64"
+                sha256 "${linux_arm}"
+              end
+              on_intel do
+                url "${base}/flowlyt-linux-amd64"
+                sha256 "${linux_amd}"
+              end
+            end
+
+            def install
+              bin.install Dir["flowlyt-*"].first => "flowlyt"
+            end
+
+            test do
+              assert_match "flowlyt version", shell_output("#{bin}/flowlyt --version")
+            end
+          end
+          RUBY
+
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/flowlyt.rb
+          if git diff --cached --quiet; then
+            echo "Formula already up to date."
+          else
+            git commit -m "flowlyt ${version}"
+            git push
+            echo "Published Homebrew formula for ${version} to ${TAP_REPO}."
+          fi
+
       - name: Display release information
         run: |
           echo "✅ Release created successfully!"
