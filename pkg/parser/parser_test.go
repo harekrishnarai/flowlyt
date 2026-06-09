@@ -18,6 +18,7 @@ package parser_test
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
@@ -110,5 +111,100 @@ jobs:
 	_, err = parser.FindWorkflows(tmpDir)
 	if err == nil {
 		t.Errorf("Expected error parsing invalid workflow, got nil")
+	}
+}
+
+// TestTemplatedContinueOnError guards against a regression where a templated
+// `continue-on-error: ${{ ... }}` (or fail-fast/strategy expressions) caused
+// the YAML unmarshal to fail and abort the entire scan. These expressions are
+// extremely common in real-world workflows.
+func TestTemplatedContinueOnError(t *testing.T) {
+	dir := t.TempDir()
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `name: CI
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: test
+        continue-on-error: ${{ github.ref == 'refs/heads/main' }}
+        run: go test ./...
+`
+	if err := os.WriteFile(filepath.Join(wfDir, "ci.yml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	workflows, err := parser.FindWorkflows(dir)
+	if err != nil {
+		t.Fatalf("templated continue-on-error must parse, got error: %v", err)
+	}
+	if len(workflows) != 1 {
+		t.Fatalf("expected 1 workflow, got %d", len(workflows))
+	}
+	job, ok := workflows[0].Workflow.Jobs["build"]
+	if !ok {
+		t.Fatal("missing job 'build'")
+	}
+	// The expression is preserved as a string, not coerced to a bool.
+	if _, isStr := job.ContinueOnError.(string); !isStr {
+		t.Errorf("expected continue-on-error preserved as string, got %T", job.ContinueOnError)
+	}
+}
+
+// TestFindWorkflowsSkipsUnparseable verifies that one malformed workflow does
+// not abort the whole scan — valid sibling workflows are still returned.
+func TestFindWorkflowsSkipsUnparseable(t *testing.T) {
+	dir := t.TempDir()
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	valid := `name: Good
+on: push
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok
+`
+	broken := "name: Bad\n\tthis: is: not: valid: yaml\n  - broken"
+	if err := os.WriteFile(filepath.Join(wfDir, "good.yml"), []byte(valid), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "bad.yml"), []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	workflows, err := parser.FindWorkflows(dir)
+	if err != nil {
+		t.Fatalf("scan must succeed despite one bad file, got: %v", err)
+	}
+	if len(workflows) != 1 || workflows[0].Name != "good.yml" {
+		t.Fatalf("expected only the valid workflow, got %+v", workflows)
+	}
+}
+
+func TestContinueOnErrorEnabled(t *testing.T) {
+	tests := []struct {
+		val  interface{}
+		want bool
+	}{
+		{true, true},
+		{false, false},
+		{"true", true},
+		{"TRUE", true},
+		{"${{ github.event_name == 'push' }}", false}, // expression: not statically true
+		{nil, false},
+	}
+	for _, tt := range tests {
+		if got := parser.ContinueOnErrorEnabled(tt.val); got != tt.want {
+			t.Errorf("ContinueOnErrorEnabled(%v) = %v, want %v", tt.val, got, tt.want)
+		}
 	}
 }
