@@ -1,4 +1,4 @@
-FROM golang:1.24-bookworm AS builder
+FROM golang:1.25-bookworm AS builder
 
 WORKDIR /app
 
@@ -27,11 +27,10 @@ RUN addgroup -S flowlyt && adduser -S -G flowlyt flowlyt
 COPY --from=builder /flowlyt /usr/local/bin/flowlyt
 RUN chmod +x /usr/local/bin/flowlyt
 
-# Create directory for default policies and set ownership
-RUN mkdir -p /etc/flowlyt/policies
-# Conditionally copy policies if directory exists
-RUN if [ -d "test/policies" ]; then cp -r test/policies/* /etc/flowlyt/policies/ || true; fi
-RUN chown -R flowlyt:flowlyt /etc/flowlyt
+# Copy default policies from the builder stage. The previous `if [ -d
+# "test/policies" ]` check ran in this final stage where no source is present,
+# so it was always a no-op; copy from the builder where the source lives.
+COPY --from=builder --chown=flowlyt:flowlyt /app/test/policies/ /etc/flowlyt/policies/
 
 # Create a directory for scanning repositories
 RUN mkdir -p /workspace && chown -R flowlyt:flowlyt /workspace

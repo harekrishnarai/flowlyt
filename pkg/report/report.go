@@ -462,6 +462,14 @@ type findingKey struct {
 	gitlabURL  string
 }
 
+// DeduplicateFindings removes findings that are identical across rule, file,
+// job, step, line number, and URL. Call this before computing the summary so
+// the reported issue count matches the findings emitted by every report format
+// (the JSON and SARIF generators deduplicate internally; the summary must too).
+func DeduplicateFindings(findings []rules.Finding) []rules.Finding {
+	return deduplicateFindings(findings, nil)
+}
+
 func deduplicateFindings(findings []rules.Finding, normalizePath func(string) string) []rules.Finding {
 	if len(findings) == 0 {
 		return nil

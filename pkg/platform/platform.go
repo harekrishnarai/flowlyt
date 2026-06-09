@@ -58,7 +58,7 @@ type Job struct {
 	Environment     map[string]string      `json:"environment,omitempty"`
 	Permissions     interface{}            `json:"permissions,omitempty"`
 	Timeout         string                 `json:"timeout,omitempty"`
-	ContinueOnError bool                   `json:"continue_on_error,omitempty"`
+	ContinueOnError interface{}            `json:"continue_on_error,omitempty"` // bool or ${{ }} expression
 	AllowFailure    bool                   `json:"allow_failure,omitempty"`
 	Variables       map[string]interface{} `json:"variables,omitempty"`
 	Services        map[string]interface{} `json:"services,omitempty"`
@@ -81,7 +81,7 @@ type Step struct {
 	Inputs           map[string]interface{} `json:"inputs,omitempty"`  // GitHub: with, GitLab: variables
 	Outputs          map[string]interface{} `json:"outputs,omitempty"` // Step outputs
 	Conditions       []string               `json:"conditions,omitempty"`
-	ContinueOnError  bool                   `json:"continue_on_error,omitempty"`
+	ContinueOnError  interface{}            `json:"continue_on_error,omitempty"` // bool or ${{ }} expression
 	AllowFailure     bool                   `json:"allow_failure,omitempty"`
 	Timeout          string                 `json:"timeout,omitempty"`
 	Retry            interface{}            `json:"retry,omitempty"`

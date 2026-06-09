@@ -232,16 +232,23 @@ func (he *HybridEngine) AnalyzeWorkflow(workflowPath string) (*AnalysisResult, e
 		return nil, fmt.Errorf("failed to parse workflow: %w", err)
 	}
 
-	// Attempt to set RepositoryOwner by walking up to find the repo root
+	// Attempt to set RepositoryOwner by walking up to find the repo root.
+	// Terminate when filepath.Dir stops changing (the filesystem root), which
+	// works on both Unix ("/") and Windows ("C:\\"). The previous `dir != "/"`
+	// check never matched the Windows root and looped forever.
 	if workflow.RepositoryOwner == "" {
 		absPath, _ := filepath.Abs(workflowPath)
 		dir := filepath.Dir(absPath)
-		for dir != "/" && dir != "." {
+		for {
 			if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
 				workflow.RepositoryOwner = detectRepositoryOwner(dir)
 				break
 			}
-			dir = filepath.Dir(dir)
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break // reached the filesystem root
+			}
+			dir = parent
 		}
 	}
 

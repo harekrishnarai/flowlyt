@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -346,6 +347,18 @@ func filterEnabledByRule(findings []rules.Finding, cfg *config.Config) []rules.F
 	return enabled
 }
 
+// RecalculateSummary recomputes the aggregated summary and repository counts
+// from the current RepositoryResults. Call this after findings have been
+// mutated in place (for example, by AI verification) so the summary reflects
+// those changes. The summary is fully derived from the results and the
+// calculation helpers hold no Analyzer state, so a zero-value Analyzer is safe.
+func (r *OrganizationResult) RecalculateSummary() {
+	var a Analyzer
+	r.Summary = a.calculateSummary(r.RepositoryResults)
+	r.AnalyzedRepositories = a.countAnalyzedRepositories(r.RepositoryResults)
+	r.SkippedRepositories = a.countSkippedRepositories(r.RepositoryResults)
+}
+
 // calculateSummary computes organization-level statistics
 func (a *Analyzer) calculateSummary(results []RepositoryResult) OrganizationSummary {
 	summary := OrganizationSummary{
@@ -444,11 +457,63 @@ func (a *Analyzer) calculateRiskScore(totalFindings, criticalCount, highCount in
 	return score
 }
 
-// generateTopFindings identifies the most common security issues
+// generateTopFindings identifies the most common security issues across the
+// organization, returning the most frequent rules (by total occurrence) along
+// with the repositories they affect.
 func (a *Analyzer) generateTopFindings(findingCounts map[string]map[string]int, results []RepositoryResult) []TopFinding {
-	// TODO: Implement top findings generation
-	// This would aggregate findings by rule ID and return the most frequent ones
-	return []TopFinding{}
+	// Look up rule name/severity by rule ID from the actual findings.
+	type ruleMeta struct {
+		name     string
+		severity string
+	}
+	meta := make(map[string]ruleMeta)
+	for _, result := range results {
+		if result.Error != nil {
+			continue
+		}
+		for _, finding := range result.Findings {
+			if _, ok := meta[finding.RuleID]; !ok {
+				meta[finding.RuleID] = ruleMeta{
+					name:     finding.RuleName,
+					severity: string(finding.Severity),
+				}
+			}
+		}
+	}
+
+	// Aggregate per-rule totals and the set of affected repositories.
+	topFindings := make([]TopFinding, 0, len(findingCounts))
+	for ruleID, repoCounts := range findingCounts {
+		total := 0
+		repos := make([]string, 0, len(repoCounts))
+		for repo, count := range repoCounts {
+			total += count
+			repos = append(repos, repo)
+		}
+		sort.Strings(repos) // deterministic ordering
+		topFindings = append(topFindings, TopFinding{
+			RuleID:       ruleID,
+			RuleName:     meta[ruleID].name,
+			Severity:     meta[ruleID].severity,
+			Count:        total,
+			Repositories: repos,
+		})
+	}
+
+	// Sort by frequency (descending), breaking ties by rule ID for stable output.
+	sort.Slice(topFindings, func(i, j int) bool {
+		if topFindings[i].Count != topFindings[j].Count {
+			return topFindings[i].Count > topFindings[j].Count
+		}
+		return topFindings[i].RuleID < topFindings[j].RuleID
+	})
+
+	const maxTopFindings = 10
+	if len(topFindings) > maxTopFindings {
+		topFindings = topFindings[:maxTopFindings]
+	}
+
+	return topFindings
 }
 
 // Helper methods

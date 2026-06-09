@@ -382,3 +382,107 @@ func TestOrganizationSummary_Aggregation(t *testing.T) {
 		t.Errorf("Expected 100 total repositories, got %d", repoSum)
 	}
 }
+
+func TestGenerateTopFindings(t *testing.T) {
+	a := &Analyzer{}
+
+	results := []RepositoryResult{
+		{
+			Repository: github.RepositoryInfo{FullName: "org/repo1"},
+			Findings: []rules.Finding{
+				{RuleID: "UNPINNED_ACTION", RuleName: "Unpinned Action", Severity: rules.High},
+				{RuleID: "HARDCODED_SECRET", RuleName: "Hardcoded Secret", Severity: rules.Critical},
+			},
+		},
+		{
+			Repository: github.RepositoryInfo{FullName: "org/repo2"},
+			Findings: []rules.Finding{
+				{RuleID: "UNPINNED_ACTION", RuleName: "Unpinned Action", Severity: rules.High},
+			},
+		},
+		{
+			// Repositories with errors must be ignored.
+			Repository: github.RepositoryInfo{FullName: "org/broken"},
+			Error:      context.DeadlineExceeded,
+			Findings:   []rules.Finding{{RuleID: "SHOULD_BE_IGNORED"}},
+		},
+	}
+
+	// findingCounts mirrors what calculateSummary builds: ruleID -> repo -> count.
+	findingCounts := map[string]map[string]int{
+		"UNPINNED_ACTION":  {"org/repo1": 1, "org/repo2": 1},
+		"HARDCODED_SECRET": {"org/repo1": 1},
+	}
+
+	top := a.generateTopFindings(findingCounts, results)
+
+	if len(top) != 2 {
+		t.Fatalf("expected 2 top findings, got %d: %+v", len(top), top)
+	}
+
+	// Most frequent rule must come first.
+	if top[0].RuleID != "UNPINNED_ACTION" {
+		t.Errorf("expected UNPINNED_ACTION first, got %q", top[0].RuleID)
+	}
+	if top[0].Count != 2 {
+		t.Errorf("UNPINNED_ACTION count = %d, want 2", top[0].Count)
+	}
+	if top[0].RuleName != "Unpinned Action" {
+		t.Errorf("RuleName = %q, want 'Unpinned Action'", top[0].RuleName)
+	}
+	if len(top[0].Repositories) != 2 {
+		t.Errorf("expected 2 affected repos, got %v", top[0].Repositories)
+	}
+	// Repositories are sorted deterministically.
+	if top[0].Repositories[0] != "org/repo1" || top[0].Repositories[1] != "org/repo2" {
+		t.Errorf("repositories not sorted: %v", top[0].Repositories)
+	}
+	if top[0].Severity != string(rules.High) {
+		t.Errorf("severity = %q, want %q", top[0].Severity, string(rules.High))
+	}
+
+	if top[1].RuleID != "HARDCODED_SECRET" || top[1].Count != 1 {
+		t.Errorf("second finding = %+v", top[1])
+	}
+}
+
+func TestGenerateTopFindings_Empty(t *testing.T) {
+	a := &Analyzer{}
+	if got := a.generateTopFindings(map[string]map[string]int{}, nil); len(got) != 0 {
+		t.Errorf("expected no top findings for empty input, got %v", got)
+	}
+}
+
+func TestRecalculateSummary(t *testing.T) {
+	result := &OrganizationResult{
+		RepositoryResults: []RepositoryResult{
+			{
+				Repository: github.RepositoryInfo{FullName: "org/repo1"},
+				Findings: []rules.Finding{
+					{RuleID: "R1", Severity: rules.Critical, Category: rules.SecretExposure},
+					{RuleID: "R2", Severity: rules.High, Category: rules.SupplyChain},
+				},
+			},
+			{
+				// Errored repo should be counted as skipped, not analyzed.
+				Repository: github.RepositoryInfo{FullName: "org/broken"},
+				Error:      context.DeadlineExceeded,
+			},
+		},
+	}
+
+	result.RecalculateSummary()
+
+	if result.Summary.TotalFindings != 2 {
+		t.Errorf("TotalFindings = %d, want 2", result.Summary.TotalFindings)
+	}
+	if result.Summary.FindingsBySeverity["CRITICAL"] != 1 {
+		t.Errorf("CRITICAL count = %d, want 1", result.Summary.FindingsBySeverity["CRITICAL"])
+	}
+	if result.AnalyzedRepositories != 1 {
+		t.Errorf("AnalyzedRepositories = %d, want 1", result.AnalyzedRepositories)
+	}
+	if result.SkippedRepositories != 1 {
+		t.Errorf("SkippedRepositories = %d, want 1", result.SkippedRepositories)
+	}
+}
