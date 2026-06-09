@@ -25,8 +25,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/harekrishnarai/flowlyt/pkg/constants"
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
 )
+
+// userAgent is the HTTP User-Agent sent with OSV API requests.
+var userAgent = "Flowlyt/" + constants.AppVersion + " Security Scanner"
 
 // Client represents an OSV.dev API client for vulnerability queries
 type Client struct {
@@ -154,7 +158,7 @@ func (c *Client) QueryVulnerability(ctx context.Context, ecosystem, packageName,
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "Flowlyt/0.1.0 Security Scanner")
+	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -183,7 +187,7 @@ func (c *Client) GetVulnerabilityByID(ctx context.Context, vulnID string) (*Vuln
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "Flowlyt/0.1.0 Security Scanner")
+	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

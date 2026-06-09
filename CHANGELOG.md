@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0] - 2026-06-09
+
+A major release focused on correctness, finding precision, and a cleaner CLI.
+
+### 💥 Breaking / Notable
+
+- **`--ref` replaces `--branch`.** You can now scan any git ref — a branch, a
+  tag, or a commit SHA — and the file links point at that same ref. `--branch`
+  is kept as a backward-compatible alias, so existing commands keep working.
+- **Redesigned CLI output.** The default report is now a compact,
+  scanner-style layout (in the spirit of semgrep/scorecard): findings grouped
+  by file with the offending line, link, and a fix hint, plus a one-line
+  summary. The ASCII banner, summary table, and multi-line boxes are gone.
+  Machine formats (`json`, `sarif`, `yaml`, `markdown`) are unchanged.
+
+### ✨ Features
+
+- **Arbitrary ref scanning** — GitHub fetches workflow content at the requested
+  ref via the contents API; GitLab uses `git clone --branch` for branches/tags
+  and falls back to a full clone + `git checkout` for commit SHAs.
+
+### 🎯 Accuracy & Precision
+
+- **ArtiPACKED** (`ARTIPACKED_VULNERABILITY`) is now `HIGH` only when a job
+  uploads an artifact that can include the `.git` directory; otherwise it is a
+  `LOW` hardening note (previously every `actions/checkout` was `HIGH`).
+- **`UNTRUSTED_TRIGGER`** (renamed from `EXTERNAL_TRIGGER_DEBUG`) —
+  `workflow_dispatch` is now `INFO` (it requires repo write access to invoke).
+- **AST data-flow** no longer flags normal secret→env/input propagation;
+  findings use real source/sink names and resolve a line number.
+- **Deduplication** collapses the same rule firing on the same file+line across
+  jobs (e.g. one `uses:` line reported once), and the headline count now matches
+  the JSON/SARIF output.
+- `OIDC_WORKFLOW_LEVEL_PERMISSION` and AST findings now report real line numbers.
+
+### 🐛 Bug Fixes
+
+- Fixed a **Windows infinite loop** when scanning a single workflow outside a git repo.
+- The scanner no longer **aborts on a templated boolean** (`continue-on-error: ${{ … }}`);
+  a single unparseable workflow is skipped with a warning instead of failing the run.
+- The organization summary is recalculated after AI verification, and the
+  "top findings" aggregation is implemented (was an empty stub).
+- AI analysis no longer floods the terminal — a single in-place progress line on
+  a TTY, silent when piped; per-finding results appear in the final report.
+- `Dockerfile` builds with Go 1.25 (matching `go.mod`) and bundles default policies correctly.
+
+### 🧪 Tests
+
+- New coverage for previously-untested packages (engine, opa, osv, platform
+  adapters) plus regression tests for the parser, dedup, ArtiPACKED gating, and ref handling.
+
+### 🧹 Internal
+
+- Split the 4,784-line `pkg/rules/rules.go` into cohesive per-category files.
+
 ## [1.1.0] - 2026-03-27
 
 ### 🎉 Major Features
