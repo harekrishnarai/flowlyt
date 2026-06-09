@@ -157,63 +157,146 @@ func (g *Generator) generateCLIReport() error {
 
 	fmt.Println()
 	for _, path := range order {
-		bold.Printf("  %s\n", path)
-		for _, f := range byFile[path] {
+		findings := byFile[path]
+		bold.Printf("%s ", path)
+		dim.Printf("(%d)\n", len(findings))
+		for _, f := range findings {
 			g.printFindingCLI(f)
 		}
-		fmt.Println()
 	}
 
 	g.printSummaryCLI()
 	return nil
 }
 
-// printFindingCLI prints a single finding in the minimal CLI style.
+// detailIndent is the left padding for a finding's detail lines.
+const detailIndent = "    "
+
+// cliWidth returns the wrap width for CLI text, clamped to a readable range.
+func (g *Generator) cliWidth() int {
+	w := 0
+	if g.term != nil {
+		w = g.term.Width()
+	}
+	if w <= 0 {
+		w = 100 // piped / non-interactive
+	}
+	if w > 120 {
+		w = 120
+	}
+	if w < 60 {
+		w = 60
+	}
+	return w
+}
+
+// printFindingCLI prints a single finding: a header line, then wrapped detail
+// lines (description, offending code, link, fix) indented under it.
 func (g *Generator) printFindingCLI(f rules.Finding) {
-	loc := ""
+	textWidth := g.cliWidth() - len(detailIndent)
+
+	// Header: "  SEVERITY  RULE_ID            line N"
+	header := fmt.Sprintf("  %s  %s", severityLabel(f.Severity), color.New(color.Bold).Sprint(f.RuleID))
 	if f.LineNumber > 0 {
-		loc = fmt.Sprintf("L%d", f.LineNumber)
+		header += "  " + color.New(color.Faint).Sprintf("line %d", f.LineNumber)
 	}
-	fmt.Printf("    %s  %s  %s\n", severityLabel(f.Severity), f.RuleID, color.New(color.Faint).Sprint(loc))
+	fmt.Println(header)
 
-	if f.Description != "" {
-		fmt.Printf("        %s\n", f.Description)
-	}
-
-	if line, ok := offendingCodeLine(f); ok {
-		color.New(color.Faint).Printf("        %d │ %s\n", f.LineNumber, line)
+	// Description (wrapped to terminal width).
+	for _, line := range wrapLines(f.Description, textWidth) {
+		fmt.Println(detailIndent + line)
 	}
 
-	if f.GitHubURL != "" {
-		color.New(color.Faint, color.Underline).Printf("        %s\n", f.GitHubURL)
-	} else if f.GitLabURL != "" {
-		color.New(color.Faint, color.Underline).Printf("        %s\n", f.GitLabURL)
+	// Offending source line, trimmed so it never overflows.
+	if code, ok := offendingCodeLine(f); ok {
+		code = truncate(code, textWidth-8)
+		color.New(color.Faint).Printf("%s%d │ %s\n", detailIndent, f.LineNumber, code)
+	}
+
+	// Link to the exact location (single dim reference line).
+	if u := f.GitHubURL; u != "" {
+		color.New(color.Faint).Println(detailIndent + u)
+	} else if u := f.GitLabURL; u != "" {
+		color.New(color.Faint).Println(detailIndent + u)
 	}
 
 	// Compact AI verdict.
 	if f.AIVerified {
 		switch {
 		case f.AIError != "":
-			color.New(color.FgMagenta).Printf("        AI: analysis failed\n")
+			color.New(color.FgMagenta).Println(detailIndent + "AI: analysis failed")
 		case f.AILikelyFalsePositive != nil && *f.AILikelyFalsePositive:
-			color.New(color.FgYellow).Printf("        AI: likely false positive (%.0f%%)\n", f.AIConfidence*100)
+			color.New(color.FgYellow).Printf("%sAI: likely false positive (%.0f%%)\n", detailIndent, f.AIConfidence*100)
 		case f.AILikelyFalsePositive != nil:
-			color.New(color.FgRed).Printf("        AI: likely true positive (%.0f%%)\n", f.AIConfidence*100)
+			color.New(color.FgRed).Printf("%sAI: likely true positive (%.0f%%)\n", detailIndent, f.AIConfidence*100)
 		}
 		if f.AIReasoning != "" && g.Verbose {
-			fmt.Printf("        AI reasoning: %s\n", f.AIReasoning)
+			for _, line := range wrapLines("AI reasoning: "+f.AIReasoning, textWidth) {
+				fmt.Println(detailIndent + line)
+			}
 		}
 	} else if f.AISkipped && g.Verbose {
-		color.New(color.Faint).Printf("        AI: skipped (%s)\n", f.AISkipReason)
+		color.New(color.Faint).Printf("%sAI: skipped (%s)\n", detailIndent, f.AISkipReason)
 	}
 
 	if g.Verbose && strings.TrimSpace(f.Evidence) != "" {
-		fmt.Printf("        evidence: %s\n", strings.ReplaceAll(MaskSecrets(f.Evidence), "\n", "\n          "))
+		for _, line := range wrapLines("evidence: "+MaskSecrets(f.Evidence), textWidth) {
+			fmt.Println(detailIndent + line)
+		}
 	}
 
+	// Fix (wrapped, cyan, with a hanging indent under the arrow).
 	if f.Remediation != "" {
-		color.New(color.FgCyan).Printf("        fix: %s\n", f.Remediation)
+		c := color.New(color.FgCyan)
+		for i, line := range wrapLines(f.Remediation, textWidth-2) {
+			if i == 0 {
+				c.Println(detailIndent + "→ " + line)
+			} else {
+				c.Println(detailIndent + "  " + line)
+			}
+		}
 	}
+
+	fmt.Println() // separate findings
+}
+
+// truncate shortens s to width characters, adding an ellipsis when cut.
+func truncate(s string, width int) string {
+	if width <= 1 || len(s) <= width {
+		return s
+	}
+	if width <= 3 {
+		return s[:width]
+	}
+	return s[:width-1] + "…"
+}
+
+// wrapLines word-wraps s to width, preserving existing hard line breaks.
+func wrapLines(s string, width int) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	if width < 20 {
+		width = 20
+	}
+	var lines []string
+	for _, paragraph := range strings.Split(s, "\n") {
+		words := strings.Fields(paragraph)
+		if len(words) == 0 {
+			continue
+		}
+		cur := words[0]
+		for _, w := range words[1:] {
+			if len(cur)+1+len(w) > width {
+				lines = append(lines, cur)
+				cur = w
+			} else {
+				cur += " " + w
+			}
+		}
+		lines = append(lines, cur)
+	}
+	return lines
 }
 
 // printSummaryCLI prints the closing one-line severity summary.
