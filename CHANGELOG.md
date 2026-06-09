@@ -13,6 +13,11 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 
 ### 💥 Breaking / Notable
 
+- **Module path is now `github.com/harekrishnarai/flowlyt/v2`** (Go semantic
+  import versioning for v2+). Install with
+  `go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest`; library
+  importers must update their import paths to include `/v2`. The GitHub Action,
+  Docker image, and release binaries are unaffected.
 - **`--ref` replaces `--branch`.** You can now scan any git ref — a branch, a
   tag, or a commit SHA — and the file links point at that same ref. `--branch`
   is kept as a backward-compatible alias, so existing commands keep working.

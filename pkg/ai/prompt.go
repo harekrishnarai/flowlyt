@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // categoryToClass maps a Finding.Category to one of the 4 specialist prompt

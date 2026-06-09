@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // GeminiClient implements the Client interface for Google Gemini API

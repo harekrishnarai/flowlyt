@@ -21,7 +21,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // MockClient implements the Client interface for testing

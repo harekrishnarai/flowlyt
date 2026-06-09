@@ -19,7 +19,7 @@ package context
 import (
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // severityRank orders severities for comparison (higher = more severe).

@@ -22,7 +22,7 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Install Flowlyt
-        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
       
       - name: Run security scan
         run: |
@@ -68,7 +68,7 @@ jobs:
           go-version: '1.24.6'
       
       - name: Install Flowlyt
-        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
       
       - name: Run environment-specific scan
         run: |
@@ -178,7 +178,7 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Install Flowlyt
-        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
       
       - name: Security scan
         id: scan
@@ -249,7 +249,7 @@ security_scan:
   stage: security
   image: golang:1.24.6
   script:
-    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
     - flowlyt --platform gitlab --repo . --output json --output-file security-report.json
   artifacts:
     reports:
@@ -279,7 +279,7 @@ stages:
 .security_template: &security_template
   image: golang:1.24.6
   before_script:
-    - go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@$FLOWLYT_VERSION
+    - go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@$FLOWLYT_VERSION
   artifacts:
     reports:
       junit: security-report-$ENVIRONMENT.json
@@ -394,7 +394,7 @@ security_scan_sast:
   stage: security
   image: golang:1.24.6
   script:
-    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
     - |
       # Convert Flowlyt output to GitLab Security format
       flowlyt --platform gitlab --repo . --output json > flowlyt-report.json
@@ -438,7 +438,7 @@ pipeline {
                         fi
                         
                         # Install Flowlyt
-                        GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+                        GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
                     '''
                 }
             }
@@ -578,7 +578,7 @@ stages:
         version: '1.24.6'
     
     - script: |
-        go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@$(flowlytVersion)
+        go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@$(flowlytVersion)
       displayName: 'Install Flowlyt'
     
     - script: |
@@ -679,7 +679,7 @@ echo "🔍 Running Flowlyt security scan..."
 # Check if Flowlyt is installed
 if ! command -v flowlyt &> /dev/null; then
     echo "❌ Flowlyt not found. Please install it:"
-    echo "  GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest"
+    echo "  GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest"
     exit 1
 fi
 
@@ -740,7 +740,7 @@ rm -f "$OUTPUT_FILE"
 FROM golang:1.24.6-alpine AS builder
 
 WORKDIR /app
-RUN GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+RUN GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates git

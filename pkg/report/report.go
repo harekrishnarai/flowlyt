@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/harekrishnarai/flowlyt/pkg/constants"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/harekrishnarai/flowlyt/pkg/terminal"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/terminal"
 )
 
 // ScanResult represents the overall result of a security scan

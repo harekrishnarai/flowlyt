@@ -23,7 +23,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/platform"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
 	"gopkg.in/yaml.v3"
 )
 

@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/pkg/platform"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
 )
 
 const sampleWorkflow = `name: CI

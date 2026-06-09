@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/pkg/errors"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/errors"
 )
 
 func TestValidator_ValidateConfig(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/osv"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/osv"
 )
 
 // IntelligenceReport represents a scan result enhanced with vulnerability intelligence

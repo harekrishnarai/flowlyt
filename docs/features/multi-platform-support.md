@@ -283,7 +283,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Flowlyt
-        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+        run: GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
       - name: Run Security Scan
         run: |
           flowlyt --platform github \
@@ -308,7 +308,7 @@ security_scan:
   stage: security
   image: golang:latest
   script:
-    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+    - GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
     - flowlyt --platform gitlab --repo . --output json --output-file security-report.json
   artifacts:
     reports:

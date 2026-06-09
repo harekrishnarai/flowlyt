@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/harekrishnarai/flowlyt/pkg/terminal"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/terminal"
 )
 
 // EnhancedFinding represents a finding enhanced with AI verification

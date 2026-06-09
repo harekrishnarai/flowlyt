@@ -7,7 +7,7 @@ Presented at AppSec Village DEF CON 33 and Black Hat Europe 2025.
 ## Installation
 
 ```bash
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
 ```
 
 Or build from source:

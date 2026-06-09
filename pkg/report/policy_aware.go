@@ -22,8 +22,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/config"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/config"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // PolicyAwareReportGenerator generates reports with policy evaluation

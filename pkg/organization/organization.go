@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/pkg/analysis/astutil"
-	"github.com/harekrishnarai/flowlyt/pkg/config"
-	"github.com/harekrishnarai/flowlyt/pkg/github"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
-	"github.com/harekrishnarai/flowlyt/pkg/shell"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/astutil"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/config"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/github"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/shell"
 	"gopkg.in/yaml.v3"
 )
 

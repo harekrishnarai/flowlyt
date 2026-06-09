@@ -21,10 +21,10 @@ sudo mv flowlyt /usr/local/bin/
 
 ```bash
 # Recommended method (bypasses proxy cache issues)
-GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@latest
+GOPRIVATE=github.com/harekrishnarai/flowlyt go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@latest
 
 # Alternative: install specific version
-go install github.com/harekrishnarai/flowlyt/cmd/flowlyt@v0.0.7
+go install github.com/harekrishnarai/flowlyt/v2/cmd/flowlyt@v0.0.7
 ```
 
 This installs the `flowlyt` binary to your `$GOPATH/bin` directory. Ensure `$GOPATH/bin` is in your system's `PATH`.

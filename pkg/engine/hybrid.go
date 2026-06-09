@@ -22,12 +22,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/opa"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
-	"github.com/harekrishnarai/flowlyt/pkg/platform"
-	"github.com/harekrishnarai/flowlyt/pkg/platform/github"
-	"github.com/harekrishnarai/flowlyt/pkg/platform/gitlab"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/opa"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform/github"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform/gitlab"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 	"gopkg.in/yaml.v3"
 )
 

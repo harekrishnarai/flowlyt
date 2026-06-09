@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/pkg/linenum"
-	"github.com/harekrishnarai/flowlyt/pkg/parser"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // checkContinueOnErrorCriticalJob checks for critical jobs with continue-on-error set to true

@@ -20,8 +20,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/harekrishnarai/flowlyt/pkg/platform"
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 	"github.com/open-policy-agent/opa/rego"
 )
 

@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/harekrishnarai/flowlyt/pkg/rules"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 // Provider represents different AI providers
