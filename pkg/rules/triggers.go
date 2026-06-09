@@ -658,8 +658,8 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 			}
 
 			findings = append(findings, Finding{
-				RuleID:      "EXTERNAL_TRIGGER_DEBUG",
-				RuleName:    "External Trigger Debug",
+				RuleID:      "UNTRUSTED_TRIGGER",
+				RuleName:    "Untrusted Workflow Trigger",
 				Description: fmt.Sprintf("Workflow uses external trigger '%s': %s", trigger, risk),
 				Severity:    High,
 				Category:    AccessControl,
@@ -694,6 +694,12 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 				strings.Contains(workflow.Path, "action") {
 				severity = Low
 			}
+			// workflow_dispatch can only be invoked by a user who already has
+			// repo write access, so its residual risk is informational rather
+			// than a finding that should surface at default severities.
+			if trigger == "workflow_dispatch" {
+				severity = Info
+			}
 
 			lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 				Key:   "on",
@@ -706,8 +712,8 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 			}
 
 			findings = append(findings, Finding{
-				RuleID:      "EXTERNAL_TRIGGER_DEBUG",
-				RuleName:    "External Trigger Debug",
+				RuleID:      "UNTRUSTED_TRIGGER",
+				RuleName:    "Untrusted Workflow Trigger",
 				Description: fmt.Sprintf("Workflow uses external trigger '%s': %s", trigger, risk),
 				Severity:    severity,
 				Category:    AccessControl,

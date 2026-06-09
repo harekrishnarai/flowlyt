@@ -66,6 +66,13 @@ type DataFlow struct {
 	Tainted  bool
 	Severity string // "LOW", "MEDIUM", "HIGH", "CRITICAL"
 	Risk     string // Description of the risk
+
+	// Human-readable endpoints, populated at flow-construction time so report
+	// findings describe the flow in terms of the actual source/sink rather than
+	// internal node IDs.
+	SourceName string // e.g. "secrets.AWS_SECRET" or "github.token"
+	SinkName   string // e.g. the command, env var, or action input
+	SinkType   string // "network", "log", "file", "env", "action_input", ...
 }
 
 // NewDataFlowAnalyzer creates a new data flow analyzer
@@ -137,12 +144,15 @@ func (dfa *DataFlowAnalyzer) traceDataFlowsWithCallGraph(workflow *WorkflowAST, 
 				risk := dfa.calculateFlowRisk(source, sinkInfo.sink)
 
 				flow := &DataFlow{
-					SourceID: sourceID,
-					SinkID:   sinkInfo.sink.ID,
-					Path:     sinkInfo.path,
-					Tainted:  source.Tainted,
-					Severity: severity,
-					Risk:     risk,
+					SourceID:   sourceID,
+					SinkID:     sinkInfo.sink.ID,
+					Path:       sinkInfo.path,
+					Tainted:    source.Tainted,
+					Severity:   severity,
+					Risk:       risk,
+					SourceName: source.Name,
+					SinkName:   sinkInfo.sink.Name,
+					SinkType:   sinkInfo.sink.Type,
 				}
 				dfa.flows = append(dfa.flows, flow)
 			}
@@ -738,12 +748,15 @@ func (dfa *DataFlowAnalyzer) findReachableFlows() {
 						risk := dfa.calculateFlowRisk(source, sink)
 
 						flow := &DataFlow{
-							SourceID: sourceID,
-							SinkID:   sinkID,
-							Path:     path,
-							Tainted:  source.Tainted,
-							Severity: severity,
-							Risk:     risk,
+							SourceID:   sourceID,
+							SinkID:     sinkID,
+							Path:       path,
+							Tainted:    source.Tainted,
+							Severity:   severity,
+							Risk:       risk,
+							SourceName: source.Name,
+							SinkName:   sink.Name,
+							SinkType:   sink.Type,
 						}
 						dfa.flows = append(dfa.flows, flow)
 					}
@@ -896,13 +909,24 @@ func (dfa *DataFlowAnalyzer) parseNodeID(nodeID string) (job string, step int) {
 
 func (dfa *DataFlowAnalyzer) calculateFlowSeverity(source *DataSource, sink *DataSink) string {
 	if source.Tainted && sink.Sensitive {
-		if sink.Type == "network" {
-			return "CRITICAL" // Tainted data going to network
+		switch sink.Type {
+		case "network":
+			return "CRITICAL" // Tainted data leaving via the network
+		case "log":
+			if source.Type == "secret" {
+				return "HIGH" // Secret written to logs
+			}
+			return "MEDIUM"
+		case "file":
+			return "MEDIUM" // Sensitive data persisted to a file
+		default:
+			// Propagation into env vars, step outputs, or action inputs is the
+			// normal way secrets are consumed in a workflow and is not an
+			// exposure by itself. Treat it as informational so it is not
+			// reported as a finding (avoids flagging every `${{ secrets.* }}`
+			// or `${{ github.token }}` assignment).
+			return "INFO"
 		}
-		if sink.Type == "log" && source.Type == "secret" {
-			return "HIGH" // Secret going to logs
-		}
-		return "MEDIUM"
 	}
 
 	if source.Tainted || sink.Sensitive {

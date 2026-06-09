@@ -453,8 +453,8 @@ func StandardRules() []Rule {
 			Check:       checkBotIdentity,
 		},
 		{
-			ID:          "EXTERNAL_TRIGGER_DEBUG",
-			Name:        "External Trigger Debug",
+			ID:          "UNTRUSTED_TRIGGER",
+			Name:        "Untrusted Workflow Trigger",
 			Description: "Detects workflows that can be externally triggered with potential security risks",
 			Severity:    High,
 			Category:    AccessControl,

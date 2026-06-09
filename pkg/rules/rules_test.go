@@ -282,16 +282,16 @@ jobs:
 	}
 }
 
-// TestExternalTriggerPermissions verifies that EXTERNAL_TRIGGER_DEBUG only fires
+// TestExternalTriggerPermissions verifies that UNTRUSTED_TRIGGER only fires
 // on workflow_dispatch when the workflow has (or defaults to) write permissions.
 func TestExternalTriggerPermissions(t *testing.T) {
-	rule := findRule(t, "EXTERNAL_TRIGGER_DEBUG")
+	rule := findRule(t, "UNTRUSTED_TRIGGER")
 
 	firesOn := func(yamlContent string) bool {
 		t.Helper()
 		wf := makeWorkflow(t, yamlContent)
 		for _, f := range rule.Check(wf) {
-			if f.RuleID == "EXTERNAL_TRIGGER_DEBUG" && f.Evidence == "workflow_dispatch" {
+			if f.RuleID == "UNTRUSTED_TRIGGER" && f.Evidence == "workflow_dispatch" {
 				return true
 			}
 		}
@@ -309,7 +309,7 @@ jobs:
       - run: echo hello
 `
 	if !firesOn(noPerms) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with no permissions block")
+		t.Error("UNTRUSTED_TRIGGER should fire on workflow_dispatch with no permissions block")
 	}
 
 	// Must fire — explicit write scope
@@ -325,7 +325,7 @@ jobs:
       - run: echo hello
 `
 	if !firesOn(writePerms) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with contents: write")
+		t.Error("UNTRUSTED_TRIGGER should fire on workflow_dispatch with contents: write")
 	}
 
 	// Must NOT fire — read-all shorthand
@@ -340,7 +340,7 @@ jobs:
       - run: echo hello
 `
 	if firesOn(readAll) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: read-all")
+		t.Error("UNTRUSTED_TRIGGER should NOT fire on workflow_dispatch with permissions: read-all")
 	}
 
 	// Must NOT fire — explicit read-only scope map
@@ -357,7 +357,7 @@ jobs:
       - run: echo hello
 `
 	if firesOn(readOnly) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with all-read permissions")
+		t.Error("UNTRUSTED_TRIGGER should NOT fire on workflow_dispatch with all-read permissions")
 	}
 
 	// Must NOT fire — empty permissions map
@@ -372,7 +372,7 @@ jobs:
       - run: echo hello
 `
 	if firesOn(emptyPerms) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: {}")
+		t.Error("UNTRUSTED_TRIGGER should NOT fire on workflow_dispatch with permissions: {}")
 	}
 
 	// Must NOT fire — permissions: none shorthand
@@ -387,7 +387,7 @@ jobs:
       - run: echo hello
 `
 	if firesOn(nonePerms) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on workflow_dispatch with permissions: none")
+		t.Error("UNTRUSTED_TRIGGER should NOT fire on workflow_dispatch with permissions: none")
 	}
 
 	// Must fire — permissions: write-all string shorthand
@@ -402,7 +402,7 @@ jobs:
       - run: echo hello
 `
 	if !firesOn(writeAll) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch with permissions: write-all")
+		t.Error("UNTRUSTED_TRIGGER should fire on workflow_dispatch with permissions: write-all")
 	}
 
 	// Unrelated triggers (issue_comment) must still fire regardless of permissions
@@ -419,12 +419,12 @@ jobs:
 	hasIssueCommentFinding := false
 	wf := makeWorkflow(t, issueComment)
 	for _, f := range rule.Check(wf) {
-		if f.RuleID == "EXTERNAL_TRIGGER_DEBUG" && f.Evidence == "issue_comment" {
+		if f.RuleID == "UNTRUSTED_TRIGGER" && f.Evidence == "issue_comment" {
 			hasIssueCommentFinding = true
 		}
 	}
 	if hasIssueCommentFinding {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should NOT fire on issue_comment with read-only permissions")
+		t.Error("UNTRUSTED_TRIGGER should NOT fire on issue_comment with read-only permissions")
 	}
 
 	// Regression: flowlyt-scan.yml — has security-events: write but also contents: read.
@@ -443,7 +443,7 @@ jobs:
       - uses: actions/checkout@v6
 `
 	if !firesOn(scsFeedFlowlytScan) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch when security-events: write is present (flowlyt-scan.yml regression)")
+		t.Error("UNTRUSTED_TRIGGER should fire on workflow_dispatch when security-events: write is present (flowlyt-scan.yml regression)")
 	}
 
 	// Regression: daily-supply-chain-reports.yml — has contents: write and pull-requests: write.
@@ -465,7 +465,7 @@ jobs:
       - uses: actions/checkout@v4
 `
 	if !firesOn(scsFeedDailyReports) {
-		t.Error("EXTERNAL_TRIGGER_DEBUG should fire on workflow_dispatch when contents: write is present (daily-supply-chain-reports.yml regression)")
+		t.Error("UNTRUSTED_TRIGGER should fire on workflow_dispatch when contents: write is present (daily-supply-chain-reports.yml regression)")
 	}
 }
 

@@ -17,8 +17,26 @@ limitations under the License.
 package context
 
 import (
+	"strings"
+
 	"github.com/harekrishnarai/flowlyt/pkg/parser"
 )
+
+// severityRank orders severities for comparison (higher = more severe).
+func severityRank(s string) int {
+	switch strings.ToUpper(s) {
+	case "CRITICAL":
+		return 4
+	case "HIGH":
+		return 3
+	case "MEDIUM":
+		return 2
+	case "LOW":
+		return 1
+	default: // INFO / unknown
+		return 0
+	}
+}
 
 // WorkflowContext holds contextual information about a workflow
 type WorkflowContext struct {
@@ -81,9 +99,10 @@ func (ca *ContextAnalyzer) AdjustSeverity(ruleID string, baseSeverity string, ct
 		// Supply chain issues - keep high for all workflows
 		return baseSeverity
 
-	case "EXTERNAL_TRIGGER_DEBUG":
-		// Debug statements - adjust based on context
-		if ctx.Intent.IsReadOnly() {
+	case "UNTRUSTED_TRIGGER":
+		// Untrusted/external triggers are lower risk on read-only workflows, but
+		// never raise severity here (e.g. workflow_dispatch starts at INFO).
+		if ctx.Intent.IsReadOnly() && severityRank(baseSeverity) > severityRank("LOW") {
 			return "LOW"
 		}
 		return baseSeverity
