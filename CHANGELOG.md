@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.1] - 2026-06-09
+
+### 💅 CLI output
+
+- Reworked the default terminal report into a polished, semgrep-style layout:
+  a colored title, per-file headers with finding counts, severity-marked
+  findings, and a **pinpointed multi-line code snippet** with a line-number
+  gutter (the offending line is marked and highlighted). Description / fix /
+  AI notes now wrap to the terminal width with clean hanging indents.
+
+### 🎯 Accuracy
+
+- `IMPOSTOR_COMMIT`: a benign `git config user.name "github-actions[bot]"` is no
+  longer reported as CRITICAL when the surrounding run block happens to contain
+  `${...}`. Each run-block line is evaluated independently; the official bot
+  identity is LOW and a variable-based identity is CRITICAL, each pinpointed to
+  its exact line.
+- `GITHUB_ENV_UNTRUSTED_WRITE`: now points at the exact `>> $GITHUB_ENV` line
+  inside the run block instead of the `run:` block-scalar line.
+
 ## [2.0.0] - 2026-06-09
 
 A major release focused on correctness, finding precision, and a cleaner CLI.
