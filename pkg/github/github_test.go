@@ -28,6 +28,26 @@ func TestEnvironmentDetectionIntegration(t *testing.T) {
 	}
 }
 
+func TestRefContentOpts(t *testing.T) {
+	// Empty/whitespace ref -> nil (use the repository's default branch).
+	for _, empty := range []string{"", "   "} {
+		if opts := refContentOpts(empty); opts != nil {
+			t.Errorf("refContentOpts(%q) = %+v, want nil", empty, opts)
+		}
+	}
+
+	// Branch, tag, and commit SHA all flow through the single Ref field.
+	for _, ref := range []string{"main", "v2.40.0", "5c9ec1c5f51d682dbf65b0c16f856d8b9303adff"} {
+		opts := refContentOpts(ref)
+		if opts == nil {
+			t.Fatalf("refContentOpts(%q) = nil, want Ref set", ref)
+		}
+		if opts.Ref != ref {
+			t.Errorf("refContentOpts(%q).Ref = %q, want %q", ref, opts.Ref, ref)
+		}
+	}
+}
+
 func TestParseRepositoryURL(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -241,8 +241,9 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 		return result
 	}
 
-	// Fetch workflow files directly via API (much faster than cloning)
-	workflowContents, err := a.client.GetWorkflowFilesContents(owner, repoName)
+	// Fetch workflow files directly via API (much faster than cloning).
+	// Organization scans always use each repository's default branch.
+	workflowContents, err := a.client.GetWorkflowFilesContents(owner, repoName, "")
 	if err != nil {
 		result.Error = fmt.Errorf("failed to fetch workflow files: %w", err)
 		result.Duration = time.Since(startTime)

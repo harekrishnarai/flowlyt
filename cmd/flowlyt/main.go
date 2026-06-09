@@ -114,9 +114,10 @@ func main() {
 						Value:   constants.DefaultOutputFormat,
 					},
 					&cli.StringFlag{
-						Name:  "branch",
-						Usage: "Branch name to scan and use for file links (auto-detects default branch if not specified)",
-						Value: "",
+						Name:    "ref",
+						Aliases: []string{"branch"},
+						Usage:   "Git ref to scan: branch, tag, or commit SHA (also used for file links; auto-detects the default branch if not specified)",
+						Value:   "",
 					},
 					&cli.StringFlag{
 						Name:  "output-file",
@@ -413,8 +414,13 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 			} else {
 				ghClient = github.NewClient()
 			}
-			fmt.Printf("� Downloading workflow files from GitHub repository: %s/%s\n", owner, repo)
-			workflowContents, err = ghClient.GetWorkflowFilesContents(owner, repo)
+			ref := c.String("ref")
+			if ref != "" {
+				fmt.Printf("Downloading workflow files from GitHub repository: %s/%s (ref: %s)\n", owner, repo, ref)
+			} else {
+				fmt.Printf("Downloading workflow files from GitHub repository: %s/%s\n", owner, repo)
+			}
+			workflowContents, err = ghClient.GetWorkflowFilesContents(owner, repo, ref)
 			if err != nil {
 				if github.IsRateLimitError(err) {
 					return "", nil, fmt.Errorf("GitHub API rate limit exceeded\n\nTip: Authenticate to get a higher rate limit:\n  flowlyt scan --github-token $(gh auth token) ...\n  or set: export GITHUB_TOKEN=$(gh auth token)")
@@ -456,9 +462,9 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 	case constants.PlatformGitLab:
 		// For GitLab, we still need to use cloning for now as GitLab API implementation would be similar
 		// but requires separate implementation. This could be added in a future enhancement.
-		branch := c.String("branch")
-		if branch != "" {
-			term.Info(fmt.Sprintf("Cloning GitLab repository: %s (branch: %s)...", repoURL, branch))
+		ref := c.String("ref")
+		if ref != "" {
+			term.Info(fmt.Sprintf("Cloning GitLab repository: %s (ref: %s)...", repoURL, ref))
 		} else {
 			term.Info(fmt.Sprintf("Cloning GitLab repository: %s...", repoURL))
 		}
@@ -469,7 +475,7 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 		}
 
 		tempDir := c.String("temp-dir")
-		repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, branch)
+		repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, ref)
 		if err != nil {
 			return "", nil, fmt.Errorf("failed to clone GitLab repository: %w", err)
 		}
@@ -600,7 +606,7 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 
 	// Enhance findings with GitHub URLs if scanning a remote GitHub repository
 	if repoURL != "" && github.IsGitHubRepository(repoURL) {
-		branch := c.String("branch")
+		branch := c.String("ref")
 		if strings.TrimSpace(branch) == "" {
 			// Auto-detect default branch
 			owner, repo, parseErr := github.ParseRepositoryURL(repoURL)
@@ -626,7 +632,7 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 
 	// Enhance findings with GitLab URLs if scanning a remote GitLab repository
 	if repoURL != "" && gitlab.IsGitLabURL(repoURL) {
-		branch := c.String("branch")
+		branch := c.String("ref")
 		if strings.TrimSpace(branch) == "" {
 			// Try to detect GitLab default branch
 			instanceURL, owner, repo, parseErr := gitlab.ParseRepositoryURL(repoURL)
