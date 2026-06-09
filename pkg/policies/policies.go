@@ -172,7 +172,7 @@ func convertJobsToMap(jobs map[string]parser.Job) map[string]interface{} {
 		if job.Env != nil {
 			jobMap["env"] = job.Env
 		}
-		if job.ContinueOnError {
+		if job.ContinueOnError != nil {
 			jobMap["continue-on-error"] = job.ContinueOnError
 		}
 
@@ -214,7 +214,7 @@ func convertStepsToList(steps []parser.Step) []map[string]interface{} {
 		if step.Env != nil {
 			stepMap["env"] = step.Env
 		}
-		if step.ContinueOnError {
+		if step.ContinueOnError != nil {
 			stepMap["continue-on-error"] = step.ContinueOnError
 		}
 		if step.WorkingDirectory != "" {

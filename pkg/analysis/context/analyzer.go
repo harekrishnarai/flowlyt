@@ -172,27 +172,35 @@ func (ca *ContextAnalyzer) adjustStaleActionRefs(baseSeverity string, ctx *Workf
 	return "MEDIUM"
 }
 
-// adjustArtipacked adjusts severity for ARTIPACKED_VULNERABILITY findings
+// adjustArtipacked adjusts severity for ARTIPACKED_VULNERABILITY findings.
+//
+// The rule already encodes real exploitability in baseSeverity: HIGH only when
+// the job uploads an artifact that can include the .git directory (where
+// actions/checkout persists its token), otherwise a LOW hardening note. The
+// presence of untrusted input does NOT make credential persistence more
+// exploitable, so context must never raise severity here — it may only
+// downgrade cases where the persisted token is clearly intentional.
 func (ca *ContextAnalyzer) adjustArtipacked(baseSeverity string, ctx *WorkflowContext) string {
-	// If workflow has explicit write permissions, token is needed
+	// A genuine exposure (HIGH: .git can be packed into an artifact) stays HIGH
+	// regardless of intent — having write permissions does not make leaking the
+	// token into a downloadable artifact acceptable.
+	if baseSeverity == "HIGH" || baseSeverity == "CRITICAL" {
+		return baseSeverity
+	}
+
+	// For the LOW/MEDIUM hardening case, treat it as informational when the
+	// persisted token is clearly intended (write permissions, or a trusted
+	// release-style workflow).
 	if ctx.GrantedPerms != nil {
 		if contents, ok := ctx.GrantedPerms["contents"]; ok && contents == "write" {
-			return "INFO" // Token needed intentionally
+			return "INFO"
 		}
 	}
-
-	// If workflow is trusted (tags, release), token is likely needed
 	if ctx.IsTrusted && ctx.Intent.IsCritical() {
-		return "LOW" // Likely intentional
+		return "INFO"
 	}
 
-	// If workflow has untrusted input, keep HIGH
-	if ctx.HasUntrustedInput {
-		return "HIGH"
-	}
-
-	// Otherwise MEDIUM
-	return "MEDIUM"
+	return baseSeverity
 }
 
 // adjustInjection adjusts severity for injection findings

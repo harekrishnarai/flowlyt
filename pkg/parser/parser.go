@@ -57,7 +57,7 @@ type Job struct {
 	Steps           []Step                 `yaml:"steps"`
 	Env             map[string]string      `yaml:"env,omitempty"`
 	Defaults        map[string]interface{} `yaml:"defaults,omitempty"`
-	ContinueOnError bool                   `yaml:"continue-on-error,omitempty"`
+	ContinueOnError interface{}            `yaml:"continue-on-error,omitempty"` // bool or ${{ }} expression
 	Container       interface{}            `yaml:"container,omitempty"`
 	Services        map[string]interface{} `yaml:"services,omitempty"`
 	Strategy        map[string]interface{} `yaml:"strategy,omitempty"`
@@ -75,7 +75,7 @@ type Step struct {
 	Shell            string                 `yaml:"shell,omitempty"`
 	With             map[string]interface{} `yaml:"with,omitempty"`
 	Env              map[string]string      `yaml:"env,omitempty"`
-	ContinueOnError  bool                   `yaml:"continue-on-error,omitempty"`
+	ContinueOnError  interface{}            `yaml:"continue-on-error,omitempty"` // bool or ${{ }} expression
 	WorkingDirectory string                 `yaml:"working-directory,omitempty"`
 }
 
@@ -111,10 +111,12 @@ func FindWorkflows(repoPath string) ([]WorkflowFile, error) {
 			return fmt.Errorf("failed to read workflow file %s: %w", path, err)
 		}
 
-		// Parse the workflow
+		// Parse the workflow. A single malformed file must not abort the whole
+		// scan: skip it (with a warning) so the remaining workflows are analyzed.
 		workflow := Workflow{}
 		if err := yaml.Unmarshal(content, &workflow); err != nil {
-			return fmt.Errorf("failed to parse workflow file %s: %w", path, err)
+			fmt.Fprintf(os.Stderr, "warning: skipping unparseable workflow %s: %v\n", path, err)
+			return nil
 		}
 
 		// Add to the list of workflows
@@ -137,6 +139,21 @@ func FindWorkflows(repoPath string) ([]WorkflowFile, error) {
 	}
 
 	return workflows, nil
+}
+
+// ContinueOnErrorEnabled reports whether a continue-on-error value is
+// statically true. GitHub Actions allows the field to be a boolean or a
+// ${{ }} expression; expressions cannot be evaluated statically and are
+// treated as not enabled.
+func ContinueOnErrorEnabled(v interface{}) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return strings.EqualFold(strings.TrimSpace(t), "true")
+	default:
+		return false
+	}
 }
 
 // ParseWorkflowYAML parses a workflow file's YAML content

@@ -150,7 +150,7 @@ type GitHubJob struct {
 	Steps           []GitHubStep           `yaml:"steps"`
 	Env             map[string]string      `yaml:"env,omitempty"`
 	Defaults        map[string]interface{} `yaml:"defaults,omitempty"`
-	ContinueOnError bool                   `yaml:"continue-on-error,omitempty"`
+	ContinueOnError interface{}            `yaml:"continue-on-error,omitempty"` // bool or ${{ }} expression
 	Container       interface{}            `yaml:"container,omitempty"`
 	Services        map[string]interface{} `yaml:"services,omitempty"`
 	Strategy        map[string]interface{} `yaml:"strategy,omitempty"`
@@ -166,7 +166,7 @@ type GitHubStep struct {
 	Shell            string                 `yaml:"shell,omitempty"`
 	With             map[string]interface{} `yaml:"with,omitempty"`
 	Env              map[string]string      `yaml:"env,omitempty"`
-	ContinueOnError  bool                   `yaml:"continue-on-error,omitempty"`
+	ContinueOnError  interface{}            `yaml:"continue-on-error,omitempty"` // bool or ${{ }} expression
 	WorkingDirectory string                 `yaml:"working-directory,omitempty"`
 }
 

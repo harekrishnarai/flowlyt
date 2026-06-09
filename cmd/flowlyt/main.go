@@ -767,6 +767,12 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 	// Sort findings by severity
 	sortedFindings := report.SortFindingsBySeverity(filteredFindings)
 
+	// Deduplicate up front so the summary count matches the findings emitted by
+	// every report format (JSON/SARIF dedup internally; previously the summary
+	// was computed on the pre-dedup list, so the headline count could exceed the
+	// number of findings actually reported).
+	sortedFindings = report.DeduplicateFindings(sortedFindings)
+
 	// Calculate summary
 	summary := report.CalculateSummary(sortedFindings)
 
@@ -1353,8 +1359,9 @@ func enhanceOrgResultsWithAI(c *cli.Context, orgResult *organization.Organizatio
 		}
 	}
 
-	// Recalculate the summary with enhanced findings
-	orgResult.Summary = orgResult.Summary // Keep existing summary structure, the findings are already updated
+	// Recalculate the summary so severity/category counts reflect the
+	// AI-enhanced findings (verification may change severity or dismiss findings).
+	orgResult.RecalculateSummary()
 	return nil
 }
 
