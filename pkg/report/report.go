@@ -19,7 +19,6 @@ package report
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"os"
 	"sort"
 	"strings"
@@ -28,7 +27,6 @@ import (
 	"github.com/fatih/color"
 	"github.com/harekrishnarai/flowlyt/pkg/rules"
 	"github.com/harekrishnarai/flowlyt/pkg/terminal"
-	"github.com/olekukonko/tablewriter"
 )
 
 // ScanResult represents the overall result of a security scan
@@ -115,293 +113,166 @@ func (g *Generator) Generate() error {
 	}
 }
 
-// generateCLIReport creates a modern, visually appealing CLI report
+// generateCLIReport prints a minimal, scanner-style report (in the spirit of
+// semgrep / scorecard): a short header, findings grouped by file with the
+// offending line and a fix hint, and a one-line summary.
 func (g *Generator) generateCLIReport() error {
-	// Use intelligent terminal for xterm output
-	t := g.term
+	bold := color.New(color.Bold)
+	dim := color.New(color.Faint)
 
-	// Define color styles
-	titleStyle := color.New(color.FgHiCyan, color.Bold)
-	subtitleStyle := color.New(color.FgCyan, color.Bold)
-	infoStyle := color.New(color.FgBlue)
-	successStyle := color.New(color.FgGreen, color.Bold)
-	criticalStyle := color.New(color.FgHiRed, color.Bold)
-	highStyle := color.New(color.FgHiYellow, color.Bold)
-	mediumStyle := color.New(color.FgYellow)
-	lowStyle := color.New(color.FgBlue)
-	infoLevelStyle := color.New(color.FgHiBlue)
-
-	// Header with logo and version using terminal banner
 	fmt.Println()
-	if t.IsTTY() && t.ColorLevel() >= terminal.ColorLevel256 {
-		t.Banner("FLOWLYT SCAN RESULTS", 45)
-	} else {
-		titleStyle.Println("╔═══════════════════════════════════════════╗")
-		titleStyle.Println("║             FLOWLYT SCAN RESULTS          ║")
-		titleStyle.Println("╚═══════════════════════════════════════════╝")
+	header := "Flowlyt scan"
+	if g.Result.Repository != "" {
+		header += " · " + g.Result.Repository
 	}
-
-	// Print scan information
-	fmt.Println()
-	subtitleStyle.Println("► SCAN INFORMATION")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	infoStyle.Printf("%-20s ", "Repository:")
-	fmt.Println(g.Result.Repository)
-	infoStyle.Printf("%-20s ", "Scan Time:")
-	fmt.Println(g.Result.ScanTime.Format(time.RFC1123))
-	infoStyle.Printf("%-20s ", "Duration:")
-	fmt.Println(g.Result.Duration.Round(time.Millisecond))
-	infoStyle.Printf("%-20s ", "Workflows Analyzed:")
-	fmt.Println(g.Result.WorkflowsCount)
-	infoStyle.Printf("%-20s ", "Rules Applied:")
-	fmt.Println(g.Result.RulesCount)
-
-	tipPrinted := false
+	bold.Println(header)
+	dim.Printf("%d workflow(s) · %d rules · %s\n",
+		g.Result.WorkflowsCount, g.Result.RulesCount, g.Result.Duration.Round(time.Millisecond))
 	if g.Result.SuppressedCount > 0 {
-		infoStyle.Printf("%-20s ", "AST Suppressed:")
-		fmt.Printf("%d findings removed via reachability\n", g.Result.SuppressedCount)
-		tipPrinted = true
-	}
-	if g.Result.GeneratedByAST > 0 {
-		infoStyle.Printf("%-20s ", "AST Data Flows:")
-		fmt.Printf("%d new insights\n", g.Result.GeneratedByAST)
-
-		tipPrinted = true
-	}
-	if tipPrinted {
-		infoStyle.Printf("%-20s ", "Tip:")
-		fmt.Println("Use .flowlyt.yml to review intentional flows or suppress safe patterns.")
+		dim.Printf("%d finding(s) suppressed via reachability analysis\n", g.Result.SuppressedCount)
 	}
 
-	// Add AI analysis summary if any findings were AI verified
-	aiVerifiedCount := 0
-	aiFalsePositives := 0
-	aiTruePositives := 0
-	aiErrors := 0
-	for _, finding := range g.Result.Findings {
-		if finding.AIVerified {
-			aiVerifiedCount++
-			if finding.AIError != "" {
-				aiErrors++
-			} else if finding.AILikelyFalsePositive != nil {
-				if *finding.AILikelyFalsePositive {
-					aiFalsePositives++
-				} else {
-					aiTruePositives++
-				}
-			}
-		}
-	}
-
-	if aiVerifiedCount > 0 {
-		infoStyle.Printf("%-20s ", "AI Analysis:")
-		fmt.Printf("%d findings analyzed\n", aiVerifiedCount)
-		if aiFalsePositives > 0 {
-			infoStyle.Printf("%-20s ", "AI False Positives:")
-			fmt.Printf("%d findings\n", aiFalsePositives)
-		}
-		if aiTruePositives > 0 {
-			infoStyle.Printf("%-20s ", "AI True Positives:")
-			fmt.Printf("%d findings\n", aiTruePositives)
-		}
-		if aiErrors > 0 {
-			infoStyle.Printf("%-20s ", "AI Errors:")
-			fmt.Printf("%d findings\n", aiErrors)
-		}
-	}
-
-	// Summary section with table
-	fmt.Println()
-	subtitleStyle.Println("► SUMMARY")
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	// Create table for summary
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"Severity", "Count", "Indicator"})
-	table.SetBorder(false)
-	table.SetColumnAlignment([]int{tablewriter.ALIGN_LEFT, tablewriter.ALIGN_CENTER, tablewriter.ALIGN_LEFT})
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetHeaderColor(
-		tablewriter.Colors{tablewriter.Bold},
-		tablewriter.Colors{tablewriter.Bold},
-		tablewriter.Colors{tablewriter.Bold},
-	)
-
-	// Add data rows with colored cells
-	criticalRow := []string{"CRITICAL", fmt.Sprintf("%d", g.Result.Summary.Critical)}
-	highRow := []string{"HIGH", fmt.Sprintf("%d", g.Result.Summary.High)}
-	mediumRow := []string{"MEDIUM", fmt.Sprintf("%d", g.Result.Summary.Medium)}
-	lowRow := []string{"LOW", fmt.Sprintf("%d", g.Result.Summary.Low)}
-	infoRow := []string{"INFO", fmt.Sprintf("%d", g.Result.Summary.Info)}
-	totalRow := []string{"TOTAL", fmt.Sprintf("%d", g.Result.Summary.Total)}
-
-	// Create bar indicators based on severity
-	criticalBar := createSeverityBar(g.Result.Summary.Critical, g.Result.Summary.Total, "█", 20)
-	highBar := createSeverityBar(g.Result.Summary.High, g.Result.Summary.Total, "█", 20)
-	mediumBar := createSeverityBar(g.Result.Summary.Medium, g.Result.Summary.Total, "█", 20)
-	lowBar := createSeverityBar(g.Result.Summary.Low, g.Result.Summary.Total, "█", 20)
-	infoBar := createSeverityBar(g.Result.Summary.Info, g.Result.Summary.Total, "█", 20)
-
-	criticalRow = append(criticalRow, criticalBar)
-	highRow = append(highRow, highBar)
-	mediumRow = append(mediumRow, mediumBar)
-	lowRow = append(lowRow, lowBar)
-	infoRow = append(infoRow, infoBar)
-	totalRow = append(totalRow, "")
-
-	table.Rich(criticalRow, []tablewriter.Colors{
-		{tablewriter.Bold, tablewriter.FgHiRedColor},
-		{tablewriter.Bold, tablewriter.FgHiRedColor},
-		{tablewriter.FgHiRedColor},
-	})
-	table.Rich(highRow, []tablewriter.Colors{
-		{tablewriter.Bold, tablewriter.FgHiYellowColor},
-		{tablewriter.Bold, tablewriter.FgHiYellowColor},
-		{tablewriter.FgHiYellowColor},
-	})
-	table.Rich(mediumRow, []tablewriter.Colors{
-		{tablewriter.Bold, tablewriter.FgYellowColor},
-		{tablewriter.Bold, tablewriter.FgYellowColor},
-		{tablewriter.FgYellowColor},
-	})
-	table.Rich(lowRow, []tablewriter.Colors{
-		{tablewriter.Bold, tablewriter.FgBlueColor},
-		{tablewriter.Bold, tablewriter.FgBlueColor},
-		{tablewriter.FgBlueColor},
-	})
-	table.Rich(infoRow, []tablewriter.Colors{
-		{tablewriter.Bold, tablewriter.FgCyanColor},
-		{tablewriter.Bold, tablewriter.FgCyanColor},
-		{tablewriter.FgCyanColor},
-	})
-	table.Rich(totalRow, []tablewriter.Colors{
-		{tablewriter.Bold},
-		{tablewriter.Bold},
-		{tablewriter.Normal},
-	})
-
-	table.Render()
-
-	// Print findings
-	if len(g.Result.Findings) > 0 {
+	if len(g.Result.Findings) == 0 {
 		fmt.Println()
-		subtitleStyle.Println("► FINDINGS")
-		fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-		// Group findings by severity
-		findingsBySeverity := map[rules.Severity][]rules.Finding{
-			rules.Critical: {},
-			rules.High:     {},
-			rules.Medium:   {},
-			rules.Low:      {},
-			rules.Info:     {},
-		}
-
-		for _, finding := range g.Result.Findings {
-			findingsBySeverity[finding.Severity] = append(findingsBySeverity[finding.Severity], finding)
-		}
-
-		// Print findings in order of severity
-		severities := []rules.Severity{rules.Critical, rules.High, rules.Medium, rules.Low, rules.Info}
-		severityStyles := map[rules.Severity]*color.Color{
-			rules.Critical: criticalStyle,
-			rules.High:     highStyle,
-			rules.Medium:   mediumStyle,
-			rules.Low:      lowStyle,
-			rules.Info:     infoLevelStyle,
-		}
-
-		count := 0
-		formatter := NewEnhancedFormatter()
-
-		for _, severity := range severities {
-			severityFindings := findingsBySeverity[severity]
-			if len(severityFindings) == 0 {
-				continue
-			}
-
-			fmt.Println()
-			severityStyles[severity].Printf("■ %s SEVERITY FINDINGS\n", strings.ToUpper(string(severity)))
-			fmt.Println("─────────────────────────────────────────────────")
-
-			for _, finding := range severityFindings {
-				count++
-
-				// Use enhanced formatter for better visuals
-				formatter.AddFinding(finding, count)
-				fmt.Print(formatter.FormatFinding(EnhancedFinding{
-					Finding:   finding,
-					FileLines: formatter.findings[len(formatter.findings)-1].FileLines,
-					Number:    count,
-				}))
-
-				// Add AI verification information if available
-				if finding.AIVerified {
-					fmt.Println()
-					aiStyle := color.New(color.FgMagenta, color.Bold)
-					aiStyle.Printf("  %-12s ", "🤖 AI Analysis:")
-
-					if finding.AIError != "" {
-						errorStyle := color.New(color.FgRed)
-						errorStyle.Printf("Failed - %s\n", finding.AIError)
-					} else if finding.AILikelyFalsePositive != nil {
-						if *finding.AILikelyFalsePositive {
-							warningStyle := color.New(color.FgYellow, color.Bold)
-							warningStyle.Printf("Likely FALSE POSITIVE (%.0f%% confidence)\n", finding.AIConfidence*100)
-						} else {
-							alertStyle := color.New(color.FgRed, color.Bold)
-							alertStyle.Printf("Likely TRUE POSITIVE (%.0f%% confidence)\n", finding.AIConfidence*100)
-						}
-
-						if finding.AIReasoning != "" {
-							infoStyle.Printf("  %-12s ", "AI Reasoning:")
-							fmt.Println(finding.AIReasoning)
-						}
-
-						if finding.AISuggestedSeverity != "" && finding.AISuggestedSeverity != string(finding.Severity) {
-							infoStyle.Printf("  %-12s ", "AI Suggests:")
-							fmt.Printf("%s severity (current: %s)\n", finding.AISuggestedSeverity, string(finding.Severity))
-						}
-
-						if finding.AIRemediation != "" {
-							infoStyle.Printf("  %-12s ", "AI Fix:")
-							fmt.Println(finding.AIRemediation)
-						}
-					}
-				}
-
-				if finding.AISkipped {
-					fmt.Println()
-					aiStyle := color.New(color.FgMagenta, color.Bold)
-					aiStyle.Printf("  %-12s ", "\U0001f916 AI Analysis:")
-					fmt.Printf("Skipped (%s)\n", finding.AISkipReason)
-				}
-
-				if g.Verbose {
-					fmt.Println()
-					infoStyle.Println("  Evidence:")
-					// Use masked evidence instead of raw evidence
-					maskedEvidence := MaskSecrets(finding.Evidence)
-					fmt.Printf("  %s\n", strings.ReplaceAll(maskedEvidence, "\n", "\n  "))
-
-					fmt.Println()
-					infoStyle.Printf("  %-12s ", "Remediation:")
-					fmt.Println(finding.Remediation)
-				}
-			}
-		}
-	} else {
+		color.New(color.FgGreen, color.Bold).Println("✓ No security issues found")
 		fmt.Println()
-		successStyle.Println("✅ NO SECURITY ISSUES FOUND!")
-		fmt.Println("No security issues were detected in the analyzed workflows.")
+		return nil
 	}
 
-	// Footer
-	fmt.Println()
-	fmt.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	fmt.Println()
+	// Group findings by file (sorted). Findings keep their incoming severity order.
+	order := []string{}
+	byFile := map[string][]rules.Finding{}
+	for _, f := range g.Result.Findings {
+		path := cleanFilePath(f.FilePath)
+		if path == "" {
+			path = "(unknown file)"
+		}
+		if _, ok := byFile[path]; !ok {
+			order = append(order, path)
+		}
+		byFile[path] = append(byFile[path], f)
+	}
+	sort.Strings(order)
 
+	fmt.Println()
+	for _, path := range order {
+		bold.Printf("  %s\n", path)
+		for _, f := range byFile[path] {
+			g.printFindingCLI(f)
+		}
+		fmt.Println()
+	}
+
+	g.printSummaryCLI()
 	return nil
+}
+
+// printFindingCLI prints a single finding in the minimal CLI style.
+func (g *Generator) printFindingCLI(f rules.Finding) {
+	loc := ""
+	if f.LineNumber > 0 {
+		loc = fmt.Sprintf("L%d", f.LineNumber)
+	}
+	fmt.Printf("    %s  %s  %s\n", severityLabel(f.Severity), f.RuleID, color.New(color.Faint).Sprint(loc))
+
+	if f.Description != "" {
+		fmt.Printf("        %s\n", f.Description)
+	}
+
+	if line, ok := offendingCodeLine(f); ok {
+		color.New(color.Faint).Printf("        %d │ %s\n", f.LineNumber, line)
+	}
+
+	if f.GitHubURL != "" {
+		color.New(color.Faint, color.Underline).Printf("        %s\n", f.GitHubURL)
+	} else if f.GitLabURL != "" {
+		color.New(color.Faint, color.Underline).Printf("        %s\n", f.GitLabURL)
+	}
+
+	// Compact AI verdict.
+	if f.AIVerified {
+		switch {
+		case f.AIError != "":
+			color.New(color.FgMagenta).Printf("        AI: analysis failed\n")
+		case f.AILikelyFalsePositive != nil && *f.AILikelyFalsePositive:
+			color.New(color.FgYellow).Printf("        AI: likely false positive (%.0f%%)\n", f.AIConfidence*100)
+		case f.AILikelyFalsePositive != nil:
+			color.New(color.FgRed).Printf("        AI: likely true positive (%.0f%%)\n", f.AIConfidence*100)
+		}
+		if f.AIReasoning != "" && g.Verbose {
+			fmt.Printf("        AI reasoning: %s\n", f.AIReasoning)
+		}
+	} else if f.AISkipped && g.Verbose {
+		color.New(color.Faint).Printf("        AI: skipped (%s)\n", f.AISkipReason)
+	}
+
+	if g.Verbose && strings.TrimSpace(f.Evidence) != "" {
+		fmt.Printf("        evidence: %s\n", strings.ReplaceAll(MaskSecrets(f.Evidence), "\n", "\n          "))
+	}
+
+	if f.Remediation != "" {
+		color.New(color.FgCyan).Printf("        fix: %s\n", f.Remediation)
+	}
+}
+
+// printSummaryCLI prints the closing one-line severity summary.
+func (g *Generator) printSummaryCLI() {
+	s := g.Result.Summary
+	color.New(color.Faint).Println(strings.Repeat("─", 50))
+
+	parts := []string{}
+	addPart := func(n int, name string, c *color.Color) {
+		if n > 0 {
+			parts = append(parts, c.Sprintf("%d %s", n, name))
+		}
+	}
+	addPart(s.Critical, "critical", color.New(color.FgHiRed, color.Bold))
+	addPart(s.High, "high", color.New(color.FgRed, color.Bold))
+	addPart(s.Medium, "medium", color.New(color.FgYellow, color.Bold))
+	addPart(s.Low, "low", color.New(color.FgBlue))
+	addPart(s.Info, "info", color.New(color.FgCyan))
+
+	detail := ""
+	if len(parts) > 0 {
+		detail = " (" + strings.Join(parts, ", ") + ")"
+	}
+	fmt.Printf("%d finding(s)%s\n\n", s.Total, detail)
+}
+
+// severityLabel renders a fixed-width, color-coded severity label.
+func severityLabel(sev rules.Severity) string {
+	styles := map[rules.Severity]*color.Color{
+		rules.Critical: color.New(color.FgHiRed, color.Bold),
+		rules.High:     color.New(color.FgRed, color.Bold),
+		rules.Medium:   color.New(color.FgYellow, color.Bold),
+		rules.Low:      color.New(color.FgBlue, color.Bold),
+		rules.Info:     color.New(color.FgCyan),
+	}
+	c, ok := styles[sev]
+	if !ok {
+		c = color.New(color.FgWhite)
+	}
+	return c.Sprintf("%-8s", strings.ToUpper(string(sev)))
+}
+
+// offendingCodeLine returns the source line a finding points at, trimmed.
+func offendingCodeLine(f rules.Finding) (string, bool) {
+	ctx := buildCodeContext(f.FilePath, f.LineNumber)
+	if ctx == nil {
+		return "", false
+	}
+	for _, ln := range ctx.Lines {
+		if ln.Highlight {
+			content := strings.TrimRight(ln.Content, " \t")
+			// Skip blank lines (e.g. findings about a missing key point at an
+			// empty line); showing "N │" with no content adds noise.
+			if strings.TrimSpace(content) == "" {
+				return "", false
+			}
+			return content, true
+		}
+	}
+	return "", false
 }
 
 // generateJSONReport creates a JSON report
@@ -462,10 +333,11 @@ type findingKey struct {
 	gitlabURL  string
 }
 
-// DeduplicateFindings removes findings that are identical across rule, file,
-// job, step, line number, and URL. Call this before computing the summary so
-// the reported issue count matches the findings emitted by every report format
-// (the JSON and SARIF generators deduplicate internally; the summary must too).
+// DeduplicateFindings collapses findings that describe the same issue: the same
+// rule at the same file+line (regardless of the job/step it was attributed to),
+// or, for findings without a line, the same rule+file+job+step. Call this before
+// computing the summary so the reported issue count matches the findings emitted
+// by every report format (the JSON and SARIF generators deduplicate internally).
 func DeduplicateFindings(findings []rules.Finding) []rules.Finding {
 	return deduplicateFindings(findings, nil)
 }
@@ -484,11 +356,18 @@ func deduplicateFindings(findings []rules.Finding, normalizePath func(string) st
 		key := findingKey{
 			ruleID:     f.RuleID,
 			filePath:   path,
-			jobName:    f.JobName,
-			stepName:   f.StepName,
 			lineNumber: f.LineNumber,
 			githubURL:  f.GitHubURL,
 			gitlabURL:  f.GitLabURL,
+		}
+		// When a finding points at a concrete source line, the same rule firing
+		// on that line is the same issue regardless of which job/step the
+		// line-mapper attributed it to (e.g. one `uses:` line referenced from
+		// several jobs). Collapse those. Only keep job/step in the key when
+		// there is no line to disambiguate by.
+		if f.LineNumber == 0 {
+			key.jobName = f.JobName
+			key.stepName = f.StepName
 		}
 		if _, ok := seen[key]; ok {
 			continue
@@ -611,22 +490,6 @@ func (g *Generator) generateMarkdownReport() error {
 	}
 
 	return nil
-}
-
-// createSeverityBar generates a visual bar representation for severity counts
-func createSeverityBar(count, total int, char string, maxLength int) string {
-	if total == 0 {
-		return ""
-	}
-
-	ratio := float64(count) / float64(total)
-	barLength := int(math.Round(ratio * float64(maxLength)))
-
-	if count > 0 && barLength == 0 {
-		barLength = 1 // Always show at least one character if there's a count
-	}
-
-	return strings.Repeat(char, barLength)
 }
 
 // MaskSecrets masks sensitive information in the evidence field of a finding

@@ -842,10 +842,13 @@ func processAndGenerateReport(allFindings []rules.Finding, cfg *config.Config, o
 		}
 	}
 
-	// Print scan completion message
-	fmt.Printf("\n✅ Scan completed in %s\n", time.Since(startTime).Round(time.Millisecond))
-	fmt.Printf("Found %d issues (%d Critical, %d High, %d Medium, %d Low, %d Info)\n",
-		summary.Total, summary.Critical, summary.High, summary.Medium, summary.Low, summary.Info)
+	// Print a concise completion line only for machine/file formats; the CLI
+	// report already prints its own header, duration, and summary.
+	if actualOutputFormat != constants.OutputFormatCLI {
+		fmt.Printf("\nScan completed in %s — %d issue(s) (%d critical, %d high, %d medium, %d low, %d info)\n",
+			time.Since(startTime).Round(time.Millisecond),
+			summary.Total, summary.Critical, summary.High, summary.Medium, summary.Low, summary.Info)
+	}
 
 	return nil
 }
@@ -957,10 +960,6 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 
 	// Get platform from CLI
 	platform := c.String("platform")
-
-	fmt.Printf("🔍 Flowlyt - Multi-Platform CI/CD Security Analyzer\n")
-	fmt.Printf("Platform: %s\n", strings.ToUpper(platform))
-	fmt.Println("=======================================")
 
 	// Handle repository acquisition
 	repoLocalPath, cleanup, err := acquireRepository(c, repoURL, repoPath, platform)
