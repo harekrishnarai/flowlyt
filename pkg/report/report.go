@@ -118,24 +118,26 @@ func (g *Generator) Generate() error {
 // semgrep / scorecard): a short header, findings grouped by file with the
 // offending line and a fix hint, and a one-line summary.
 func (g *Generator) generateCLIReport() error {
-	bold := color.New(color.Bold)
 	dim := color.New(color.Faint)
 
+	// Header.
 	fmt.Println()
-	header := "Flowlyt scan"
+	title := color.New(color.Bold, color.FgHiCyan).Sprint("● Flowlyt")
 	if g.Result.Repository != "" {
-		header += " · " + g.Result.Repository
+		fmt.Printf("%s  %s\n", title, dim.Sprint(g.Result.Repository))
+	} else {
+		fmt.Println(title)
 	}
-	bold.Println(header)
-	dim.Printf("%d workflow(s) · %d rules · %s\n",
+	meta := fmt.Sprintf("%d workflows · %d rules · scanned in %s",
 		g.Result.WorkflowsCount, g.Result.RulesCount, g.Result.Duration.Round(time.Millisecond))
 	if g.Result.SuppressedCount > 0 {
-		dim.Printf("%d finding(s) suppressed via reachability analysis\n", g.Result.SuppressedCount)
+		meta += fmt.Sprintf(" · %d suppressed (reachability)", g.Result.SuppressedCount)
 	}
+	dim.Println(meta)
 
 	if len(g.Result.Findings) == 0 {
 		fmt.Println()
-		color.New(color.FgGreen, color.Bold).Println("✓ No security issues found")
+		color.New(color.FgGreen, color.Bold).Println("  ✓ No security issues found")
 		fmt.Println()
 		return nil
 	}
@@ -155,11 +157,12 @@ func (g *Generator) generateCLIReport() error {
 	}
 	sort.Strings(order)
 
-	fmt.Println()
+	fileStyle := color.New(color.Bold, color.FgCyan)
 	for _, path := range order {
 		findings := byFile[path]
-		bold.Printf("%s ", path)
-		dim.Printf("(%d)\n", len(findings))
+		fmt.Println()
+		fmt.Printf("%s  %s\n", fileStyle.Sprint(path), dim.Sprintf("%d finding(s)", len(findings)))
+		fmt.Println()
 		for _, f := range findings {
 			g.printFindingCLI(f)
 		}
@@ -168,9 +171,6 @@ func (g *Generator) generateCLIReport() error {
 	g.printSummaryCLI()
 	return nil
 }
-
-// detailIndent is the left padding for a finding's detail lines.
-const detailIndent = "    "
 
 // cliWidth returns the wrap width for CLI text, clamped to a readable range.
 func (g *Generator) cliWidth() int {
@@ -190,74 +190,118 @@ func (g *Generator) cliWidth() int {
 	return w
 }
 
-// printFindingCLI prints a single finding: a header line, then wrapped detail
-// lines (description, offending code, link, fix) indented under it.
-func (g *Generator) printFindingCLI(f rules.Finding) {
-	textWidth := g.cliWidth() - len(detailIndent)
+// body is the left padding for a finding's detail lines (description, snippet,
+// link, fix), indented under the finding header.
+const body = "      "
 
-	// Header: "  SEVERITY  RULE_ID            line N"
-	header := fmt.Sprintf("  %s  %s", severityLabel(f.Severity), color.New(color.Bold).Sprint(f.RuleID))
+// printFindingCLI renders one finding semgrep-style: a severity-marked header,
+// a wrapped description, a pinpointed code snippet, the link, and a fix hint.
+func (g *Generator) printFindingCLI(f rules.Finding) {
+	width := g.cliWidth()
+	textWidth := width - len(body)
+	sevC := severityColor(f.Severity)
+
+	// Header: "  ❯ CRITICAL  RULE_ID            line 38"
+	header := fmt.Sprintf("  %s %s  %s",
+		sevC.Sprint("❯"),
+		sevC.Sprintf("%-8s", strings.ToUpper(string(f.Severity))),
+		color.New(color.Bold).Sprint(f.RuleID))
 	if f.LineNumber > 0 {
 		header += "  " + color.New(color.Faint).Sprintf("line %d", f.LineNumber)
 	}
 	fmt.Println(header)
 
-	// Description (wrapped to terminal width).
+	// Description (wrapped).
 	for _, line := range wrapLines(f.Description, textWidth) {
-		fmt.Println(detailIndent + line)
+		fmt.Println(body + line)
 	}
 
-	// Offending source line, trimmed so it never overflows.
-	if code, ok := offendingCodeLine(f); ok {
-		code = truncate(code, textWidth-8)
-		color.New(color.Faint).Printf("%s%d │ %s\n", detailIndent, f.LineNumber, code)
-	}
+	// Pinpointed code snippet with a line-number gutter.
+	g.printSnippet(f)
 
-	// Link to the exact location (single dim reference line).
-	if u := f.GitHubURL; u != "" {
-		color.New(color.Faint).Println(detailIndent + u)
-	} else if u := f.GitLabURL; u != "" {
-		color.New(color.Faint).Println(detailIndent + u)
+	// Link to the exact location.
+	if u := findingURL(f); u != "" {
+		color.New(color.Faint).Printf("%s%s %s\n", body, color.New(color.Faint).Sprint("↳"), u)
 	}
 
 	// Compact AI verdict.
 	if f.AIVerified {
 		switch {
 		case f.AIError != "":
-			color.New(color.FgMagenta).Println(detailIndent + "AI: analysis failed")
+			color.New(color.FgMagenta).Println(body + "AI: analysis failed")
 		case f.AILikelyFalsePositive != nil && *f.AILikelyFalsePositive:
-			color.New(color.FgYellow).Printf("%sAI: likely false positive (%.0f%%)\n", detailIndent, f.AIConfidence*100)
+			color.New(color.FgYellow).Printf("%sAI: likely false positive (%.0f%%)\n", body, f.AIConfidence*100)
 		case f.AILikelyFalsePositive != nil:
-			color.New(color.FgRed).Printf("%sAI: likely true positive (%.0f%%)\n", detailIndent, f.AIConfidence*100)
+			color.New(color.FgRed).Printf("%sAI: likely true positive (%.0f%%)\n", body, f.AIConfidence*100)
 		}
 		if f.AIReasoning != "" && g.Verbose {
 			for _, line := range wrapLines("AI reasoning: "+f.AIReasoning, textWidth) {
-				fmt.Println(detailIndent + line)
+				fmt.Println(body + line)
 			}
 		}
 	} else if f.AISkipped && g.Verbose {
-		color.New(color.Faint).Printf("%sAI: skipped (%s)\n", detailIndent, f.AISkipReason)
+		color.New(color.Faint).Printf("%sAI: skipped (%s)\n", body, f.AISkipReason)
 	}
 
 	if g.Verbose && strings.TrimSpace(f.Evidence) != "" {
 		for _, line := range wrapLines("evidence: "+MaskSecrets(f.Evidence), textWidth) {
-			fmt.Println(detailIndent + line)
+			fmt.Println(body + line)
 		}
 	}
 
-	// Fix (wrapped, cyan, with a hanging indent under the arrow).
+	// Fix (wrapped, cyan, with a hanging indent aligned under the text).
 	if f.Remediation != "" {
 		c := color.New(color.FgCyan)
-		for i, line := range wrapLines(f.Remediation, textWidth-2) {
+		label := color.New(color.FgCyan, color.Bold).Sprint("fix:")
+		for i, line := range wrapLines(f.Remediation, textWidth-5) {
 			if i == 0 {
-				c.Println(detailIndent + "→ " + line)
+				fmt.Printf("%s%s %s\n", body, label, c.Sprint(line))
 			} else {
-				c.Println(detailIndent + "  " + line)
+				c.Printf("%s     %s\n", body, line) // align under text after "fix: "
 			}
 		}
 	}
 
 	fmt.Println() // separate findings
+}
+
+// printSnippet renders the source lines around a finding with a line-number
+// gutter, marking and highlighting the offending line. No-op when the source
+// cannot be read (e.g. line 0, or a cleaned-up clone).
+func (g *Generator) printSnippet(f rules.Finding) {
+	ctx := buildCodeContext(f.FilePath, f.LineNumber)
+	if ctx == nil || len(ctx.Lines) == 0 {
+		return
+	}
+	sevC := severityColor(f.Severity)
+	dim := color.New(color.Faint)
+	gutter := len(fmt.Sprintf("%d", ctx.EndLine))
+	// body + marker(1) + space + gutter + space + "│" + space
+	codeWidth := g.cliWidth() - len(body) - gutter - 5
+	if codeWidth < 20 {
+		codeWidth = 20
+	}
+
+	fmt.Println()
+	for _, ln := range ctx.Lines {
+		code := truncate(strings.ReplaceAll(ln.Content, "\t", "  "), codeWidth)
+		num := fmt.Sprintf("%*d", gutter, ln.Line)
+		if ln.Highlight {
+			fmt.Printf("%s%s %s %s %s\n",
+				body, sevC.Sprint("❱"), sevC.Sprint(num), dim.Sprint("│"), color.New(color.Bold).Sprint(code))
+		} else {
+			fmt.Printf("%s  %s %s %s\n", body, dim.Sprint(num), dim.Sprint("│"), dim.Sprint(code))
+		}
+	}
+	fmt.Println()
+}
+
+// findingURL returns the platform link for a finding, if any.
+func findingURL(f rules.Finding) string {
+	if f.GitHubURL != "" {
+		return f.GitHubURL
+	}
+	return f.GitLabURL
 }
 
 // truncate shortens s to width characters, adding an ellipsis when cut.
@@ -299,64 +343,47 @@ func wrapLines(s string, width int) []string {
 	return lines
 }
 
-// printSummaryCLI prints the closing one-line severity summary.
+// printSummaryCLI prints the closing severity summary.
 func (g *Generator) printSummaryCLI() {
 	s := g.Result.Summary
-	color.New(color.Faint).Println(strings.Repeat("─", 50))
+	color.New(color.Faint).Println(strings.Repeat("─", g.cliWidth()))
 
 	parts := []string{}
-	addPart := func(n int, name string, c *color.Color) {
+	addPart := func(n int, name string, sev rules.Severity) {
 		if n > 0 {
-			parts = append(parts, c.Sprintf("%d %s", n, name))
+			parts = append(parts, severityColor(sev).Sprintf("%d %s", n, name))
 		}
 	}
-	addPart(s.Critical, "critical", color.New(color.FgHiRed, color.Bold))
-	addPart(s.High, "high", color.New(color.FgRed, color.Bold))
-	addPart(s.Medium, "medium", color.New(color.FgYellow, color.Bold))
-	addPart(s.Low, "low", color.New(color.FgBlue))
-	addPart(s.Info, "info", color.New(color.FgCyan))
+	addPart(s.Critical, "critical", rules.Critical)
+	addPart(s.High, "high", rules.High)
+	addPart(s.Medium, "medium", rules.Medium)
+	addPart(s.Low, "low", rules.Low)
+	addPart(s.Info, "info", rules.Info)
 
-	detail := ""
+	total := color.New(color.Bold).Sprintf("%d finding(s)", s.Total)
 	if len(parts) > 0 {
-		detail = " (" + strings.Join(parts, ", ") + ")"
+		fmt.Printf("%s   %s\n\n", total, strings.Join(parts, color.New(color.Faint).Sprint(" · ")))
+	} else {
+		fmt.Printf("%s\n\n", total)
 	}
-	fmt.Printf("%d finding(s)%s\n\n", s.Total, detail)
 }
 
-// severityLabel renders a fixed-width, color-coded severity label.
-func severityLabel(sev rules.Severity) string {
-	styles := map[rules.Severity]*color.Color{
-		rules.Critical: color.New(color.FgHiRed, color.Bold),
-		rules.High:     color.New(color.FgRed, color.Bold),
-		rules.Medium:   color.New(color.FgYellow, color.Bold),
-		rules.Low:      color.New(color.FgBlue, color.Bold),
-		rules.Info:     color.New(color.FgCyan),
+// severityColor returns the color style for a severity level.
+func severityColor(sev rules.Severity) *color.Color {
+	switch sev {
+	case rules.Critical:
+		return color.New(color.FgHiRed, color.Bold)
+	case rules.High:
+		return color.New(color.FgRed, color.Bold)
+	case rules.Medium:
+		return color.New(color.FgYellow, color.Bold)
+	case rules.Low:
+		return color.New(color.FgBlue, color.Bold)
+	case rules.Info:
+		return color.New(color.FgCyan)
+	default:
+		return color.New(color.FgWhite)
 	}
-	c, ok := styles[sev]
-	if !ok {
-		c = color.New(color.FgWhite)
-	}
-	return c.Sprintf("%-8s", strings.ToUpper(string(sev)))
-}
-
-// offendingCodeLine returns the source line a finding points at, trimmed.
-func offendingCodeLine(f rules.Finding) (string, bool) {
-	ctx := buildCodeContext(f.FilePath, f.LineNumber)
-	if ctx == nil {
-		return "", false
-	}
-	for _, ln := range ctx.Lines {
-		if ln.Highlight {
-			content := strings.TrimRight(ln.Content, " \t")
-			// Skip blank lines (e.g. findings about a missing key point at an
-			// empty line); showing "N │" with no content adds noise.
-			if strings.TrimSpace(content) == "" {
-				return "", false
-			}
-			return content, true
-		}
-	}
-	return "", false
 }
 
 // generateJSONReport creates a JSON report
