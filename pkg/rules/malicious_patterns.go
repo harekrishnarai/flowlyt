@@ -142,6 +142,10 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 		regexp.MustCompile(`(?i)(webhook|paste|bin|dump|collect|exfil|c2|attacker|command)\.(com|net|org|io|me)`),
 
 		// Specific known exfiltration services
+		// Intentionally unanchored: this searches command text for a known
+		// exfiltration endpoint, so it must match wherever the host appears.
+		// The unanchored-URL warning static analysis raises applies to patterns
+		// used to authorise a URL, which this is not.
 		regexp.MustCompile(`(?i)(webhook\.site|requestbin\.com|pipedream\.net|hookbin\.com|beeceptor\.com)`),
 
 		// Suspicious POST operations, especially with secret/token/env content

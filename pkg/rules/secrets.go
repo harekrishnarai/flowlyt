@@ -100,6 +100,12 @@ var hardcodedSecretPatterns = []secretPattern{
 		[]string{"oauth", "bearer", "client"}},
 
 	// Slack, Discord, Webhook URLs
+	// These two are intentionally unanchored. Static analysis flags unanchored
+	// URL patterns because, when used to *authorise* a URL, text may precede or
+	// follow the match and defeat the check. That threat model does not apply
+	// here: these search file content for a leaked webhook, so matching
+	// anywhere in a line is the entire purpose. Anchoring them would stop the
+	// rule finding credentials embedded in a larger string.
 	{regexp.MustCompile(`https://hooks\.slack\.com/services/[A-Za-z0-9+/]{44,48}`), []string{"hooks.slack.com"}},
 	{regexp.MustCompile(`https://discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+`), []string{"discord"}},
 
