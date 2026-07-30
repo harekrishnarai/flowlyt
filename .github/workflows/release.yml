@@ -101,9 +101,58 @@ jobs:
         with:
           subject-path: 'flowlyt-*'
 
+      # Release notes come from CHANGELOG.md so the published description matches
+      # what is committed. Relying on generate_release_notes alone produced a
+      # PR-title list, and an existing release body would be preserved verbatim
+      # -- which is how v2.1.0 first shipped with stale, unrelated notes.
+      - name: Build release notes from CHANGELOG
+        env:
+          # The tag is passed through the environment rather than interpolated
+          # into the script. A ${{ }} expression is substituted into the script
+          # text before the shell parses it, so a crafted tag name would be
+          # executed as code; an environment variable is only ever data.
+          TAG: ${{ github.ref_name }}
+          NOTES_FILE: ${{ runner.temp }}/release-notes.md
+        run: |
+          set -euo pipefail
+
+          # Reject anything that is not a plain semver tag before it is used.
+          # The value reaches an awk regex and the notes body, so unvalidated
+          # input could alter which section is selected or inject content into
+          # the published release.
+          #
+          # Matched with bash's [[ =~ ]] rather than grep: grep evaluates input
+          # line by line, so a tag containing a newline would pass on its first
+          # line while carrying arbitrary text after it.
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Refusing to build release notes for malformed tag"
+            exit 1
+          fi
+
+          version="${TAG#v}"
+
+          # ver is a literal version string, validated above, so it cannot carry
+          # regex metacharacters into this match.
+          awk -v ver="$version" '
+            $0 ~ ("^## \\[" ver "\\]") { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > "$NOTES_FILE"
+
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "::warning::No CHANGELOG.md section for ${version}; linking to the changelog instead."
+            printf 'See the [changelog](https://github.com/%s/blob/%s/CHANGELOG.md) for details.\n' \
+              "$GITHUB_REPOSITORY" "$TAG" > "$NOTES_FILE"
+          fi
+
+          echo "Release notes for ${TAG}: $(wc -l < "$NOTES_FILE") lines"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
         with:
+          body_path: ${{ runner.temp }}/release-notes.md
+          # Replace any pre-existing body rather than preserving it.
+          append_body: false
           files: |
             flowlyt-linux-amd64
             flowlyt-linux-amd64.sig
