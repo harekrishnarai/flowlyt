@@ -29,6 +29,7 @@ import (
 	"github.com/harekrishnarai/flowlyt/v2/pkg/concurrent"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/config"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/dependabot"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/errors"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/github"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/gitlab"
@@ -174,6 +175,10 @@ func main() {
 						Usage: "Disable default security rules",
 					},
 					&cli.BoolFlag{
+						Name:  "no-dependabot",
+						Usage: "Skip auditing .github/dependabot.yml",
+					},
+					&cli.BoolFlag{
 						Name:  "enable-vuln-intel",
 						Usage: "Enable vulnerability intelligence from OSV.dev (experimental)",
 					},
@@ -212,8 +217,26 @@ func main() {
 					},
 					&cli.IntFlag{
 						Name:  "ai-timeout",
-						Usage: "Timeout for AI analysis in seconds",
+						Usage: "Timeout for a single AI request in seconds",
 						Value: 30,
+					},
+					&cli.IntFlag{
+						Name:  "ai-workers",
+						Usage: "Number of AI batch requests dispatched concurrently",
+						Value: ai.DefaultWorkers,
+					},
+					&cli.Float64Flag{
+						Name:  "ai-fp-confidence",
+						Usage: "Confidence at or above which an AI false-positive verdict is acted on (0 disables)",
+						Value: 0.8,
+					},
+					&cli.BoolFlag{
+						Name:  "ai-suppress-fp",
+						Usage: "Drop findings the AI marks as false positives above --ai-fp-confidence (default: demote to INFO instead)",
+					},
+					&cli.BoolFlag{
+						Name:  "ai-apply-severity",
+						Usage: "Apply the AI's suggested severity to findings it verifies",
 					},
 				},
 				Action: scanAction,
@@ -434,72 +457,91 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 
 			fmt.Printf("✅ Successfully fetched %d workflow files\n", len(workflowContents))
 
-		// Create a temporary directory to store the fetched workflows
-		tempDir, err := os.MkdirTemp("", "flowlyt-workflows-*")
-		if err != nil {
-			return "", nil, fmt.Errorf("failed to create temporary directory: %w", err)
-		}
-
-		// Write workflow files to temporary directory
-		for path, content := range workflowContents {
-			fullPath := filepath.Join(tempDir, path)
-			if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
-				os.RemoveAll(tempDir)
-				return "", nil, fmt.Errorf("failed to create workflow directory structure: %w", err)
+			// Dependabot configuration lives outside .github/workflows, so it
+			// must be fetched separately. Its absence is normal and must not
+			// fail the scan.
+			if !c.Bool("no-dependabot") {
+				for _, candidate := range []string{".github/dependabot.yml", ".github/dependabot.yaml"} {
+					content, found, err := ghClient.GetFileContent(owner, repo, candidate, ref)
+					if err != nil {
+						if c.Bool("verbose") {
+							fmt.Printf("⚠️  Could not fetch %s: %v\n", candidate, err)
+						}
+						break
+					}
+					if found {
+						workflowContents[candidate] = content
+						break
+					}
+				}
 			}
-			if err := os.WriteFile(fullPath, content, 0644); err != nil {
-				os.RemoveAll(tempDir)
-				return "", nil, fmt.Errorf("failed to write workflow file: %w", err)
+
+			// Create a temporary directory to store the fetched workflows
+			tempDir, err := os.MkdirTemp("", "flowlyt-workflows-*")
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to create temporary directory: %w", err)
 			}
-		}
 
-		repoLocalPath = tempDir
-		cleanup = func() {
-			term.Info(fmt.Sprintf("Cleaning up temporary directory %s...", repoLocalPath))
-			os.RemoveAll(repoLocalPath)
-		}
+			// Write workflow files to temporary directory
+			for path, content := range workflowContents {
+				fullPath := filepath.Join(tempDir, path)
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+					os.RemoveAll(tempDir)
+					return "", nil, fmt.Errorf("failed to create workflow directory structure: %w", err)
+				}
+				if err := os.WriteFile(fullPath, content, 0644); err != nil {
+					os.RemoveAll(tempDir)
+					return "", nil, fmt.Errorf("failed to write workflow file: %w", err)
+				}
+			}
 
-	case constants.PlatformGitLab:
-		// For GitLab, we still need to use cloning for now as GitLab API implementation would be similar
-		// but requires separate implementation. This could be added in a future enhancement.
-		ref := c.String("ref")
-		if ref != "" {
-			term.Info(fmt.Sprintf("Cloning GitLab repository: %s (ref: %s)...", repoURL, ref))
-		} else {
-			term.Info(fmt.Sprintf("Cloning GitLab repository: %s...", repoURL))
-		}
-		gitlabInstance := c.String("gitlab-instance")
-		client, err := gitlab.NewClient(gitlabInstance)
-		if err != nil {
-			return "", nil, fmt.Errorf("failed to create GitLab client: %w", err)
-		}
-
-		tempDir := c.String("temp-dir")
-		repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, ref)
-		if err != nil {
-			return "", nil, fmt.Errorf("failed to clone GitLab repository: %w", err)
-		}
-
-		// Set up cleanup function if we created a temporary directory
-		tempDirFlag := c.String("temp-dir")
-		if tempDirFlag == "" {
+			repoLocalPath = tempDir
 			cleanup = func() {
 				term.Info(fmt.Sprintf("Cleaning up temporary directory %s...", repoLocalPath))
 				os.RemoveAll(repoLocalPath)
 			}
+
+		case constants.PlatformGitLab:
+			// For GitLab, we still need to use cloning for now as GitLab API implementation would be similar
+			// but requires separate implementation. This could be added in a future enhancement.
+			ref := c.String("ref")
+			if ref != "" {
+				term.Info(fmt.Sprintf("Cloning GitLab repository: %s (ref: %s)...", repoURL, ref))
+			} else {
+				term.Info(fmt.Sprintf("Cloning GitLab repository: %s...", repoURL))
+			}
+			gitlabInstance := c.String("gitlab-instance")
+			client, err := gitlab.NewClient(gitlabInstance)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to create GitLab client: %w", err)
+			}
+
+			tempDir := c.String("temp-dir")
+			repoLocalPath, err := client.CloneRepositoryWithBranch(repoURL, tempDir, ref)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to clone GitLab repository: %w", err)
+			}
+
+			// Set up cleanup function if we created a temporary directory
+			tempDirFlag := c.String("temp-dir")
+			if tempDirFlag == "" {
+				cleanup = func() {
+					term.Info(fmt.Sprintf("Cleaning up temporary directory %s...", repoLocalPath))
+					os.RemoveAll(repoLocalPath)
+				}
+			}
+
+			return repoLocalPath, cleanup, nil
+
+		default:
+			return "", nil, fmt.Errorf("repository fetching from URL is not supported for platform: %s", platform)
 		}
 
-		return repoLocalPath, cleanup, nil
-
-	default:
-		return "", nil, fmt.Errorf("repository fetching from URL is not supported for platform: %s", platform)
+	} else if repoPath != "" {
+		repoLocalPath = repoPath
 	}
 
-} else if repoPath != "" {
-	repoLocalPath = repoPath
-}
-
-return repoLocalPath, cleanup, nil
+	return repoLocalPath, cleanup, nil
 }
 
 // extractRepositoryOwnerFromURL extracts the repository owner/organization from a repository URL
@@ -564,6 +606,15 @@ func prepareSecurityRules(c *cli.Context, cfg *config.Config, platform string) (
 		if platform == constants.PlatformGitLab {
 			allRules = append(allRules, gitlab.GitLabRules()...)
 		}
+
+		// FORBIDDEN_USES is opt-in: it is only constructed when the user has
+		// configured an allowlist or denylist, so it is never a no-op rule.
+		if forbiddenUses := rules.NewForbiddenUsesRule(
+			cfg.Rules.ForbiddenUses.Allow,
+			cfg.Rules.ForbiddenUses.Deny,
+		); forbiddenUses != nil {
+			allRules = append(allRules, *forbiddenUses)
+		}
 	}
 
 	// Convert platform string to Platform enum and filter rules
@@ -582,8 +633,7 @@ func prepareSecurityRules(c *cli.Context, cfg *config.Config, platform string) (
 }
 
 // runAnalysis executes all analysis steps on the workflow files using concurrent processing
-func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRules []rules.Rule, policyEngine *policies.PolicyEngine, cfg *config.Config, repoURL string) ([]rules.Finding, error) {
-	// Create concurrent processor configuration
+func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRules []rules.Rule, policyEngine *policies.PolicyEngine, cfg *config.Config, repoURL string) ([]rules.Finding, error) { // Create concurrent processor configuration
 	processorConfig := &concurrent.ProcessorConfig{
 		MaxWorkers:      c.Int("max-workers"),
 		WorkflowTimeout: time.Duration(c.Int("workflow-timeout")) * time.Second,
@@ -658,8 +708,72 @@ func runAnalysis(c *cli.Context, workflowFiles []parser.WorkflowFile, standardRu
 	return findings, nil
 }
 
-// enhanceFindingsWithAI performs AI analysis on findings if AI is enabled
-func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Finding, error) {
+// runDependabotAnalysis discovers and audits Dependabot configuration files.
+//
+// Dependabot config is a separate input type from CI workflows: it has its own
+// schema and its own rule set, so it does not pass through the workflow
+// concurrent processor. A repository is expected to have at most one such file,
+// so the checks run sequentially.
+//
+// A repository with no Dependabot configuration is a normal state and yields no
+// findings rather than an error.
+func runDependabotAnalysis(c *cli.Context, repoLocalPath string, cfg *config.Config, repoURL string) ([]rules.Finding, error) {
+	configFiles, err := dependabot.FindConfigs(repoLocalPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(configFiles) == 0 {
+		return nil, nil
+	}
+
+	if c.Bool("verbose") {
+		fmt.Printf("Found %d Dependabot configuration file(s).\n", len(configFiles))
+	}
+
+	findings := dependabot.CheckAll(configFiles, cfg)
+
+	// Mirror the workflow pipeline's URL enrichment so Dependabot findings link
+	// back to the correct line on the remote host.
+	if repoURL != "" && github.IsGitHubRepository(repoURL) {
+		branch := resolveRepositoryBranch(c, repoURL)
+		for i := range findings {
+			findings[i].GitHubURL = github.GenerateFileURLWithBranch(
+				repoURL, findings[i].FilePath, findings[i].LineNumber, branch,
+			)
+		}
+	}
+
+	return findings, nil
+}
+
+// resolveRepositoryBranch determines which branch to link findings against,
+// preferring an explicit --ref and falling back to the repository's default
+// branch.
+func resolveRepositoryBranch(c *cli.Context, repoURL string) string {
+	if branch := strings.TrimSpace(c.String("ref")); branch != "" {
+		return branch
+	}
+
+	owner, repo, err := github.ParseRepositoryURL(repoURL)
+	if err == nil {
+		ghClient := github.NewClient()
+		if detected, err := ghClient.GetDefaultBranch(owner, repo); err == nil && detected != "" {
+			return detected
+		}
+	}
+
+	return "main"
+}
+
+// enhanceFindingsWithAI performs AI analysis on findings if AI is enabled.
+//
+// workflowFiles supplies the surrounding workflow source so that each finding
+// can be sent with its triggers, permissions, full step definition, and a
+// source snippet. Without that context a model is asked to judge, for example,
+// whether a step runs in a privileged job while being told nothing about the
+// job's permissions.
+func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding, workflowFiles []parser.WorkflowFile) ([]rules.Finding, error) {
 	aiProvider := c.String("ai")
 	if aiProvider == "" {
 		return findings, nil // No AI analysis requested
@@ -696,7 +810,11 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 	defer client.Close()
 
 	// Create AI analyzer
-	analyzer := ai.NewAnalyzer(client, time.Duration(c.Int("ai-timeout"))*time.Second)
+	analyzer := ai.NewAnalyzerWithOptions(client, ai.Options{
+		RequestTimeout: time.Duration(c.Int("ai-timeout")) * time.Second,
+		Workers:        c.Int("ai-workers"),
+		Contexts:       ai.NewContextProvider(workflowFiles),
+	})
 	defer analyzer.Close()
 
 	fmt.Printf("🔍 Analyzing %d findings with AI...\n", len(findings))
@@ -711,7 +829,18 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 		// fall through and return partial results
 	}
 
-	// Convert enhanced findings back to regular findings with AI fields populated
+	// Convert enhanced findings back to regular findings with AI fields
+	// populated, and act on the verdict.
+	//
+	// Previously the verdict was recorded but never used: a finding the model
+	// judged a false positive at 95% confidence was still reported unchanged,
+	// so the analysis cost tokens and latency without changing the output.
+	fpThreshold := c.Float64("ai-fp-confidence")
+	suppressFP := c.Bool("ai-suppress-fp")
+	applySeverity := c.Bool("ai-apply-severity")
+
+	var suppressed, demoted, resevered int
+
 	var resultFindings []rules.Finding
 	for _, enhanced := range enhancedFindings {
 		finding := enhanced.Finding
@@ -736,9 +865,37 @@ func enhanceFindingsWithAI(c *cli.Context, findings []rules.Finding) ([]rules.Fi
 			if enhanced.AIVerification.Remediation != "" {
 				finding.AIRemediation = enhanced.AIVerification.Remediation
 			}
+
+			v := enhanced.AIVerification
+
+			// A confident false-positive verdict either removes the finding or
+			// demotes it out of the way. Demotion is the default because a
+			// model's judgement should not silently delete a security finding;
+			// suppression is opt-in for users who trust it.
+			actOnFP := fpThreshold > 0 && v.IsLikelyFalsePositive && v.Confidence >= fpThreshold
+			if actOnFP {
+				if suppressFP {
+					suppressed++
+					continue
+				}
+				if finding.Severity != rules.Info {
+					finding.Severity = rules.Info
+					demoted++
+				}
+			} else if applySeverity {
+				if s, ok := parseSeverity(v.Severity); ok && s != finding.Severity {
+					finding.Severity = s
+					resevered++
+				}
+			}
 		}
 
 		resultFindings = append(resultFindings, finding)
+	}
+
+	if suppressed > 0 || demoted > 0 || resevered > 0 {
+		fmt.Printf("🤖 AI verdicts applied: %d suppressed, %d demoted to INFO, %d re-severitied\n",
+			suppressed, demoted, resevered)
 	}
 
 	// Print AI analysis summary
@@ -1024,6 +1181,20 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 		return err
 	}
 
+	// Audit Dependabot configuration. This is a separate input type with its
+	// own schema, so it runs through its own pipeline and merges its findings
+	// in before the AST, AI, and reporting stages.
+	if !c.Bool("no-dependabot") && workflowFile == "" {
+		dependabotFindings, err := runDependabotAnalysis(c, repoLocalPath, cfg, repoURL)
+		if err != nil {
+			// A malformed or unreadable Dependabot file must not fail the whole
+			// scan; the workflow findings are still valid and worth reporting.
+			fmt.Printf("⚠️  Skipping Dependabot analysis: %v\n", err)
+		} else {
+			allFindings = append(allFindings, dependabotFindings...)
+		}
+	}
+
 	astInsights := astutil.CollectInsights(workflowFiles)
 	astStats := &astutil.Stats{}
 
@@ -1051,7 +1222,7 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	}
 
 	// Enhance findings with AI analysis if requested
-	allFindings, err = enhanceFindingsWithAI(c, allFindings)
+	allFindings, err = enhanceFindingsWithAI(c, allFindings, workflowFiles)
 	if err != nil {
 		return err
 	}
@@ -1346,8 +1517,12 @@ func enhanceOrgResultsWithAI(c *cli.Context, orgResult *organization.Organizatio
 		return nil // No findings to analyze
 	}
 
-	// Enhance findings with AI
-	enhancedFindings, err := enhanceFindingsWithAI(c, allFindings)
+	// Enhance findings with AI.
+	//
+	// Organization results carry findings but not the workflow sources they
+	// came from, so no snippet context is available here. The analyzer still
+	// runs, with the evidence the findings themselves carry.
+	enhancedFindings, err := enhanceFindingsWithAI(c, allFindings, nil)
 	if err != nil {
 		return err
 	}
@@ -1385,5 +1560,25 @@ func getSeverityIcon(severity rules.Severity) string {
 		return "ℹ️"
 	default:
 		return "❓"
+	}
+}
+
+// parseSeverity converts an AI-suggested severity string into the internal
+// type. An unrecognised value is rejected rather than defaulted, so a model
+// returning free text cannot silently change a finding's severity.
+func parseSeverity(s string) (rules.Severity, bool) {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "CRITICAL":
+		return rules.Critical, true
+	case "HIGH":
+		return rules.High, true
+	case "MEDIUM":
+		return rules.Medium, true
+	case "LOW":
+		return rules.Low, true
+	case "INFO":
+		return rules.Info, true
+	default:
+		return "", false
 	}
 }

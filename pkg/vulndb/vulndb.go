@@ -85,7 +85,6 @@ type OSVVulnerability struct {
 	DatabaseSpecific interface{} `json:"database_specific"`
 }
 
-
 var KnownVulnerableActions = map[string][]ActionVulnerability{
 	"actions/checkout": {
 		{
@@ -115,7 +114,6 @@ var KnownVulnerableActions = map[string][]ActionVulnerability{
 	},
 }
 
-
 var UnpinnableActions = []string{
 	"0daryo/labelcommit",
 	"0h-n0/flet-action-windows",
@@ -126,7 +124,6 @@ var UnpinnableActions = []string{
 	"10up/action-wordpress-plugin-build-zip",
 	"10up/action-wordpress-plugin-deploy",
 	"10up/wpcs-action",
-	
 }
 
 // TrustedPublishers contains a list of trusted action publishers
@@ -272,7 +269,7 @@ func (vdb *VulnerabilityDatabase) CheckTyposquatting(actionName string) bool {
 
 	// Calculate edit distance and check for suspicious similarities
 	for _, legitimate := range legitimateActions {
-		if editDistance(baseAction, legitimate) <= 2 && baseAction != legitimate {
+		if baseAction != legitimate && editDistanceWithin(baseAction, legitimate, 2) {
 			return true
 		}
 	}
@@ -281,42 +278,83 @@ func (vdb *VulnerabilityDatabase) CheckTyposquatting(actionName string) bool {
 }
 
 // editDistance calculates the Levenshtein distance between two strings
-func editDistance(a, b string) int {
+// editDistanceWithin reports whether the Levenshtein distance between a and b
+// is at most maxDist.
+//
+// Callers only ever ask whether two action names are confusingly similar, never
+// how similar, so this answers the bounded question directly. That allows three
+// optimisations the full-matrix algorithm cannot make:
+//
+//   - A length difference greater than maxDist is already a lower bound on the
+//     distance, so such pairs are rejected without any work.
+//   - Only the diagonal band of width 2*maxDist+1 can contain a result within
+//     the bound, reducing the inner loop from O(len(b)) to O(maxDist).
+//   - Only the previous row is ever read, so two rows suffice instead of a full
+//     (len(a)+1) x (len(b)+1) matrix.
+//
+// Together these turn an O(m*n) time and space computation into O(m*maxDist)
+// time and O(min(m,n)) space.
+func editDistanceWithin(a, b string, maxDist int) bool {
+	if maxDist < 0 {
+		return false
+	}
+	// Ensure a is the shorter string so the rows stay as small as possible.
+	if len(a) > len(b) {
+		a, b = b, a
+	}
+	if len(b)-len(a) > maxDist {
+		return false
+	}
 	if len(a) == 0 {
-		return len(b)
-	}
-	if len(b) == 0 {
-		return len(a)
+		return len(b) <= maxDist
 	}
 
-	matrix := make([][]int, len(a)+1)
-	for i := range matrix {
-		matrix[i] = make([]int, len(b)+1)
-	}
-
+	prev := make([]int, len(a)+1)
+	curr := make([]int, len(a)+1)
 	for i := 0; i <= len(a); i++ {
-		matrix[i][0] = i
-	}
-	for j := 0; j <= len(b); j++ {
-		matrix[0][j] = j
+		prev[i] = i
 	}
 
-	for i := 1; i <= len(a); i++ {
-		for j := 1; j <= len(b); j++ {
-			cost := 0
-			if a[i-1] != b[j-1] {
-				cost = 1
-			}
+	for j := 1; j <= len(b); j++ {
+		curr[0] = j
 
-			matrix[i][j] = min(
-				matrix[i-1][j]+1,      // deletion
-				matrix[i][j-1]+1,      // insertion
-				matrix[i-1][j-1]+cost, // substitution
-			)
+		// Cells outside this band cannot yield a distance within maxDist.
+		lo := j - maxDist
+		if lo < 1 {
+			lo = 1
 		}
+		hi := j + maxDist
+		if hi > len(a) {
+			hi = len(a)
+		}
+		// Mark the cells just outside the band as unreachable so that the
+		// recurrence never reads a stale value from the previous row.
+		if lo > 1 {
+			curr[lo-1] = maxDist + 1
+		}
+
+		best := maxDist + 1
+		for i := lo; i <= hi; i++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			curr[i] = min(prev[i]+1, curr[i-1]+1, prev[i-1]+cost)
+			if curr[i] < best {
+				best = curr[i]
+			}
+		}
+
+		// Every cell in this row already exceeds the bound, so no completion
+		// of the alignment can come back under it.
+		if best > maxDist {
+			return false
+		}
+
+		prev, curr = curr, prev
 	}
 
-	return matrix[len(a)][len(b)]
+	return prev[len(a)] <= maxDist
 }
 
 func min(a, b, c int) int {

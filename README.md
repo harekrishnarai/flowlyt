@@ -82,10 +82,11 @@ emitted as text, JSON, or SARIF.
 
 ## Features
 
-- 85+ security rules covering injection, secrets, supply chain, and misconfigurations
+- 110+ security rules covering injection, secrets, supply chain, and misconfigurations
 - AST-based analysis with call graph, reachability, and data flow
 - AI-assisted false positive reduction (OpenAI, Gemini, Claude, Grok, Perplexity)
 - Context-aware severity adjustment based on workflow type and triggers
+- Dependabot configuration auditing (`.github/dependabot.yml`)
 - SARIF output for GitHub Security tab integration
 - OSV.dev vulnerability intelligence
 - Custom rules and policy enforcement

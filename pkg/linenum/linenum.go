@@ -18,7 +18,9 @@ package linenum
 
 import (
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 )
 
 // LineMapper provides line number mapping and calculation services
@@ -26,25 +28,76 @@ type LineMapper struct {
 	content     string
 	lines       []string
 	lineToChar  []int
-	charToLine  map[int]int
 	initialized bool
 }
 
-// NewLineMapper creates a new line mapper for the given content
+// NewLineMapper creates a new line mapper for the given content.
+//
+// Mappers are memoised by content. Every rule builds a mapper for the workflow
+// it is scanning, so a single workflow would otherwise be split into lines once
+// per rule — around seventy times — which made this the largest single source
+// of allocation in a scan. The returned mapper is immutable once constructed,
+// so sharing one between rules and across goroutines is safe.
 func NewLineMapper(content []byte) *LineMapper {
-	lm := &LineMapper{
-		content:    string(content),
-		charToLine: make(map[int]int),
+	key := hashBytes(content)
+
+	mapperCacheMu.RLock()
+	cached, ok := mapperCache[key]
+	mapperCacheMu.RUnlock()
+
+	// Compare the content as well as the hash: a hash collision must not
+	// silently return line numbers for a different file.
+	if ok && cached.content == string(content) {
+		return cached
 	}
+
+	lm := &LineMapper{content: string(content)}
 	lm.initialize()
+
+	mapperCacheMu.Lock()
+	// Bound the cache so a long-running process scanning many repositories
+	// cannot grow it without limit. Workflows are scanned in batches, so
+	// clearing wholesale is simpler than tracking recency and costs at most one
+	// rebuild per rule for the workflow in flight.
+	if len(mapperCache) >= mapperCacheLimit {
+		mapperCache = make(map[uint64]*LineMapper, mapperCacheLimit)
+	}
+	mapperCache[key] = lm
+	mapperCacheMu.Unlock()
+
 	return lm
+}
+
+// mapperCacheLimit caps the number of memoised mappers. A repository has far
+// fewer workflows than this, so the cache holds an entire scan in practice.
+const mapperCacheLimit = 512
+
+var (
+	mapperCacheMu sync.RWMutex
+	mapperCache   = make(map[uint64]*LineMapper)
+)
+
+// hashBytes computes an FNV-1a 64-bit hash of content.
+//
+// This is a cache key only, never a security boundary: collisions are resolved
+// by comparing the content itself.
+func hashBytes(content []byte) uint64 {
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+	h := uint64(offset64)
+	for _, b := range content {
+		h ^= uint64(b)
+		h *= prime64
+	}
+	return h
 }
 
 // NewLineMapperFromString creates a new line mapper from string content
 func NewLineMapperFromString(content string) *LineMapper {
 	lm := &LineMapper{
-		content:    content,
-		charToLine: make(map[int]int),
+		content: content,
 	}
 	lm.initialize()
 	return lm
@@ -59,19 +112,12 @@ func (lm *LineMapper) initialize() {
 	lm.lines = strings.Split(lm.content, "\n")
 	lm.lineToChar = make([]int, len(lm.lines)+1)
 
-	// Build line-to-character position mapping
+	// Build line-to-character position mapping. lineToChar is sorted by
+	// construction, which is what lets CharToLine binary search it instead of
+	// materialising a position-to-line table.
 	lm.lineToChar[0] = 0
 	for i, line := range lm.lines {
 		lm.lineToChar[i+1] = lm.lineToChar[i] + len(line) + 1 // +1 for newline
-	}
-
-	// Build reverse mapping: character position to line number
-	for lineNum := 0; lineNum < len(lm.lineToChar)-1; lineNum++ {
-		start := lm.lineToChar[lineNum]
-		end := lm.lineToChar[lineNum+1]
-		for charPos := start; charPos < end; charPos++ {
-			lm.charToLine[charPos] = lineNum + 1 // 1-based line numbers
-		}
 	}
 
 	lm.initialized = true
@@ -288,6 +334,12 @@ func (lm *LineMapper) addContext(result *LineResult, contextBefore, contextAfter
 }
 
 // CharToLine converts a character position to line number (1-based)
+//
+// lineToChar holds each line's start offset in ascending order, so the line
+// containing a position is found by binary search in O(log lines). An explicit
+// position-to-line table would answer in O(1) but costs O(content length) time
+// and memory to build, which is a poor trade when the mapper is constructed
+// once per rule per workflow.
 func (lm *LineMapper) CharToLine(charPos int) int {
 	if !lm.initialized {
 		lm.initialize()
@@ -298,18 +350,17 @@ func (lm *LineMapper) CharToLine(charPos int) int {
 		return 0
 	}
 
-	if lineNum, exists := lm.charToLine[charPos]; exists {
-		return lineNum
+	// Smallest index whose start offset is beyond charPos; because
+	// lineToChar[0] is 0 and charPos is non-negative, that index is also the
+	// 1-based number of the line containing charPos.
+	idx := sort.Search(len(lm.lineToChar), func(i int) bool {
+		return lm.lineToChar[i] > charPos
+	})
+	if idx >= len(lm.lineToChar) {
+		return 0
 	}
 
-	// Fallback: binary search through lineToChar array
-	for i := 1; i < len(lm.lineToChar); i++ {
-		if lm.lineToChar[i] > charPos {
-			return i
-		}
-	}
-
-	return 0
+	return idx
 }
 
 // LineToChar converts a line number to starting character position

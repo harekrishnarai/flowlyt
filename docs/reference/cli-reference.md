@@ -242,6 +242,26 @@ flowlyt --no-default-rules \
 flowlyt --no-default-rules --config custom-rules-only.yml --repo .
 ```
 
+#### `--no-dependabot`
+Skip auditing `.github/dependabot.yml`.
+
+Dependabot configuration is discovered and audited automatically for both local
+(`--repo`) and remote (`--url`) scans. It is a separate input type from CI
+workflows, with its own rules (`DEPENDABOT_COOLDOWN_MISSING`,
+`DEPENDABOT_INSECURE_EXECUTION`). A repository with no Dependabot configuration
+is a normal state and produces no findings.
+
+```bash
+# Scan workflows only, ignoring Dependabot configuration
+flowlyt --no-dependabot --repo .
+```
+
+Notes:
+- Dependabot auditing is automatically skipped when scanning a single file with
+  `--workflow`, since that flag targets one specific workflow.
+- A malformed Dependabot file emits a warning and does not fail the scan; the
+  workflow findings are still reported.
+
 ### Filtering Options
 
 #### `--min-severity`
@@ -259,6 +279,14 @@ flowlyt --min-severity HIGH --repo .
 # Show all issues (default)
 flowlyt --min-severity LOW --repo .
 ```
+
+> **`LOW` is not the lowest level.** The default of `LOW` excludes `INFO`
+> findings. Hygiene rules such as `ANONYMOUS_DEFINITION` and
+> `UNDOCUMENTED_PERMISSIONS` are `INFO`-severity and only appear with:
+>
+> ```bash
+> flowlyt --min-severity INFO --repo .
+> ```
 
 #### `--entropy-threshold`
 Set entropy threshold for secret detection (default: `4.5`).
@@ -339,7 +367,11 @@ flowlyt --ai openai --ai-key your-key \
 ```
 
 #### `--ai-timeout`
-Timeout for AI analysis in seconds (default: 30).
+Timeout for a **single** AI request in seconds (default: 30).
+
+Each batch is bounded independently. A previous version derived one deadline from
+the total finding count, so a single slow response consumed the budget for every
+batch after it.
 
 ```bash
 # Faster timeout for quick analysis
@@ -350,15 +382,41 @@ flowlyt --ai openai --ai-key your-key --ai-timeout 60 --repo .
 ```
 
 #### `--ai-workers`
-Number of concurrent AI analysis workers (default: 5).
+Number of AI batch requests dispatched concurrently (default: 4).
+
+Findings are grouped into batches of five; this controls how many batches are in
+flight at once. Raise it for throughput, lower it to respect provider rate limits.
 
 ```bash
-# More concurrent workers for faster analysis
+# More concurrency for faster analysis
 flowlyt --ai openai --ai-key your-key --ai-workers 10 --repo .
 
-# Fewer workers to respect rate limits
+# Fewer for strict rate limits
 flowlyt --ai openai --ai-key your-key --ai-workers 2 --repo .
 ```
+
+#### `--ai-fp-confidence`
+Confidence at or above which an AI false-positive verdict is acted on
+(default: `0.8`). Set to `0` to annotate only and change nothing.
+
+#### `--ai-suppress-fp`
+Drop findings the AI confidently marks as false positives, instead of the
+default behaviour of demoting them to `INFO`.
+
+Demotion is the default deliberately: a model's judgement should not silently
+delete a security finding. Suppression is opt-in.
+
+```bash
+# Default: demote to INFO, still visible with --min-severity INFO
+flowlyt --ai openai --ai-key $KEY --repo .
+
+# Remove them from the report entirely
+flowlyt --ai openai --ai-key $KEY --ai-suppress-fp --repo .
+```
+
+#### `--ai-apply-severity`
+Apply the model's suggested severity to findings it verifies as true positives.
+An unrecognised severity string is ignored rather than defaulted.
 
 ### Utility Options
 
@@ -767,4 +825,4 @@ flowlyt --help | grep -A 20 "Available rules"
 
 ---
 
-**Next:** [CI/CD Integration](cicd-integration.md)
+**Next:** [CI/CD Integration](../integrations/cicd-integration.md)

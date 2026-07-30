@@ -168,7 +168,10 @@ Many security rules apply across all platforms:
 | `MALICIOUS_BASE64_DECODE` | ✅ | ✅ | Identifies base64 decode patterns |
 | `DANGEROUS_COMMAND` | ✅ | ✅ | Finds risky shell commands |
 | `SHELL_EVAL_USAGE` | ✅ | ✅ | Detects eval usage in scripts |
-| `CURL_PIPE_BASH` | ✅ | ✅ | Identifies curl pipe to shell |
+| `MALICIOUS_CURL_PIPE_BASH` | ✅ | ✅ | Identifies curl pipe to shell |
+| `INSECURE_URL_SCHEME` | ✅ | ✅ | Plaintext `http://` resource retrieval |
+| `ADHOC_PACKAGE_INSTALL` | ✅ | ✅ | Dependencies installed outside a lockfile |
+| `UNPINNED_TOOL_INSTALL` | ✅ | ✅ | Tools installed without a version pin |
 
 ### Platform-Specific Rules
 
@@ -177,8 +180,17 @@ Many security rules apply across all platforms:
 | `UNPINNED_ACTION` | GitHub Actions | Detects unpinned GitHub Actions |
 | `INSECURE_PULL_REQUEST_TARGET` | GitHub Actions | Dangerous PR trigger usage |
 | `BROAD_PERMISSIONS` | GitHub Actions | Overly broad workflow permissions |
-| `GITLAB_UNPINNED_IMAGE` | GitLab CI/CD | Unpinned container images |
-| `GITLAB_DANGEROUS_ARTIFACTS` | GitLab CI/CD | Risky artifact configurations |
+| `REF_VERSION_MISMATCH` | GitHub Actions | Pinned SHA contradicts its version comment |
+| `UNPINNED_CONTAINER_IMAGE` | GitHub Actions | Container/service images without a digest |
+| `GITLAB_INSECURE_IMAGE` | GitLab CI/CD | Unpinned or unverified container images |
+| `GITLAB_INSECURE_ARTIFACTS` | GitLab CI/CD | Artifacts without expiration or access controls |
+| `GITLAB_SCRIPT_INJECTION` | GitLab CI/CD | User input used directly in `script:` |
+| `GITLAB_PRIVILEGED_SERVICES` | GitLab CI/CD | Privileged Docker services |
+| `DEPENDABOT_COOLDOWN_MISSING` | Dependabot | Missing or insufficient update cooldown |
+| `DEPENDABOT_INSECURE_EXECUTION` | Dependabot | External code execution during resolution |
+
+For the exhaustive list, see the
+[Complete Rule Catalogue](../reference/security-rules.md#complete-rule-catalogue).
 
 ## Configuration for Multiple Platforms
 
@@ -369,4 +381,4 @@ flowlyt --platform gitlab --repo ./project --output json > after.json
 
 ---
 
-**Next:** [Command Line Interface](cli-reference.md)
+**Next:** [Command Line Interface](../reference/cli-reference.md)

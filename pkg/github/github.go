@@ -417,6 +417,38 @@ func (c *Client) GetWorkflowFilesContents(owner, repo, ref string) (map[string][
 	return contents, nil
 }
 
+// GetFileContent fetches a single file from a repository.
+//
+// A missing file is reported via found=false with a nil error, so callers can
+// treat "not present" as an ordinary outcome rather than a failure.
+func (c *Client) GetFileContent(owner, repo, path, ref string) (content []byte, found bool, err error) {
+	fileContent, _, resp, err := c.client.Repositories.GetContents(
+		c.ctx,
+		owner,
+		repo,
+		path,
+		refContentOpts(ref),
+	)
+	if err != nil {
+		if resp != nil && resp.StatusCode == 404 {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+
+	// A directory response yields a nil file content.
+	if fileContent == nil {
+		return nil, false, nil
+	}
+
+	decoded, err := fileContent.GetContent()
+	if err != nil {
+		return nil, false, fmt.Errorf("failed to decode content of %s: %w", path, err)
+	}
+
+	return []byte(decoded), true, nil
+}
+
 // DownloadWorkflowFiles downloads workflow files to a local directory
 func (c *Client) DownloadWorkflowFiles(owner, repo, destDir, ref string) ([]string, error) {
 	// Get workflow files
@@ -798,4 +830,44 @@ func (c *Client) GetLatestRelease(owner, repo string) (string, time.Time, error)
 	publishedAt := release.GetPublishedAt().Time
 
 	return tagName, publishedAt, nil
+}
+
+// ResolveRefSHA resolves a git ref (tag or branch) in owner/repo to its commit SHA.
+//
+// Annotated tags point at a tag object rather than a commit, so the returned
+// object is dereferenced to the underlying commit SHA when necessary. This
+// allows callers to compare a pinned commit SHA against the commit a version
+// tag actually points to.
+func (c *Client) ResolveRefSHA(owner, repo, ref string) (string, error) {
+	// Repositories.GetCommitSHA1 follows tags and branches, and dereferences
+	// annotated tags to their target commit.
+	sha, resp, err := c.client.Repositories.GetCommitSHA1(c.ctx, owner, repo, ref, "")
+	if err != nil {
+		if resp != nil && resp.StatusCode == 404 {
+			return "", fmt.Errorf("ref %q not found in %s/%s", ref, owner, repo)
+		}
+		return "", err
+	}
+
+	if sha == "" {
+		return "", fmt.Errorf("empty SHA returned for ref %q in %s/%s", ref, owner, repo)
+	}
+
+	return sha, nil
+}
+
+// IsRepositoryArchived reports whether owner/repo is archived on GitHub.
+//
+// An archived repository is read-only, which means any vulnerability in the
+// action it hosts can never be fixed in place.
+func (c *Client) IsRepositoryArchived(owner, repo string) (bool, error) {
+	repository, resp, err := c.client.Repositories.Get(c.ctx, owner, repo)
+	if err != nil {
+		if resp != nil && resp.StatusCode == 404 {
+			return false, fmt.Errorf("repository %s/%s not found", owner, repo)
+		}
+		return false, err
+	}
+
+	return repository.GetArchived(), nil
 }

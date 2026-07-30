@@ -542,24 +542,24 @@ security_champions:
 # Security Knowledge Base Structure
 
 ## Getting Started
-- [Flowlyt Quick Start Guide](security/quick-start.md)
-- [Common Security Issues](security/common-issues.md)
-- [Secure Workflow Examples](security/examples.md)
+- [Flowlyt Quick Start Guide](quick-start.md)
+- [Common Security Issues](troubleshooting.md)
+- [Secure Workflow Examples](examples.md)
 
 ## Team Playbooks
-- [Backend Team Security](teams/backend-security.md)
-- [Frontend Team Security](teams/frontend-security.md)
-- [DevOps Team Security](teams/devops-security.md)
+- Backend Team Security
+- Frontend Team Security
+- DevOps Team Security
 
 ## Incident Response
-- [Security Incident Procedures](incident/procedures.md)
-- [Post-Incident Reviews](incident/reviews.md)
-- [Lessons Learned](incident/lessons-learned.md)
+- Security Incident Procedures
+- Post-Incident Reviews
+- Lessons Learned
 
 ## Advanced Topics
-- [Custom Rule Development](advanced/custom-rules.md)
-- [Policy Framework](advanced/policies.md)
-- [Compliance Requirements](advanced/compliance.md)
+- [Custom Rule Development](../reference/custom-rules.md)
+- [Policy Framework](../advanced/policy-enforcement.md)
+- Compliance Requirements
 ```
 
 ### 3. Metrics and Monitoring

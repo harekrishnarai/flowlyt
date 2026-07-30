@@ -68,8 +68,46 @@ AI analysis adds the following information to each finding:
 | `--ai-key` | API key for the AI provider | AI_API_KEY env var |
 | `--ai-model` | Specific model to use | Provider default |
 | `--ai-base-url` | Custom API endpoint | Provider default |
-| `--ai-timeout` | Analysis timeout in seconds | 30 |
-| `--ai-workers` | Concurrent analysis workers | 5 |
+| `--ai-timeout` | Timeout for a **single** AI request, in seconds | 30 |
+| `--ai-workers` | Batches dispatched concurrently | 4 |
+| `--ai-fp-confidence` | Confidence at or above which a false-positive verdict is acted on (0 disables) | 0.8 |
+| `--ai-suppress-fp` | Drop confident false positives instead of demoting them | false |
+| `--ai-apply-severity` | Apply the AI's suggested severity to verified findings | false |
+
+### What the model receives
+
+Each finding is sent with the evidence needed to judge it:
+
+- the workflow's triggers, so the model can tell whether an untrusted actor can reach the code
+- workflow-level and job-level `permissions` (with `not set` distinguished from `{}`, since inheriting a repository default is not the same as granting nothing)
+- the job's dependencies and runner
+- the **full** `run:` script and `uses:` clause of the step, not a truncated fragment
+- a numbered source snippet centred on the reported line, which is marked with `>`
+
+This matters: the prompts ask the model to reason about things like "does this action run in a privileged job". If the permissions are not in the payload, the model can only guess — and a guessing model that is also asked for a confidence score produces confident fabrication.
+
+### Acting on the verdict
+
+By default a finding the AI confidently judges a false positive is **demoted to `INFO`** rather than deleted, so it stays in the report but out of the way. A model's judgement should not silently remove a security finding.
+
+```bash
+# Default: demote confident false positives to INFO
+flowlyt scan --repo . --ai openai
+
+# Stricter: only act on very confident verdicts
+flowlyt scan --repo . --ai openai --ai-fp-confidence 0.95
+
+# Drop them entirely (opt-in)
+flowlyt scan --repo . --ai openai --ai-suppress-fp
+
+# Also let the model re-rank severity of true positives
+flowlyt scan --repo . --ai openai --ai-apply-severity
+
+# Disable verdict application; annotate only
+flowlyt scan --repo . --ai openai --ai-fp-confidence 0
+```
+
+An unrecognised severity string from the model is ignored rather than defaulted, so free-text output cannot silently change a finding.
 
 ### Environment Variables
 
@@ -326,6 +364,6 @@ flowlyt scan --repo . \
 
 ## Next Steps
 
-- Review the [CLI Reference](cli-reference.md) for complete flag documentation
-- Check [Configuration Guide](configuration.md) for advanced setup options
-- See [Examples](examples.md) for real-world usage scenarios
+- Review the [CLI Reference](../reference/cli-reference.md) for complete flag documentation
+- Check [Configuration Guide](../reference/configuration.md) for advanced setup options
+- See [Examples](../guides/examples.md) for real-world usage scenarios

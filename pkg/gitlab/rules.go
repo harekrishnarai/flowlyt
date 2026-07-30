@@ -50,7 +50,7 @@ func GitLabRules() []rules.Rule {
 			Name:        "Exposed Sensitive Variables",
 			Description: "Potentially sensitive variables exposed in pipeline configuration",
 			Severity:    rules.High,
-			Category:    rules.SecretsExposure,
+			Category:    rules.SecretExposure,
 			Platform:    rules.PlatformGitLab, // GitLab CI specific
 			Check:       checkExposedVariables,
 		},
@@ -184,7 +184,7 @@ func checkExposedVariables(workflow parser.WorkflowFile) []rules.Finding {
 						RuleName:    "Exposed Sensitive Variables",
 						Description: "Potentially sensitive variables exposed in pipeline configuration",
 						Severity:    rules.High,
-						Category:    rules.SecretsExposure,
+						Category:    rules.SecretExposure,
 						FilePath:    workflow.Path,
 						Evidence:    strings.TrimSpace(line),
 						Remediation: "Use GitLab CI/CD variables or secrets management",

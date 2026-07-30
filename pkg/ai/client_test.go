@@ -19,6 +19,7 @@ package ai
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
@@ -30,11 +31,13 @@ type MockClient struct {
 	verifyResult *VerificationResult
 	verifyError  error
 	closeError   error
-	callCount    int
+	// callCount is accessed from several goroutines because batches are
+	// dispatched concurrently, so it is guarded.
+	callCount atomic.Int64
 }
 
 func (m *MockClient) VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error) {
-	m.callCount++
+	m.callCount.Add(1)
 	if m.verifyError != nil {
 		return nil, m.verifyError
 	}
@@ -49,10 +52,10 @@ func (m *MockClient) Close() error {
 	return m.closeError
 }
 
-func (m *MockClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
+func (m *MockClient) VerifyBatch(ctx context.Context, class string, findings []ContextualFinding) ([]BatchVerificationResult, error) {
 	results := make([]BatchVerificationResult, len(findings))
 	for i := range findings {
-		m.callCount++
+		m.callCount.Add(1)
 		if m.verifyError != nil {
 			results[i] = BatchVerificationResult{Index: i, Error: m.verifyError.Error()}
 		} else {
@@ -258,8 +261,8 @@ func TestAnalyzer(t *testing.T) {
 
 	// Test call count (cache is reused across single + batch analysis)
 	expectedCalls := 1
-	if mockClient.callCount != expectedCalls {
-		t.Errorf("Expected %d API calls, got %d", expectedCalls, mockClient.callCount)
+	if got := int(mockClient.callCount.Load()); got != expectedCalls {
+		t.Errorf("Expected %d API calls, got %d", expectedCalls, got)
 	}
 }
 
@@ -290,7 +293,7 @@ func TestShouldSkipAI(t *testing.T) {
 		{
 			name: "secrets expression reference skipped",
 			finding: rules.Finding{
-				Category: rules.SecretsExposure,
+				Category: rules.SecretExposure,
 				Evidence: "value: ${{ secrets.MY_TOKEN }}",
 			},
 			wantSkip:    true,
@@ -299,7 +302,7 @@ func TestShouldSkipAI(t *testing.T) {
 		{
 			name: "placeholder secret skipped",
 			finding: rules.Finding{
-				Category: rules.SecretsExposure,
+				Category: rules.SecretExposure,
 				Evidence: "api_key: your-api-key-here",
 			},
 			wantSkip:    true,
@@ -308,7 +311,7 @@ func TestShouldSkipAI(t *testing.T) {
 		{
 			name: "real token prefix sent",
 			finding: rules.Finding{
-				Category: rules.SecretsExposure,
+				Category: rules.SecretExposure,
 				Evidence: "token: ghp_xxxxxxxxxxxxxxxxxxxx",
 			},
 			wantSkip: false,
@@ -334,7 +337,7 @@ func TestShouldSkipAI(t *testing.T) {
 		{
 			name: "high entropy string sent",
 			finding: rules.Finding{
-				Category: rules.SecretsExposure,
+				Category: rules.SecretExposure,
 				Evidence: "AKIA1234567890ABCDEF",
 			},
 			wantSkip: false,
@@ -342,18 +345,19 @@ func TestShouldSkipAI(t *testing.T) {
 		{
 			name: "env reference skipped",
 			finding: rules.Finding{
-				Category: rules.SecretsExposure,
+				Category: rules.SecretExposure,
 				Evidence: "token: ${{ env.API_TOKEN }}",
 			},
 			wantSkip:    true,
 			wantContain: "expression reference",
 		},
 		{
-			// SecretExposure (singular) is the older constant used in most rules;
-			// the filter must treat it identically to SecretsExposure (plural).
-			name: "singular SecretExposure expression reference skipped",
+			// SecretsExposure is a deprecated alias for SecretExposure. Both
+			// must resolve identically so that any importer still using the
+			// old constant keeps the same filtering behaviour.
+			name: "deprecated SecretsExposure alias expression reference skipped",
 			finding: rules.Finding{
-				Category: rules.SecretExposure,
+				Category: rules.SecretsExposure,
 				Evidence: "api_key: ${{ secrets.API_KEY }}",
 			},
 			wantSkip:    true,
@@ -362,7 +366,7 @@ func TestShouldSkipAI(t *testing.T) {
 		{
 			name: "vars reference skipped",
 			finding: rules.Finding{
-				Category: rules.SecretsExposure,
+				Category: rules.SecretExposure,
 				Evidence: "token: ${{ vars.API_TOKEN }}",
 			},
 			wantSkip:    true,
@@ -411,7 +415,12 @@ func TestComposeBatchPrompt(t *testing.T) {
 		{RuleID: "TEST_RULE_2", Evidence: "evidence two", Category: rules.PrivilegeEscalation},
 	}
 
-	system, user := composeBatchPrompt("escalation", findings)
+	contextual := make([]ContextualFinding, len(findings))
+	for i, f := range findings {
+		contextual[i] = ContextualFinding{Finding: f}
+	}
+
+	system, user := composeBatchPrompt("escalation", contextual)
 
 	if system == "" {
 		t.Error("expected non-empty system prompt")
@@ -440,7 +449,7 @@ func TestCategoryToClass(t *testing.T) {
 		{rules.AccessControl, "escalation"},
 		{rules.InjectionAttack, "injection"},
 		{rules.SecretExposure, "secrets_context"},
-		{rules.SecretsExposure, "secrets_context"},
+		{rules.SecretsExposure, "secrets_context"}, // deprecated alias
 		{rules.SupplyChain, "supply_chain_trust"},
 		{rules.Misconfiguration, "generic"},
 		{rules.ShellObfuscation, "generic"},
@@ -549,7 +558,7 @@ func TestAnalyzerSkipsFilteredFindings(t *testing.T) {
 
 	findings := []rules.Finding{
 		// This should be skipped (expression reference)
-		{RuleID: "SECRET_1", Category: rules.SecretsExposure, Evidence: "token: ${{ secrets.MY_TOKEN }}"},
+		{RuleID: "SECRET_1", Category: rules.SecretExposure, Evidence: "token: ${{ secrets.MY_TOKEN }}"},
 		// This should be sent
 		{RuleID: "ESCALATION_1", Category: rules.PrivilegeEscalation, Evidence: "pull_request_target with write:contents"},
 	}

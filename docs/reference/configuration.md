@@ -17,6 +17,7 @@ rules:
   enabled: []           # Specific rules to enable
   disabled: []          # Specific rules to disable
   custom_rules: []      # User-defined custom rules
+  forbidden_uses: {}    # Allowlist/denylist policy for `uses:` clauses
 
 # False positive management
 ignore:
@@ -99,6 +100,65 @@ rules:
         commands: true
       remediation: "Use GitHub secrets for company API keys"
 ```
+
+### Forbidden Uses Policy
+
+Controls the opt-in `FORBIDDEN_USES` rule, which enforces which third-party
+actions may appear in your workflows. The rule **does nothing until configured**
+— it is not registered at all when both lists are empty.
+
+`allow` and `deny` are mutually exclusive. If both are supplied, `allow` wins,
+since an allowlist is the strictly stronger control.
+
+#### Allowlist mode (recommended)
+
+Only the listed actions are permitted; every other `uses:` clause is reported.
+
+```yaml
+rules:
+  forbidden_uses:
+    allow:
+      - actions/*              # any repository under the actions org
+      - github/codeql-action   # this repository, including subdirectories
+      - my-org/*
+```
+
+#### Denylist mode
+
+Everything is permitted except the listed actions.
+
+```yaml
+rules:
+  forbidden_uses:
+    deny:
+      - sketchy-vendor/*
+      - abandoned/action
+```
+
+#### Pattern syntax
+
+| Pattern | Matches |
+|---------|---------|
+| `*` | Every action |
+| `owner/*` | Every repository under `owner` |
+| `owner` | Every repository under `owner` (equivalent to `owner/*`) |
+| `owner/repo` | That repository, including subdirectory actions such as `owner/repo/init@v3` |
+
+Matching is case-insensitive. A version suffix in a pattern (`owner/repo@v1`) is
+ignored — patterns match repositories, not versions.
+
+#### What it does not cover
+
+The rule inspects `uses:` clauses *as written*. It cannot detect actions pulled
+in indirectly:
+
+- an action fetched by `git clone` inside a `run:` step
+- a permitted action that itself calls a forbidden one
+- local (`./.github/actions/...`) and Docker (`docker://...`) references, which
+  are deliberately skipped as they are not repository actions
+
+Treat it as policy enforcement that complements, rather than replaces, the other
+supply chain rules.
 
 ## False Positive Management
 

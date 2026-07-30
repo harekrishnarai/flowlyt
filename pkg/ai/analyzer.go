@@ -25,6 +25,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
@@ -42,8 +43,17 @@ type EnhancedFinding struct {
 
 // Analyzer handles AI-powered analysis of findings
 type Analyzer struct {
-	client  Client
+	client Client
+	// timeout bounds a single provider request (one batch, or one finding on
+	// the fallback path).
 	timeout time.Duration
+	// totalTimeout optionally bounds the whole analysis. Zero means unbounded,
+	// leaving cancellation to the caller's context.
+	totalTimeout time.Duration
+	// workers is the number of batches dispatched concurrently.
+	workers int
+	// contexts supplies the workflow evidence attached to each finding.
+	contexts *ContextProvider
 	// inRunCache avoids duplicate AI calls for equivalent findings during a single run
 	// key: fingerprint string, value: *VerificationResult or error string
 	cache sync.Map
@@ -56,17 +66,45 @@ type Analyzer struct {
 	provider Provider
 }
 
-// NewAnalyzer creates a new AI analyzer
+// Options configures an Analyzer.
+type Options struct {
+	// RequestTimeout bounds a single provider request. Defaults to 30s.
+	RequestTimeout time.Duration
+	// TotalTimeout optionally bounds the whole analysis. Zero means unbounded.
+	TotalTimeout time.Duration
+	// Workers is the number of batches dispatched concurrently. Defaults to 4,
+	// which keeps throughput high without tripping provider rate limits.
+	Workers int
+	// Contexts supplies workflow evidence for each finding. May be nil, in
+	// which case findings are sent without surrounding context.
+	Contexts *ContextProvider
+}
+
+// DefaultWorkers is the batch concurrency used when none is configured.
+const DefaultWorkers = 4
+
+// NewAnalyzer creates a new AI analyzer with default options.
 func NewAnalyzer(client Client, timeout time.Duration) *Analyzer {
-	if timeout == 0 {
-		timeout = 30 * time.Second // Default timeout
+	return NewAnalyzerWithOptions(client, Options{RequestTimeout: timeout})
+}
+
+// NewAnalyzerWithOptions creates a new AI analyzer.
+func NewAnalyzerWithOptions(client Client, opts Options) *Analyzer {
+	if opts.RequestTimeout == 0 {
+		opts.RequestTimeout = 30 * time.Second
+	}
+	if opts.Workers <= 0 {
+		opts.Workers = DefaultWorkers
 	}
 
 	cachePath := strings.TrimSpace(os.Getenv("AI_CACHE_FILE"))
 
 	return &Analyzer{
 		client:        client,
-		timeout:       timeout,
+		timeout:       opts.RequestTimeout,
+		totalTimeout:  opts.TotalTimeout,
+		workers:       opts.Workers,
+		contexts:      opts.Contexts,
 		cacheFilePath: cachePath,
 		persistCache:  make(map[string]*VerificationResult, 256),
 		provider:      client.GetProvider(),
@@ -130,13 +168,20 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 		return enhancedFindings, nil
 	}
 
-	// Create context with timeout
-	analyzeCtx, cancel := context.WithTimeout(ctx, a.timeout*time.Duration(dispatchCount))
-	defer cancel()
+	// A whole-run deadline, if configured. Each batch additionally gets its own
+	// deadline inside runBatch: scaling one global deadline by the number of
+	// findings meant a slow early batch consumed the budget for every later
+	// one, so a single stalled request could fail an entire run.
+	overall := ctx
+	if a.totalTimeout > 0 {
+		var cancelOverall context.CancelFunc
+		overall, cancelOverall = context.WithTimeout(ctx, a.totalTimeout)
+		defer cancelOverall()
+	}
 
-	// Group uncached findings by class (stable order)
+	// Group uncached findings by class, preserving first-seen order.
 	toDispatchByClass := make(map[string][]rules.Finding)
-	classOrder := []string{}
+	var classOrder []string
 	for _, f := range toDispatch {
 		class := categoryToClass(f.Category)
 		if _, exists := toDispatchByClass[class]; !exists {
@@ -145,74 +190,75 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 		toDispatchByClass[class] = append(toDispatchByClass[class], f)
 	}
 
-	// Minimal progress: a single in-place line on an interactive terminal,
-	// nothing when output is piped/redirected. Individual findings are not
-	// printed here — they appear (with their AI verdict) in the final report,
-	// so streaming them would just clutter the terminal.
-	showProgress := terminal.Default().IsTTY()
-	done := 0
-
-	// Dispatch batches per class (synchronously)
+	// Build the batch work list up front so results can be reassembled in a
+	// deterministic order regardless of completion order.
+	type batchJob struct {
+		class    string
+		findings []rules.Finding
+	}
+	var jobs []batchJob
 	for _, class := range classOrder {
-		classFindings, ok := toDispatchByClass[class]
-		if !ok {
-			continue
-		}
-		totalBatches := (len(classFindings) + batchSize - 1) / batchSize
-		for batchNum := 1; batchNum <= totalBatches; batchNum++ {
-			start := (batchNum - 1) * batchSize
+		classFindings := toDispatchByClass[class]
+		for start := 0; start < len(classFindings); start += batchSize {
 			end := start + batchSize
 			if end > len(classFindings) {
 				end = len(classFindings)
 			}
-			batch := classFindings[start:end]
-
-			batchResults, err := a.client.VerifyBatch(analyzeCtx, class, batch)
-			if err != nil {
-				// Fall back to individual calls on batch failure
-				for _, f := range batch {
-					vr, singleErr := a.client.VerifyFinding(analyzeCtx, f)
-					ef := EnhancedFinding{Finding: f}
-					if singleErr != nil {
-						ef.AIError = singleErr.Error()
-					} else {
-						ef.AIVerification = vr
-						fp := fingerprintFinding(f)
-						a.cache.Store(fp, vr)
-						a.stagePersist(fp, vr)
-					}
-					enhancedFindings = append(enhancedFindings, ef)
-				}
-				continue
-			}
-
-			// Attribute by index, collect into batchEnhanced for streaming
-			batchEnhanced := make([]EnhancedFinding, 0, len(batch))
-			for _, br := range batchResults {
-				if br.Index < 0 || br.Index >= len(batch) {
-					continue
-				}
-				f := batch[br.Index]
-				ef := EnhancedFinding{Finding: f}
-				if br.Error != "" {
-					ef.AIError = br.Error
-				} else if br.Result != nil {
-					ef.AIVerification = br.Result
-					fp := fingerprintFinding(f)
-					a.cache.Store(fp, br.Result)
-					a.stagePersist(fp, br.Result)
-				}
-				batchEnhanced = append(batchEnhanced, ef)
-			}
-			enhancedFindings = append(enhancedFindings, batchEnhanced...)
-
-			done += len(batch)
-			if showProgress {
-				fmt.Fprintf(os.Stderr, "\rAI analysis: %d/%d findings", done, dispatchCount)
-			}
+			jobs = append(jobs, batchJob{class: class, findings: classFindings[start:end]})
 		}
 	}
 
+	results := make([][]EnhancedFinding, len(jobs))
+
+	workers := a.workers
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > len(jobs) {
+		workers = len(jobs)
+	}
+
+	// Progress is a single in-place line on an interactive terminal and nothing
+	// when output is piped. Findings themselves appear in the final report.
+	showProgress := terminal.Default().IsTTY()
+
+	// Provider APIs are network-bound, so batches are dispatched concurrently.
+	// They previously ran one after another, which meant a hundred findings
+	// cost twenty sequential round-trips.
+	var (
+		nextJob  atomic.Int64
+		progress atomic.Int64
+		wg       sync.WaitGroup
+	)
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		go func() {
+			defer wg.Done()
+			for {
+				i := int(nextJob.Add(1)) - 1
+				if i >= len(jobs) {
+					return
+				}
+				if overall.Err() != nil {
+					return
+				}
+
+				results[i] = a.runBatch(overall, jobs[i].class, jobs[i].findings)
+
+				completed := int(progress.Add(int64(len(jobs[i].findings))))
+				if showProgress {
+					fmt.Fprintf(os.Stderr, "\rAI analysis: %d/%d findings", completed, dispatchCount)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		enhancedFindings = append(enhancedFindings, r...)
+	}
+
+	done := int(progress.Load())
 	if showProgress {
 		fmt.Fprintf(os.Stderr, "\rAI analysis: %d/%d findings — done\n", done, dispatchCount)
 	}
@@ -222,12 +268,73 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 	// Persist any new cache entries (including those from partial runs)
 	a.flushPersistentCache()
 
-	// Check if context was cancelled
-	if analyzeCtx.Err() != nil {
-		return enhancedFindings, fmt.Errorf("AI analysis timed out or was cancelled: %w", analyzeCtx.Err())
+	if overall.Err() != nil {
+		return enhancedFindings, fmt.Errorf("AI analysis timed out or was cancelled: %w", overall.Err())
 	}
 
 	return enhancedFindings, nil
+}
+
+// runBatch verifies one batch of findings, falling back to individual requests
+// if the batch call fails.
+//
+// The batch gets its own deadline so that one slow provider response cannot
+// consume the budget belonging to other batches.
+func (a *Analyzer) runBatch(ctx context.Context, class string, batch []rules.Finding) []EnhancedFinding {
+	batchCtx, cancel := context.WithTimeout(ctx, a.timeout)
+	defer cancel()
+
+	contextual := make([]ContextualFinding, len(batch))
+	for i, f := range batch {
+		contextual[i] = ContextualFinding{Finding: f, Context: a.contexts.For(f)}
+	}
+
+	batchResults, err := a.client.VerifyBatch(batchCtx, class, contextual)
+	if err != nil {
+		return a.verifyIndividually(ctx, batch)
+	}
+
+	out := make([]EnhancedFinding, 0, len(batch))
+	for _, br := range batchResults {
+		if br.Index < 0 || br.Index >= len(batch) {
+			continue
+		}
+		f := batch[br.Index]
+		ef := EnhancedFinding{Finding: f}
+		if br.Error != "" {
+			ef.AIError = br.Error
+		} else if br.Result != nil {
+			ef.AIVerification = br.Result
+			fp := fingerprintFinding(f)
+			a.cache.Store(fp, br.Result)
+			a.stagePersist(fp, br.Result)
+		}
+		out = append(out, ef)
+	}
+	return out
+}
+
+// verifyIndividually is the fallback when a batch request fails. Each finding
+// gets its own deadline so the fallback cannot inherit an already-exhausted one.
+func (a *Analyzer) verifyIndividually(ctx context.Context, batch []rules.Finding) []EnhancedFinding {
+	out := make([]EnhancedFinding, 0, len(batch))
+	for _, f := range batch {
+		singleCtx, cancel := context.WithTimeout(ctx, a.timeout)
+		vr, err := a.client.VerifyFinding(singleCtx, f)
+		cancel()
+
+		ef := EnhancedFinding{Finding: f}
+		if err != nil {
+			ef.AIError = err.Error()
+		} else {
+			ef.AIVerification = vr
+			fp := fingerprintFinding(f)
+			a.cache.Store(fp, vr)
+			a.stagePersist(fp, vr)
+		}
+		out = append(out, ef)
+	}
+	return out
 }
 
 // fingerprintFinding creates a stable identity for a finding, minimizing token waste by caching equal work.

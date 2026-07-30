@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 	"os"
 	"testing"
 )
@@ -131,6 +132,42 @@ func TestShouldIgnoreGlobal(t *testing.T) {
 	}
 }
 
+// Ignore strings must match on word boundaries. The default ignore list holds
+// short generic terms, and matching them mid-word silently suppressed real
+// findings: evidence ending in "@latest" was discarded because it ends with the
+// letters "test".
+func TestShouldIgnoreGlobal_RespectsWordBoundaries(t *testing.T) {
+	config := DefaultConfig()
+	config.Rules.FalsePositives.Global.Strings = []string{"test", "example", "key"}
+	config.Rules.FalsePositives.Global.Patterns = []string{}
+
+	mustIgnore := []string{
+		"test",
+		"my_test",
+		"test-fixture",
+		"example",
+	}
+	for _, text := range mustIgnore {
+		if !config.ShouldIgnoreGlobal(text) {
+			t.Errorf("expected %q to be ignored", text)
+		}
+	}
+
+	mustKeep := []string{
+		"go install github.com/foo/bar@latest",
+		"actions/checkout@latest",
+		"uses ubuntu-latest runner",
+		"monkey",
+		"latest",
+		"contest",
+	}
+	for _, text := range mustKeep {
+		if config.ShouldIgnoreGlobal(text) {
+			t.Errorf("expected %q NOT to be ignored (mid-word match)", text)
+		}
+	}
+}
+
 func TestShouldIgnoreForRule(t *testing.T) {
 	config := DefaultConfig()
 	config.Rules.FalsePositives.Files = []string{"test/**"}
@@ -190,5 +227,52 @@ func TestSaveAndLoadConfig(t *testing.T) {
 
 	if loadedConfig.Output.MinSeverity != "HIGH" {
 		t.Errorf("MinSeverity not loaded correctly, expected 'HIGH', got '%s'", loadedConfig.Output.MinSeverity)
+	}
+}
+
+// convertCategory must accept every category the engine can emit. It previously
+// recognised only five, so a custom rule declaring e.g. SUPPLY_CHAIN was
+// rejected and silently filed under MISCONFIGURATION.
+func TestConvertCategory_AcceptsEveryEmittedCategory(t *testing.T) {
+	cases := map[string]rules.Category{
+		"MALICIOUS_PATTERN":    rules.MaliciousPattern,
+		"MISCONFIGURATION":     rules.Misconfiguration,
+		"SECRET_EXPOSURE":      rules.SecretExposure,
+		"SHELL_OBFUSCATION":    rules.ShellObfuscation,
+		"POLICY_VIOLATION":     rules.PolicyViolation,
+		"SUPPLY_CHAIN":         rules.SupplyChain,
+		"INJECTION_ATTACK":     rules.InjectionAttack,
+		"ACCESS_CONTROL":       rules.AccessControl,
+		"PRIVILEGE_ESCALATION": rules.PrivilegeEscalation,
+		"DATA_EXPOSURE":        rules.DataExposure,
+	}
+
+	for input, want := range cases {
+		got, err := convertCategory(input)
+		if err != nil {
+			t.Errorf("convertCategory(%q) returned error: %v", input, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("convertCategory(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+// The deprecated plural spelling must normalise to the canonical singular value
+// so that findings from older configurations remain filterable.
+func TestConvertCategory_NormalizesDeprecatedSecretsExposure(t *testing.T) {
+	got, err := convertCategory("SECRETS_EXPOSURE")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != rules.SecretExposure {
+		t.Errorf("convertCategory(SECRETS_EXPOSURE) = %q, want %q", got, rules.SecretExposure)
+	}
+}
+
+func TestConvertCategory_RejectsUnknown(t *testing.T) {
+	if _, err := convertCategory("NOT_A_CATEGORY"); err == nil {
+		t.Error("expected an error for an unknown category")
 	}
 }

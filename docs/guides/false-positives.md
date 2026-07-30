@@ -11,6 +11,51 @@ False positives occur when security rules incorrectly flag legitimate, safe code
 - Legacy code with accepted risk patterns
 - Development-only workflows with relaxed security
 
+## How Ignore Strings Are Matched
+
+Ignore *strings* (as opposed to ignore *patterns*, which are regular
+expressions) match on **word boundaries**. An ignore string suppresses a finding
+when it equals the text, or appears at the start or end of it as a complete
+word.
+
+This matters because the default ignore list contains short, generic terms such
+as `test`, `key`, `example`, and `sample`:
+
+```yaml
+ignore:
+  global:
+    strings: ["test", "example"]
+```
+
+| Text | Ignored? | Why |
+|------|:--------:|-----|
+| `test` | ✅ | Exact match |
+| `my_test` | ✅ | `_` is a separator, so `test` is a complete word |
+| `test-fixture` | ✅ | Complete word at the start |
+| `actions/checkout@latest` | ❌ | `test` here is part of `latest` |
+| `contest` | ❌ | `test` is mid-word |
+
+> **Behaviour change.** Matching previously used a bare prefix/suffix test, which
+> meant any finding whose evidence merely *ended with* the letters `test` was
+> silently discarded — including anything referencing `@latest`, `ubuntu-latest`,
+> or `:latest`. This suppressed genuine findings from rules such as
+> `UNPINNED_ACTION`, `UNPINNED_CONTAINER_IMAGE`, and `UNPINNED_TOOL_INSTALL`.
+> Word-boundary matching fixes that while preserving the intended behaviour for
+> conventional names like `my_test`.
+>
+> If you were relying on the old substring behaviour, use an ignore **pattern**
+> instead, which is a full regular expression:
+>
+> ```yaml
+> ignore:
+>   global:
+>     patterns: [".*test.*"]   # matches anywhere, including mid-word
+> ```
+
+Be deliberate with broad patterns. A global pattern such as `.*example.*` will
+suppress findings for any host containing `example`, which is easy to hit
+accidentally with real domains.
+
 ## Suppression Methods
 
 ### 1. Inline Suppression
@@ -540,4 +585,4 @@ migration_suppressions:
 
 ---
 
-**Next:** [Shell Analysis](shell-analysis.md)
+**Next:** [Shell Analysis](../advanced/shell-analysis.md)

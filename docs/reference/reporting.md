@@ -206,7 +206,7 @@ env:
 
 **File:** `.github/workflows/ci.yml` (Line 42)  
 **Rule:** `DANGEROUS_COMMAND`  
-**Category:** `COMMAND_INJECTION`
+**Category:** `MALICIOUS_PATTERN`
 
 **Evidence:**
 ```bash
@@ -630,4 +630,4 @@ reports/
 
 ---
 
-**Next:** [Troubleshooting](troubleshooting.md)
+**Next:** [Troubleshooting](../guides/troubleshooting.md)

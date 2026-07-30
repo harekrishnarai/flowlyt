@@ -568,10 +568,10 @@ security_compliance:
 
 ## Resources
 
-- **Configuration Schema**: [config-schema.json](./config-schema.json)
-- **Policy Templates**: [templates/](./templates/)
-- **Compliance Frameworks**: [compliance/](./compliance/)
-- **Examples**: [examples/advanced-config/](./examples/advanced-config/)
+- **Configuration Schema**: config-schema.json
+- **Policy Templates**: templates/
+- **Compliance Frameworks**: compliance/
+- **Examples**: examples/advanced-config/
 
 ## Contributing
 

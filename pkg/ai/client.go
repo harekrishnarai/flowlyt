@@ -57,7 +57,7 @@ type Client interface {
 	VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error)
 
 	// VerifyBatch analyses up to 5 findings of the same class in one API call.
-	VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error)
+	VerifyBatch(ctx context.Context, class string, findings []ContextualFinding) ([]BatchVerificationResult, error)
 
 	// GetProvider returns the provider name
 	GetProvider() Provider

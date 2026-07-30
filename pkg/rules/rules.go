@@ -18,7 +18,10 @@ package rules
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/context"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
@@ -54,57 +57,119 @@ func (re *RuleEngine) SetContextAware(enabled bool) {
 	re.contextAware = enabled
 }
 
-// ExecuteRules runs rules against a workflow with configuration filtering
-func (re *RuleEngine) ExecuteRules(workflow parser.WorkflowFile, rules []Rule) []Finding {
-	var allFindings []Finding
+// parallelRuleThreshold is the rule count above which ExecuteRules distributes
+// work across goroutines. Below it, the scheduling overhead outweighs the gain.
+const parallelRuleThreshold = 8
 
+// ExecuteRules runs rules against a workflow with configuration filtering.
+//
+// Rules are independent pure functions of the workflow, so they are evaluated
+// in parallel. This matters most for scans of a single workflow: the workflow
+// processor only parallelises across files, so without this a one-workflow scan
+// would leave every core but one idle.
+//
+// Results are collected into a slice indexed by rule position and flattened in
+// order, so the output is identical to sequential execution regardless of the
+// order in which rules happen to finish.
+func (re *RuleEngine) ExecuteRules(workflow parser.WorkflowFile, rules []Rule) []Finding {
 	// Analyze workflow context once for all rules
 	var ctx *context.WorkflowContext
 	if re.contextAware {
 		ctx = re.contextAnalyzer.Analyze(&workflow.Workflow)
 	}
 
+	// Skip disabled rules up front so the worker pool is sized to the work that
+	// will actually run.
+	active := make([]Rule, 0, len(rules))
 	for _, rule := range rules {
-		// Check if rule is enabled in configuration
 		if re.config != nil && !re.config.IsRuleEnabled(rule.ID) {
 			continue
 		}
+		active = append(active, rule)
+	}
+	if len(active) == 0 {
+		return nil
+	}
 
-		findings := rule.Check(workflow)
+	perRule := make([][]Finding, len(active))
 
-		// Apply configuration-based filtering and context-aware adjustments
-		var filteredFindings []Finding
-		for _, finding := range findings {
-			// Check if should be ignored by configuration
-			if re.config != nil && re.config.ShouldIgnoreForRule(finding.RuleID, finding.Evidence, workflow.Path) {
-				continue
-			}
+	workers := runtime.GOMAXPROCS(0)
+	if workers > len(active) {
+		workers = len(active)
+	}
 
-			// Apply context-aware analysis
-			if re.contextAware && ctx != nil {
-				// Check if finding should be suppressed
-				if re.contextAnalyzer.ShouldSuppress(finding.RuleID, ctx) {
-					continue
-				}
-
-				// Adjust severity based on context
-				originalSeverity := string(finding.Severity)
-				adjustedSeverity := re.contextAnalyzer.AdjustSeverity(finding.RuleID, originalSeverity, ctx)
-				finding.Severity = Severity(adjustedSeverity)
-
-				// Add context information to evidence
-				if originalSeverity != adjustedSeverity {
-					finding.Evidence = fmt.Sprintf("[Context-adjusted from %s to %s] %s", originalSeverity, adjustedSeverity, finding.Evidence)
-				}
-			}
-
-			filteredFindings = append(filteredFindings, finding)
+	if workers <= 1 || len(active) < parallelRuleThreshold {
+		for i, rule := range active {
+			perRule[i] = re.runRule(rule, workflow, ctx)
 		}
+	} else {
+		var next atomic.Int64
+		var wg sync.WaitGroup
+		wg.Add(workers)
+		for w := 0; w < workers; w++ {
+			go func() {
+				defer wg.Done()
+				for {
+					i := int(next.Add(1)) - 1
+					if i >= len(active) {
+						return
+					}
+					perRule[i] = re.runRule(active[i], workflow, ctx)
+				}
+			}()
+		}
+		wg.Wait()
+	}
 
-		allFindings = append(allFindings, filteredFindings...)
+	total := 0
+	for _, f := range perRule {
+		total += len(f)
+	}
+	allFindings := make([]Finding, 0, total)
+	for _, f := range perRule {
+		allFindings = append(allFindings, f...)
 	}
 
 	return allFindings
+}
+
+// runRule executes one rule and applies configuration filtering and
+// context-aware adjustments to its findings.
+func (re *RuleEngine) runRule(rule Rule, workflow parser.WorkflowFile, ctx *context.WorkflowContext) []Finding {
+	findings := rule.Check(workflow)
+	if len(findings) == 0 {
+		return nil
+	}
+
+	filtered := findings[:0]
+	for _, finding := range findings {
+		// Check if should be ignored by configuration
+		if re.config != nil && re.config.ShouldIgnoreForRule(finding.RuleID, finding.Evidence, workflow.Path) {
+			continue
+		}
+
+		// Apply context-aware analysis
+		if re.contextAware && ctx != nil {
+			// Check if finding should be suppressed
+			if re.contextAnalyzer.ShouldSuppress(finding.RuleID, ctx) {
+				continue
+			}
+
+			// Adjust severity based on context
+			originalSeverity := string(finding.Severity)
+			adjustedSeverity := re.contextAnalyzer.AdjustSeverity(finding.RuleID, originalSeverity, ctx)
+			finding.Severity = Severity(adjustedSeverity)
+
+			// Add context information to evidence
+			if originalSeverity != adjustedSeverity {
+				finding.Evidence = fmt.Sprintf("[Context-adjusted from %s to %s] %s", originalSeverity, adjustedSeverity, finding.Evidence)
+			}
+		}
+
+		filtered = append(filtered, finding)
+	}
+
+	return filtered
 }
 
 // Platform represents the CI/CD platform a rule applies to
@@ -149,11 +214,22 @@ const (
 	PolicyViolation     Category = "POLICY_VIOLATION"
 	SupplyChain         Category = "SUPPLY_CHAIN"
 	InjectionAttack     Category = "INJECTION_ATTACK"
-	SecretsExposure     Category = "SECRETS_EXPOSURE"
 	AccessControl       Category = "ACCESS_CONTROL"
 	PrivilegeEscalation Category = "PRIVILEGE_ESCALATION"
 	DataExposure        Category = "DATA_EXPOSURE"
 )
+
+// SecretsExposure is a deprecated alias for [SecretExposure].
+//
+// The engine previously emitted two distinct category values for the same
+// concept, "SECRET_EXPOSURE" and "SECRETS_EXPOSURE". Consumers filtering
+// findings by category had to match both spellings, and code that matched only
+// the singular form silently skipped findings carrying the plural one. Both now
+// resolve to "SECRET_EXPOSURE".
+//
+// Deprecated: use [SecretExposure]. This alias is retained so that existing
+// importers continue to compile, and will be removed in a future major version.
+const SecretsExposure = SecretExposure
 
 // Finding represents a detected security issue
 type Finding struct {
@@ -525,6 +601,192 @@ func StandardRules() []Rule {
 			Category:    SupplyChain,
 			Platform:    PlatformAll,
 			Check:       checkRefConfusion,
+		},
+		{
+			ID:          "REF_VERSION_MISMATCH",
+			Name:        "Action Ref Version Mismatch",
+			Description: "SHA-pinned action does not point at the version claimed by its adjacent comment",
+			Severity:    High,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkRefVersionMismatch,
+		},
+		{
+			ID:          "UNPINNED_CONTAINER_IMAGE",
+			Name:        "Unpinned Container Image",
+			Description: "Container image is not pinned to an immutable digest, allowing upstream content to change silently",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkUnpinnedContainerImage,
+		},
+		{
+			ID:          "HARDCODED_CONTAINER_CREDENTIALS",
+			Name:        "Hardcoded Container Registry Credentials",
+			Description: "Container registry password is hardcoded in the workflow instead of being sourced from a secret",
+			Severity:    Critical,
+			Category:    SecretExposure,
+			Platform:    PlatformGitHub,
+			Check:       checkHardcodedContainerCredentials,
+		},
+		{
+			ID:          "INSECURE_URL_SCHEME",
+			Name:        "Insecure URL Scheme",
+			Description: "Workflow retrieves a resource over plaintext HTTP, allowing a network attacker to tamper with the response",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformAll,
+			Check:       checkInsecureURLScheme,
+		},
+		{
+			ID:          "CONCURRENCY_LIMITS_MISSING",
+			Name:        "Missing Workflow Concurrency Limits",
+			Description: "Workflow allows redundant concurrent runs, enabling runner resource exhaustion and artifact race conditions",
+			Severity:    Low,
+			Category:    Misconfiguration,
+			Platform:    PlatformGitHub,
+			Check:       checkConcurrencyLimits,
+		},
+		{
+			ID:          "ADHOC_PACKAGE_INSTALL",
+			Name:        "Ad-hoc Package Installation",
+			Description: "Dependencies are installed ad hoc instead of from a committed lockfile, leaving the resolved versions unpinned",
+			Severity:    Low,
+			Category:    SupplyChain,
+			Platform:    PlatformAll,
+			Check:       checkAdhocPackageInstall,
+		},
+		{
+			ID:          "UNPINNED_TOOL_INSTALL",
+			Name:        "Unpinned Tool Installation",
+			Description: "Workflow installs a tool without a version constraint, so a newly published release executes automatically",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformAll,
+			Check:       checkUnpinnedToolInstall,
+		},
+		{
+			ID:          "GITHUB_APP_TOKEN_MISUSE",
+			Name:        "Over-scoped GitHub App Token",
+			Description: "GitHub App installation token is requested with broader scope or lifetime than the job requires",
+			Severity:    Medium,
+			Category:    PrivilegeEscalation,
+			Platform:    PlatformGitHub,
+			Check:       checkGitHubAppTokenMisuse,
+		},
+		{
+			ID:          "SECRETS_OUTSIDE_ENV",
+			Name:        "Secret Interpolated Outside env Block",
+			Description: "Secret is substituted directly into a run script instead of being passed through env, exposing it to the command line",
+			Severity:    Medium,
+			Category:    SecretExposure,
+			Platform:    PlatformGitHub,
+			Check:       checkSecretsOutsideEnv,
+		},
+		{
+			ID:          "MISFEATURE",
+			Name:        "Dangerous Workflow Misfeature",
+			Description: "Workflow enables a permitted but hazardous platform feature that widens the impact of a compromise",
+			Severity:    Low,
+			Category:    Misconfiguration,
+			Platform:    PlatformGitHub,
+			Check:       checkMisfeatures,
+		},
+		{
+			ID:          "ARCHIVED_ACTION_SOURCE",
+			Name:        "Action From Archived Repository",
+			Description: "Workflow depends on an action whose repository is archived and therefore can no longer receive security fixes",
+			Severity:    Medium,
+			Category:    SupplyChain,
+			Platform:    PlatformGitHub,
+			Check:       checkArchivedActionSource,
+		},
+		{
+			ID:          "ANONYMOUS_DEFINITION",
+			Name:        "Unnamed Workflow Definition",
+			Description: "Workflow omits a top-level name, so it is identified only by filename in the Actions UI",
+			Severity:    Info,
+			Category:    Misconfiguration,
+			Platform:    PlatformGitHub,
+			Check:       checkAnonymousDefinition,
+		},
+		{
+			ID:          "UNDOCUMENTED_PERMISSIONS",
+			Name:        "Undocumented Write Permission",
+			Description: "A write permission is granted without an explanatory comment, making it hard to tell whether it is still required",
+			Severity:    Info,
+			Category:    AccessControl,
+			Platform:    PlatformGitHub,
+			Check:       checkUndocumentedPermissions,
+		},
+
+		// Indirect injection: attacker-controlled text that reaches execution
+		// without the expression and the execution appearing on one line.
+		{
+			ID:          "CROSS_FILE_TAINT",
+			Name:        "Untrusted Input Executed by Local Action",
+			Description: "Attacker-controlled data is passed into a local composite action or reusable workflow that executes it",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub,
+			Check:       checkCrossFileTaint,
+		},
+		{
+			ID:          "CROSS_JOB_TAINT",
+			Name:        "Attacker-Controlled Data Crosses Job Boundary",
+			Description: "Attacker-controlled data is written to a job output and executed by a dependent job",
+			Severity:    Critical,
+			Category:    InjectionAttack,
+			Platform:    PlatformGitHub,
+			Check:       checkCrossJobTaint,
+		},
+		{
+			ID:          "HEREDOC_INJECTION",
+			Name:        "Command Injection via Heredoc",
+			Description: "An unquoted heredoc interpolates a workflow expression, so attacker-controlled text is expanded by the shell inside the document body",
+			Severity:    High,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll,
+			Check:       checkHeredocInjection,
+		},
+		{
+			ID:          "MULTI_STAGE_INJECTION",
+			Name:        "Multi-Stage Command Injection",
+			Description: "A workflow expression is written to a file that is subsequently executed, so attacker-controlled text runs as code",
+			Severity:    High,
+			Category:    InjectionAttack,
+			Platform:    PlatformAll,
+			Check:       checkMultiStageInjection,
+		},
+
+		// Covert exfiltration channels that MALICIOUS_DATA_EXFILTRATION cannot
+		// see, because the data does not leave over an obvious network upload.
+		{
+			ID:          "DNS_EXFILTRATION",
+			Name:        "Data Exfiltration via DNS",
+			Description: "Command encodes data into a DNS query, exfiltrating it over a channel that egress filtering rarely inspects",
+			Severity:    High,
+			Category:    MaliciousPattern,
+			Platform:    PlatformAll,
+			Check:       checkDNSExfiltration,
+		},
+		{
+			ID:          "STEGANOGRAPHIC_EXFILTRATION",
+			Name:        "Data Exfiltration via Steganography",
+			Description: "Command hides data inside another file or its metadata, so the payload survives artifact upload and review",
+			Severity:    Medium,
+			Category:    MaliciousPattern,
+			Platform:    PlatformAll,
+			Check:       checkSteganographicExfiltration,
+		},
+		{
+			ID:          "COVERT_CHANNEL_EXFILTRATION",
+			Name:        "Data Exfiltration via Covert Channel",
+			Description: "Command leaks data through a side channel such as ICMP payloads, job timing, or transfer volume",
+			Severity:    Medium,
+			Category:    MaliciousPattern,
+			Platform:    PlatformAll,
+			Check:       checkCovertChannelExfiltration,
 		},
 		{
 			ID:          "IMPOSTOR_COMMIT",

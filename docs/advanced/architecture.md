@@ -626,4 +626,4 @@ func (s *Server) healthCheck(w http.ResponseWriter, r *http.Request) {
 
 ---
 
-**Next:** [Troubleshooting](troubleshooting.md)
+**Next:** [Troubleshooting](../guides/troubleshooting.md)

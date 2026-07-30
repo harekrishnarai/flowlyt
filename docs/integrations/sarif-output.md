@@ -324,10 +324,10 @@ flowlyt scan --workflow .github/workflows/critical.yml --output sarif
 
 ## Related Documentation
 
-- [CLI Reference](cli-reference.md) - Complete command reference
-- [Configuration Guide](configuration.md) - Advanced configuration options  
+- [CLI Reference](../reference/cli-reference.md) - Complete command reference
+- [Configuration Guide](../reference/configuration.md) - Advanced configuration options  
 - [GitHub Actions Integration](cicd-integration.md) - CI/CD setup examples
-- [Security Rules](security-rules.md) - Complete rule documentation
+- [Security Rules](../reference/security-rules.md) - Complete rule documentation
 
 ## Resources
 

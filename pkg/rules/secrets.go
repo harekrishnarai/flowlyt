@@ -31,57 +31,105 @@ func checkHardcodedSecrets(workflow parser.WorkflowFile) []Finding {
 }
 
 // checkHardcodedSecretsWithConfig checks for potential secrets with configuration support
+// hardcodedSecretPatterns detect credentials embedded directly in a workflow.
+//
+// Compiled once at package initialisation. These were previously rebuilt on
+// every call, which made this rule the single most expensive check in a scan:
+// twenty-two patterns recompiled per workflow, several of them case-insensitive
+// and backtracking-prone.
+// secretPattern pairs a credential signature with the literals that must be
+// present for it to have any chance of matching.
+//
+// anchors are lowercase substrings, at least one of which the (lowercased)
+// content must contain. They are a necessary condition derived from the
+// pattern's own leading alternation, never a heuristic, so skipping a pattern
+// whose anchors are absent cannot change the result. Most workflows contain
+// none of these words, so this avoids running the majority of these
+// case-insensitive, backtracking-prone patterns at all.
+//
+// An empty anchors list means the pattern must always run.
+type secretPattern struct {
+	re      *regexp.Regexp
+	anchors []string
+}
+
+var hardcodedSecretPatterns = []secretPattern{
+	// API Keys and Generic Secrets
+	{regexp.MustCompile(`(?i)(api[_-]?key|apikey|secret|token|password|pwd|credential|auth[_-]?key)s?\s*[:=]\s*['"]([^'"{}\s]{8,})['"]`),
+		[]string{"apikey", "api_key", "api-key", "secret", "token", "password", "pwd", "credential", "authkey", "auth_key", "auth-key"}},
+
+	// Cloud Provider Secrets
+	{regexp.MustCompile(`(?i)(aws|amazon)[_-]?(access[_-]?key[_-]?id|secret[_-]?access[_-]?key|session[_-]?token)\s*[:=]\s*['"]([^'"{}\s]{16,})['"]`),
+		[]string{"aws", "amazon"}},
+	{regexp.MustCompile(`(?i)(gcp|google)[_-]?(service[_-]?account|private[_-]?key|client[_-]?email)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
+		[]string{"gcp", "google"}},
+	{regexp.MustCompile(`(?i)(azure|microsoft)[_-]?(client[_-]?secret|tenant[_-]?id|subscription[_-]?id)\s*[:=]\s*['"]([^'"{}\s]{16,})['"]`),
+		[]string{"azure", "microsoft"}},
+
+	// GitHub and Git Platform Tokens
+	{regexp.MustCompile(`(?i)(github|gitlab|bitbucket)[_-]?(token|pat|access[_-]?token|personal[_-]?access[_-]?token)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
+		[]string{"github", "gitlab", "bitbucket"}},
+	{regexp.MustCompile(`ghp_[A-Za-z0-9_]{36}`), []string{"ghp_"}}, // GitHub Personal Access Token
+	{regexp.MustCompile(`gho_[A-Za-z0-9_]{36}`), []string{"gho_"}}, // GitHub OAuth Token
+	{regexp.MustCompile(`ghu_[A-Za-z0-9_]{36}`), []string{"ghu_"}}, // GitHub User-to-Server Token
+	{regexp.MustCompile(`ghs_[A-Za-z0-9_]{36}`), []string{"ghs_"}}, // GitHub Server-to-Server Token
+	{regexp.MustCompile(`ghr_[A-Za-z0-9_]{36}`), []string{"ghr_"}}, // GitHub Refresh Token
+
+	// Database Connection Strings
+	{regexp.MustCompile(`(?i)(database[_-]?url|db[_-]?url|connection[_-]?string)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
+		[]string{"database", "dburl", "db_url", "db-url", "connection"}},
+	{regexp.MustCompile(`(?i)(mongodb|postgres|mysql|redis)[_-]?(url|uri|connection)\s*[:=]\s*['"]([^'"{}\s]{15,})['"]`),
+		[]string{"mongodb", "postgres", "mysql", "redis"}},
+
+	// JWT Tokens
+	{regexp.MustCompile(`eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*`), []string{"eyj"}},
+
+	// Private Keys
+	{regexp.MustCompile(`-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----`), []string{"-----begin"}},
+	{regexp.MustCompile(`-----BEGIN\s+OPENSSH\s+PRIVATE\s+KEY-----`), []string{"-----begin"}},
+
+	// OAuth and Client Secrets
+	{regexp.MustCompile(`(?i)(oauth[_-]?token|bearer[_-]?token|client[_-]?secret|client[_-]?id)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
+		[]string{"oauth", "bearer", "client"}},
+
+	// Slack, Discord, Webhook URLs
+	{regexp.MustCompile(`https://hooks\.slack\.com/services/[A-Za-z0-9+/]{44,48}`), []string{"hooks.slack.com"}},
+	{regexp.MustCompile(`https://discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+`), []string{"discord"}},
+
+	// High-entropy strings (potential secrets)
+	{regexp.MustCompile(`(?i)(secret|token|key|password|pwd|credential)\s*[:=]\s*['"]([A-Za-z0-9+/]{32,})['"]`),
+		[]string{"secret", "token", "key", "password", "pwd", "credential"}},
+
+	// Cryptocurrency Keys
+	{regexp.MustCompile(`(?i)(bitcoin|btc|ethereum|eth)[_-]?(private[_-]?key|wallet[_-]?key)\s*[:=]\s*['"]([^'"{}\s]{25,})['"]`),
+		[]string{"bitcoin", "btc", "ethereum", "eth"}},
+
+	// Email Service Keys
+	{regexp.MustCompile(`(?i)(sendgrid|mailgun|ses)[_-]?(api[_-]?key|secret)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
+		[]string{"sendgrid", "mailgun", "ses"}},
+
+	// Generic high-entropy strings that could be secrets. No anchor is possible,
+	// so this one always runs.
+	{regexp.MustCompile(`['"][A-Za-z0-9+/]{40,}={0,2}['"]`), nil},
+}
+
+// mayMatch reports whether the content can possibly contain this pattern.
+func (sp secretPattern) mayMatch(lowerContent string) bool {
+	if len(sp.anchors) == 0 {
+		return true
+	}
+	for _, a := range sp.anchors {
+		if strings.Contains(lowerContent, a) {
+			return true
+		}
+	}
+	return false
+}
+
 func checkHardcodedSecretsWithConfig(workflow parser.WorkflowFile, config interface{}) []Finding {
 	var findings []Finding
 
-	// Enhanced secret patterns with more comprehensive detection
-	secretPatterns := []*regexp.Regexp{
-		// API Keys and Generic Secrets
-		regexp.MustCompile(`(?i)(api[_-]?key|apikey|secret|token|password|pwd|credential|auth[_-]?key)s?\s*[:=]\s*['"]([^'"{}\s]{8,})['"]`),
-
-		// Cloud Provider Secrets
-		regexp.MustCompile(`(?i)(aws|amazon)[_-]?(access[_-]?key[_-]?id|secret[_-]?access[_-]?key|session[_-]?token)\s*[:=]\s*['"]([^'"{}\s]{16,})['"]`),
-		regexp.MustCompile(`(?i)(gcp|google)[_-]?(service[_-]?account|private[_-]?key|client[_-]?email)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
-		regexp.MustCompile(`(?i)(azure|microsoft)[_-]?(client[_-]?secret|tenant[_-]?id|subscription[_-]?id)\s*[:=]\s*['"]([^'"{}\s]{16,})['"]`),
-
-		// GitHub and Git Platform Tokens
-		regexp.MustCompile(`(?i)(github|gitlab|bitbucket)[_-]?(token|pat|access[_-]?token|personal[_-]?access[_-]?token)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
-		regexp.MustCompile(`ghp_[A-Za-z0-9_]{36}`), // GitHub Personal Access Token
-		regexp.MustCompile(`gho_[A-Za-z0-9_]{36}`), // GitHub OAuth Token
-		regexp.MustCompile(`ghu_[A-Za-z0-9_]{36}`), // GitHub User-to-Server Token
-		regexp.MustCompile(`ghs_[A-Za-z0-9_]{36}`), // GitHub Server-to-Server Token
-		regexp.MustCompile(`ghr_[A-Za-z0-9_]{36}`), // GitHub Refresh Token
-
-		// Database Connection Strings
-		regexp.MustCompile(`(?i)(database[_-]?url|db[_-]?url|connection[_-]?string)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
-		regexp.MustCompile(`(?i)(mongodb|postgres|mysql|redis)[_-]?(url|uri|connection)\s*[:=]\s*['"]([^'"{}\s]{15,})['"]`),
-
-		// JWT Tokens
-		regexp.MustCompile(`eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*`), // JWT Token pattern
-
-		// Private Keys
-		regexp.MustCompile(`-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----`),
-		regexp.MustCompile(`-----BEGIN\s+OPENSSH\s+PRIVATE\s+KEY-----`),
-
-		// OAuth and Client Secrets
-		regexp.MustCompile(`(?i)(oauth[_-]?token|bearer[_-]?token|client[_-]?secret|client[_-]?id)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
-
-		// Slack, Discord, Webhook URLs
-		regexp.MustCompile(`https://hooks\.slack\.com/services/[A-Za-z0-9+/]{44,48}`),
-		regexp.MustCompile(`https://discord(app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_-]+`),
-
-		// High-entropy strings (potential secrets)
-		regexp.MustCompile(`(?i)(secret|token|key|password|pwd|credential)\s*[:=]\s*['"]([A-Za-z0-9+/]{32,})['"]`),
-
-		// Cryptocurrency Keys
-		regexp.MustCompile(`(?i)(bitcoin|btc|ethereum|eth)[_-]?(private[_-]?key|wallet[_-]?key)\s*[:=]\s*['"]([^'"{}\s]{25,})['"]`),
-
-		// Email Service Keys
-		regexp.MustCompile(`(?i)(sendgrid|mailgun|ses)[_-]?(api[_-]?key|secret)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
-
-		// Generic high-entropy strings that could be secrets
-		regexp.MustCompile(`['"][A-Za-z0-9+/]{40,}={0,2}['"]`), // Base64-like patterns
-	}
+	secretPatterns := hardcodedSecretPatterns
 
 	content := string(workflow.Content)
 
@@ -103,11 +151,20 @@ func checkHardcodedSecretsWithConfig(workflow parser.WorkflowFile, config interf
 	// Join the processed content back together
 	content = strings.Join(processedLines, "\n")
 
+	// Built once for the preprocessed content and reused for every match.
+	secretLineMapper := linenum.NewLineMapperFromString(content)
+
 	// Track found secrets to avoid duplicates
 	foundSecrets := make(map[string]bool)
 
+	// Lowercased once and reused as the anchor pre-filter for every pattern.
+	lowerContent := strings.ToLower(content)
+
 	for _, pattern := range secretPatterns {
-		matches := pattern.FindAllStringSubmatchIndex(content, -1)
+		if !pattern.mayMatch(lowerContent) {
+			continue
+		}
+		matches := pattern.re.FindAllStringSubmatchIndex(content, -1)
 		for _, match := range matches {
 			matchStr := content[match[0]:match[1]]
 
@@ -122,20 +179,21 @@ func checkHardcodedSecretsWithConfig(workflow parser.WorkflowFile, config interf
 			}
 
 			// Additional entropy check for generic patterns
-			if isGenericPattern(pattern) && !hasHighEntropy(matchStr, 3.5) {
+			if isGenericPattern(pattern.re) && !hasHighEntropy(matchStr, 3.5) {
 				continue
 			}
 
-			// Calculate line number based on character offset
-			lineNumber := 1
-			for i := 0; i < match[0]; i++ {
-				if content[i] == '\n' {
-					lineNumber++
-				}
+			// Resolve the line via binary search over line offsets. Counting
+			// newlines from the start of the file instead would be O(offset)
+			// for every match, making the whole rule quadratic on files with
+			// many matches.
+			lineNumber := secretLineMapper.CharToLine(match[0])
+			if lineNumber == 0 {
+				lineNumber = 1
 			}
 
 			// Determine severity based on secret type
-			severity := determineSecretSeverity(matchStr, pattern)
+			severity := determineSecretSeverity(matchStr, pattern.re)
 
 			findings = append(findings, Finding{
 				RuleID:      "HARDCODED_SECRET",
@@ -611,7 +669,7 @@ func checkCredentialExfiltration(workflow parser.WorkflowFile) []Finding {
 						RuleName:    "Credential Exfiltration",
 						Description: "Command pattern detected that could exfiltrate secrets or credentials to external systems",
 						Severity:    Critical,
-						Category:    SecretsExposure,
+						Category:    SecretExposure,
 						FilePath:    workflow.Path,
 						JobName:     jobName,
 						StepName:    step.Name,
@@ -640,7 +698,7 @@ func checkCredentialExfiltration(workflow parser.WorkflowFile) []Finding {
 						RuleName:    "Credential Exfiltration",
 						Description: "Secrets are being written to logs or outputs where they may be exposed",
 						Severity:    High,
-						Category:    SecretsExposure,
+						Category:    SecretExposure,
 						FilePath:    workflow.Path,
 						JobName:     jobName,
 						StepName:    step.Name,
@@ -739,7 +797,7 @@ func checkSecretsInherit(workflow parser.WorkflowFile) []Finding {
 								RuleName:    "Secret Inheritance Issues",
 								Description: "Reusable workflow inherits all secrets without restrictions",
 								Severity:    High,
-								Category:    SecretsExposure,
+								Category:    SecretExposure,
 								FilePath:    workflow.Path,
 								JobName:     "workflow",
 								StepName:    "workflow_call",
@@ -817,7 +875,7 @@ func checkOverprovisionedSecrets(workflow parser.WorkflowFile) []Finding {
 				RuleName:    "Over-provisioned Secrets",
 				Description: fmt.Sprintf("Job has access to %d secrets but appears to use only %d", secretCount, len(usedSecrets)),
 				Severity:    Medium,
-				Category:    SecretsExposure,
+				Category:    SecretExposure,
 				FilePath:    workflow.Path,
 				JobName:     jobName,
 				StepName:    "job_configuration",
@@ -832,6 +890,29 @@ func checkOverprovisionedSecrets(workflow parser.WorkflowFile) []Finding {
 }
 
 // checkUnredactedSecrets detects secrets that may be logged in plaintext
+// unredactedSecretPattern is a precompiled pattern for checkUnredactedSecrets.
+//
+// These are compiled once at package initialisation rather than inside the
+// job/step loop: recompiling them per step made regex compilation the single
+// largest source of allocation in a scan.
+type unredactedSecretPattern struct {
+	re *regexp.Regexp
+	// envDump marks patterns that dump the environment, which is serious but
+	// less certain than an explicit secret reference.
+	envDump bool
+}
+
+var unredactedSecretPatterns = []unredactedSecretPattern{
+	{re: regexp.MustCompile(`(?i)echo.*\$\{.*secrets\.`)},
+	{re: regexp.MustCompile(`(?i)printf.*\$\{.*secrets\.`)},
+	{re: regexp.MustCompile(`(?i)cat.*\$\{.*secrets\.`)},
+	{re: regexp.MustCompile(`(?i)curl.*-H.*\$\{.*secrets\.`)},
+	{re: regexp.MustCompile(`(?i)wget.*--header.*\$\{.*secrets\.`)},
+	{re: regexp.MustCompile(`(?i)env\s*\|.*grep`), envDump: true},
+	{re: regexp.MustCompile(`(?i)printenv`), envDump: true},
+	{re: regexp.MustCompile(`(?i)set\s*\|.*grep`)},
+}
+
 func checkUnredactedSecrets(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
@@ -847,21 +928,8 @@ func checkUnredactedSecrets(workflow parser.WorkflowFile) []Finding {
 				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
-			// Check for patterns that might log secrets
-			dangerousPatterns := []string{
-				`echo.*\$\{.*secrets\.`,
-				`printf.*\$\{.*secrets\.`,
-				`cat.*\$\{.*secrets\.`,
-				`curl.*-H.*\$\{.*secrets\.`,
-				`wget.*--header.*\$\{.*secrets\.`,
-				`env\s*\|.*grep`,
-				`printenv`,
-				`set\s*\|.*grep`,
-			}
-
-			for _, pattern := range dangerousPatterns {
-				re := regexp.MustCompile(`(?i)` + pattern)
-				if re.MatchString(step.Run) {
+			for _, pattern := range unredactedSecretPatterns {
+				if pattern.re.MatchString(step.Run) {
 					linePattern := linenum.FindPattern{
 						Key:   "run",
 						Value: step.Run,
@@ -873,7 +941,7 @@ func checkUnredactedSecrets(workflow parser.WorkflowFile) []Finding {
 					}
 
 					severity := Critical
-					if strings.Contains(pattern, "env") || strings.Contains(pattern, "printenv") {
+					if pattern.envDump {
 						severity = High // Environment dumps are high but not critical
 					}
 
@@ -882,7 +950,7 @@ func checkUnredactedSecrets(workflow parser.WorkflowFile) []Finding {
 						RuleName:    "Unredacted Secrets in Logs",
 						Description: "Command may log secrets in plaintext to build logs",
 						Severity:    severity,
-						Category:    SecretsExposure,
+						Category:    SecretExposure,
 						FilePath:    workflow.Path,
 						JobName:     jobName,
 						StepName:    stepName,
