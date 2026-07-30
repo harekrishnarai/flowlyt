@@ -442,19 +442,33 @@ func convertSeverity(severity string) (rules.Severity, error) {
 	}
 }
 
-// convertCategory converts string category to rules.Category
+// convertCategory converts string category to rules.Category.
+//
+// Every category the engine emits is accepted, so a custom rule can be filed
+// under the same taxonomy as the built-in rules. "SECRETS_EXPOSURE" is accepted
+// as a deprecated spelling of "SECRET_EXPOSURE" and normalises to it.
 func convertCategory(category string) (rules.Category, error) {
-	switch strings.ToUpper(category) {
+	switch strings.ToUpper(strings.TrimSpace(category)) {
 	case "MALICIOUS_PATTERN":
 		return rules.MaliciousPattern, nil
 	case "MISCONFIGURATION":
 		return rules.Misconfiguration, nil
-	case "SECRET_EXPOSURE":
+	case "SECRET_EXPOSURE", "SECRETS_EXPOSURE":
 		return rules.SecretExposure, nil
 	case "SHELL_OBFUSCATION":
 		return rules.ShellObfuscation, nil
 	case "POLICY_VIOLATION":
 		return rules.PolicyViolation, nil
+	case "SUPPLY_CHAIN":
+		return rules.SupplyChain, nil
+	case "INJECTION_ATTACK":
+		return rules.InjectionAttack, nil
+	case "ACCESS_CONTROL":
+		return rules.AccessControl, nil
+	case "PRIVILEGE_ESCALATION":
+		return rules.PrivilegeEscalation, nil
+	case "DATA_EXPOSURE":
+		return rules.DataExposure, nil
 	default:
 		return rules.Misconfiguration, fmt.Errorf("invalid category: %s", category)
 	}

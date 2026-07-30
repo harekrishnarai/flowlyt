@@ -872,4 +872,4 @@ jq -s '.[0] + .[1]' flowlyt-report.json dependency-report.json > combined-report
 
 ---
 
-**Next:** [Report Generation](reporting.md)
+**Next:** [Report Generation](../reference/reporting.md)

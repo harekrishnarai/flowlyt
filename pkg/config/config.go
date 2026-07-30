@@ -46,6 +46,21 @@ type Rules struct {
 	Disabled       []string       `yaml:"disabled" json:"disabled"`
 	CustomRules    []CustomRule   `yaml:"custom_rules" json:"custom_rules"`
 	FalsePositives FalsePositives `yaml:"false_positives" json:"false_positives"`
+	ForbiddenUses  ForbiddenUses  `yaml:"forbidden_uses" json:"forbidden_uses"`
+}
+
+// ForbiddenUses configures an allowlist or denylist of permitted `uses:`
+// clauses. It is opt-in: when both lists are empty the corresponding rule does
+// nothing.
+//
+// Allow and Deny are mutually exclusive. Entries are repository patterns of the
+// form `owner/repo`, `owner/*` (any repository under an owner), or `*` .
+type ForbiddenUses struct {
+	// Allow, when non-empty, permits only matching actions; everything else
+	// produces a finding.
+	Allow []string `yaml:"allow" json:"allow"`
+	// Deny, when non-empty, permits everything except matching actions.
+	Deny []string `yaml:"deny" json:"deny"`
 }
 
 // CustomRule represents a user-defined rule
@@ -414,11 +429,9 @@ func (config *Config) IsRuleEnabled(ruleID string) bool {
 func (config *Config) shouldIgnore(text string, patterns, stringList []string) bool {
 	textLower := strings.ToLower(text)
 
-	// Check exact string matches
+	// Check string matches
 	for _, str := range stringList {
-		if textLower == strings.ToLower(str) ||
-			strings.HasPrefix(textLower, strings.ToLower(str)) ||
-			strings.HasSuffix(textLower, strings.ToLower(str)) {
+		if matchesIgnoreString(textLower, strings.ToLower(str)) {
 			return true
 		}
 	}
@@ -431,6 +444,41 @@ func (config *Config) shouldIgnore(text string, patterns, stringList []string) b
 	}
 
 	return false
+}
+
+// matchesIgnoreString reports whether text should be ignored because of the
+// ignore string str. Both arguments must already be lower-cased.
+//
+// An ignore string matches the whole text, or appears at its start or end as a
+// complete word. The word-boundary requirement is essential: the default ignore
+// list contains short generic terms such as "test" and "key", and without it a
+// value like "actions/checkout@latest" would be ignored merely because it ends
+// in the letters "test". Identifier separators such as "_" and "-" do not count
+// as word characters, so conventional names like "my_test" still match.
+func matchesIgnoreString(text, str string) bool {
+	if str == "" {
+		return false
+	}
+	if text == str {
+		return true
+	}
+
+	if strings.HasPrefix(text, str) && !isWordChar(rune(text[len(str)])) {
+		return true
+	}
+
+	if strings.HasSuffix(text, str) && !isWordChar(rune(text[len(text)-len(str)-1])) {
+		return true
+	}
+
+	return false
+}
+
+// isWordChar reports whether r is a letter or digit, i.e. a character that
+// would make an adjacent match part of a larger word rather than a token of
+// its own.
+func isWordChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 }
 
 func matchGlobPattern(pattern, path string) bool {

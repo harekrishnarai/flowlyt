@@ -381,4 +381,4 @@ Organization analysis is an active area of development. Contributions are welcom
 - Integration examples
 - Documentation improvements
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines.
+See [CONTRIBUTING.md](../../CONTRIBUTING.md) for contribution guidelines.

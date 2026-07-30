@@ -246,7 +246,7 @@ func (c *PerplexityClient) Close() error {
 }
 
 // VerifyBatch analyzes a batch of findings of the same class using Perplexity.
-func (c *PerplexityClient) VerifyBatch(ctx context.Context, class string, findings []rules.Finding) ([]BatchVerificationResult, error) {
+func (c *PerplexityClient) VerifyBatch(ctx context.Context, class string, findings []ContextualFinding) ([]BatchVerificationResult, error) {
 	if len(findings) == 0 {
 		return nil, fmt.Errorf("VerifyBatch called with empty findings slice")
 	}

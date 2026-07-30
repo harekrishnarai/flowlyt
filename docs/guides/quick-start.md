@@ -137,8 +137,8 @@ platforms:
 
 ## Next Steps
 
-- [Configuration Guide](configuration.md) - Detailed configuration options
-- [AST Analysis](ast-analysis.md) - Advanced static analysis features
-- [Custom Rules](custom-rules.md) - Creating your own security rules
-- [Security Rules](security-rules.md) - Complete list of built-in rules
-- [CLI Reference](cli-reference.md) - Complete command reference
+- [Configuration Guide](../reference/configuration.md) - Detailed configuration options
+- [AST Analysis](../features/ast-analysis.md) - Advanced static analysis features
+- [Custom Rules](../reference/custom-rules.md) - Creating your own security rules
+- [Security Rules](../reference/security-rules.md) - Complete list of built-in rules
+- [CLI Reference](../reference/cli-reference.md) - Complete command reference

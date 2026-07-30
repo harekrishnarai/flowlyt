@@ -42,6 +42,20 @@ rules:
       remediation: "How to fix this issue"
 ```
 
+**Valid `category` values**
+
+A custom rule may use any category the built-in rules use, so your findings sort
+alongside them:
+
+`MALICIOUS_PATTERN`, `MISCONFIGURATION`, `SECRET_EXPOSURE`, `SHELL_OBFUSCATION`,
+`POLICY_VIOLATION`, `SUPPLY_CHAIN`, `INJECTION_ATTACK`, `ACCESS_CONTROL`,
+`PRIVILEGE_ESCALATION`, `DATA_EXPOSURE`
+
+An unrecognised category is an error and the rule falls back to
+`MISCONFIGURATION`. `SECRETS_EXPOSURE` is accepted as a deprecated spelling and
+normalises to `SECRET_EXPOSURE`. See
+[Rule Categories](security-rules.md#rule-categories).
+
 ### 2. Script-Based Rules
 
 For complex logic that can't be expressed with regex.

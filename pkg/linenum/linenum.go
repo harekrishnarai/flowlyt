@@ -18,7 +18,9 @@ package linenum
 
 import (
 	"regexp"
+	"sort"
 	"strings"
+	"sync"
 )
 
 // LineMapper provides line number mapping and calculation services
@@ -26,25 +28,136 @@ type LineMapper struct {
 	content     string
 	lines       []string
 	lineToChar  []int
-	charToLine  map[int]int
 	initialized bool
 }
 
-// NewLineMapper creates a new line mapper for the given content
-func NewLineMapper(content []byte) *LineMapper {
-	lm := &LineMapper{
-		content:    string(content),
-		charToLine: make(map[int]int),
+// MapperCache memoises mappers by content.
+//
+// Every rule builds a mapper for the workflow it is scanning, so without
+// memoisation a single workflow is split into lines once per rule — around
+// seventy times — which was the largest single source of allocation in a scan.
+//
+// A cache is a value that a caller owns, so its lifetime can be tied to a scan
+// rather than to the process. The package keeps one default instance for
+// callers that do not want to manage their own; see DefaultCache.
+//
+// Mappers are immutable once constructed, so a cached mapper is safe to share
+// between rules and across goroutines.
+type MapperCache struct {
+	mu      sync.RWMutex
+	entries map[uint64]*LineMapper
+	limit   int
+}
+
+// DefaultMapperCacheLimit bounds the default cache. A repository has far fewer
+// workflows than this, so in practice the cache holds an entire scan.
+const DefaultMapperCacheLimit = 512
+
+// NewMapperCache creates a cache holding at most limit mappers. A limit of zero
+// or less uses DefaultMapperCacheLimit.
+func NewMapperCache(limit int) *MapperCache {
+	if limit <= 0 {
+		limit = DefaultMapperCacheLimit
 	}
+	return &MapperCache{entries: make(map[uint64]*LineMapper), limit: limit}
+}
+
+// defaultCache backs NewLineMapper.
+var defaultCache = NewMapperCache(DefaultMapperCacheLimit)
+
+// DefaultCache returns the cache used by NewLineMapper, so that a caller can
+// bound its lifetime — typically by resetting it at the start of a scan.
+func DefaultCache() *MapperCache { return defaultCache }
+
+// Get returns a mapper for the content, building one on a miss.
+//
+// A nil cache is valid and simply builds without memoising, so callers need no
+// special case when they do not want caching.
+func (c *MapperCache) Get(content []byte) *LineMapper {
+	if c == nil {
+		lm := &LineMapper{content: string(content)}
+		lm.initialize()
+		return lm
+	}
+
+	key := hashBytes(content)
+
+	c.mu.RLock()
+	cached, ok := c.entries[key]
+	c.mu.RUnlock()
+
+	// Compare the content as well as the hash: a collision must never return
+	// line numbers belonging to a different file.
+	if ok && cached.content == string(content) {
+		return cached
+	}
+
+	lm := &LineMapper{content: string(content)}
 	lm.initialize()
+
+	c.mu.Lock()
+	// Evict a single entry rather than clearing wholesale, which would discard
+	// the workflow currently being scanned along with everything else.
+	if len(c.entries) >= c.limit {
+		for k := range c.entries {
+			delete(c.entries, k)
+			break
+		}
+	}
+	c.entries[key] = lm
+	c.mu.Unlock()
+
 	return lm
+}
+
+// Len reports how many mappers are cached.
+func (c *MapperCache) Len() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.entries)
+}
+
+// Reset discards every cached mapper, releasing the memory held for a completed
+// scan.
+func (c *MapperCache) Reset() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.entries = make(map[uint64]*LineMapper)
+	c.mu.Unlock()
+}
+
+// NewLineMapper creates a line mapper for the given content, memoised in the
+// package default cache.
+func NewLineMapper(content []byte) *LineMapper {
+	return defaultCache.Get(content)
+}
+
+// hashBytes computes an FNV-1a 64-bit hash of content.
+//
+// This is a cache key only, never a security boundary: collisions are resolved
+// by comparing the content itself.
+func hashBytes(content []byte) uint64 {
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+	h := uint64(offset64)
+	for _, b := range content {
+		h ^= uint64(b)
+		h *= prime64
+	}
+	return h
 }
 
 // NewLineMapperFromString creates a new line mapper from string content
 func NewLineMapperFromString(content string) *LineMapper {
 	lm := &LineMapper{
-		content:    content,
-		charToLine: make(map[int]int),
+		content: content,
 	}
 	lm.initialize()
 	return lm
@@ -59,19 +172,12 @@ func (lm *LineMapper) initialize() {
 	lm.lines = strings.Split(lm.content, "\n")
 	lm.lineToChar = make([]int, len(lm.lines)+1)
 
-	// Build line-to-character position mapping
+	// Build line-to-character position mapping. lineToChar is sorted by
+	// construction, which is what lets CharToLine binary search it instead of
+	// materialising a position-to-line table.
 	lm.lineToChar[0] = 0
 	for i, line := range lm.lines {
 		lm.lineToChar[i+1] = lm.lineToChar[i] + len(line) + 1 // +1 for newline
-	}
-
-	// Build reverse mapping: character position to line number
-	for lineNum := 0; lineNum < len(lm.lineToChar)-1; lineNum++ {
-		start := lm.lineToChar[lineNum]
-		end := lm.lineToChar[lineNum+1]
-		for charPos := start; charPos < end; charPos++ {
-			lm.charToLine[charPos] = lineNum + 1 // 1-based line numbers
-		}
 	}
 
 	lm.initialized = true
@@ -288,6 +394,12 @@ func (lm *LineMapper) addContext(result *LineResult, contextBefore, contextAfter
 }
 
 // CharToLine converts a character position to line number (1-based)
+//
+// lineToChar holds each line's start offset in ascending order, so the line
+// containing a position is found by binary search in O(log lines). An explicit
+// position-to-line table would answer in O(1) but costs O(content length) time
+// and memory to build, which is a poor trade when the mapper is constructed
+// once per rule per workflow.
 func (lm *LineMapper) CharToLine(charPos int) int {
 	if !lm.initialized {
 		lm.initialize()
@@ -298,18 +410,17 @@ func (lm *LineMapper) CharToLine(charPos int) int {
 		return 0
 	}
 
-	if lineNum, exists := lm.charToLine[charPos]; exists {
-		return lineNum
+	// Smallest index whose start offset is beyond charPos; because
+	// lineToChar[0] is 0 and charPos is non-negative, that index is also the
+	// 1-based number of the line containing charPos.
+	idx := sort.Search(len(lm.lineToChar), func(i int) bool {
+		return lm.lineToChar[i] > charPos
+	})
+	if idx >= len(lm.lineToChar) {
+		return 0
 	}
 
-	// Fallback: binary search through lineToChar array
-	for i := 1; i < len(lm.lineToChar); i++ {
-		if lm.lineToChar[i] > charPos {
-			return i
-		}
-	}
-
-	return 0
+	return idx
 }
 
 // LineToChar converts a line number to starting character position

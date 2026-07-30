@@ -199,7 +199,7 @@ The enhanced formatter has minimal performance impact:
 
 ## Examples
 
-See [examples/cli-output-example.sh](../examples/cli-output-example.sh) for a complete example of the enhanced CLI output.
+See [examples/cli-output-example.sh](../../examples/cli-output-example.sh) for a complete example of the enhanced CLI output.
 
 ## Feedback and Issues
 

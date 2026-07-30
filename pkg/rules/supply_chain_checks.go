@@ -303,6 +303,15 @@ func isMutableRef(ref string) bool {
 }
 
 // checkRefConfusion detects git reference confusion vulnerabilities
+// gitMutableRefPatterns match git commands that target a mutable branch rather
+// than an immutable commit. Compiled once at package initialisation rather than
+// per step.
+var gitMutableRefPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)git\s+checkout\s+(master|main|develop)`),
+	regexp.MustCompile(`(?i)git\s+pull\s+origin\s+(master|main)`),
+	regexp.MustCompile(`(?i)git\s+fetch\s+.*\s+(master|main)`),
+}
+
 func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
@@ -377,14 +386,7 @@ func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 
 			// Check for git commands with potentially confusing refs in run steps
 			if step.Run != "" && strings.Contains(step.Run, "git") {
-				gitRefPatterns := []string{
-					`git\s+checkout\s+(master|main|develop)`,
-					`git\s+pull\s+origin\s+(master|main)`,
-					`git\s+fetch\s+.*\s+(master|main)`,
-				}
-
-				for _, pattern := range gitRefPatterns {
-					re := regexp.MustCompile(`(?i)` + pattern)
+				for _, re := range gitMutableRefPatterns {
 					if re.MatchString(step.Run) {
 						linePattern := linenum.FindPattern{
 							Key:   "run",
@@ -807,7 +809,7 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 						RuleName:    "Credential Persistence Risk",
 						Description: description,
 						Severity:    severity,
-						Category:    SecretsExposure,
+						Category:    SecretExposure,
 						FilePath:    workflow.Path,
 						JobName:     jobName,
 						StepName:    stepName,

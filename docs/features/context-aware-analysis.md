@@ -396,8 +396,8 @@ jobs:
 
 ## 📚 Related Documentation
 
-- [Multi-Repository Analysis Results](../../MULTI_REPO_CONTEXT_AWARE_ANALYSIS.md)
-- [Summary Table](../../CONTEXT_AWARE_SUMMARY_TABLE.md)
+- Multi-Repository Analysis Results
+- Summary Table
 - [Security Rules Reference](../reference/security-rules.md)
 - [Configuration Guide](../reference/configuration.md)
 

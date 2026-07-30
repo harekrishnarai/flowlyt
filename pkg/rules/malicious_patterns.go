@@ -128,10 +128,24 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 		// Ngrok and other tunneling services
 		regexp.MustCompile(`(?i)(ngrok|serveo|pagekite|localtunnel|expose|cloudflared)\b`),
 
+		// Tunnelling tools invoked by a name that does not contain the service
+		// name, which the pattern above cannot match: `lt --port 8000`
+		// (localtunnel's CLI alias) and `bore local 8080`.
+		regexp.MustCompile(`(?i)(^|[;&|]\s*)(lt\s+--port|bore\s+local)\b`),
+
+		// Data re-encoded and piped straight to the network. Base64 is covered
+		// by the secrets-to-curl pattern below; these cover the hex and
+		// URL-encoding variants used to evade content inspection.
+		regexp.MustCompile(`(?i)\|\s*(xxd|hexdump|base32|jq\s+-sRr\s+@uri)\b[^|]*\|\s*(curl|wget|nc)\b`),
+
 		// Suspicious URL patterns with potential webhook/dump sites
 		regexp.MustCompile(`(?i)(webhook|paste|bin|dump|collect|exfil|c2|attacker|command)\.(com|net|org|io|me)`),
 
 		// Specific known exfiltration services
+		// Intentionally unanchored: this searches command text for a known
+		// exfiltration endpoint, so it must match wherever the host appears.
+		// The unanchored-URL warning static analysis raises applies to patterns
+		// used to authorise a URL, which this is not.
 		regexp.MustCompile(`(?i)(webhook\.site|requestbin\.com|pipedream\.net|hookbin\.com|beeceptor\.com)`),
 
 		// Suspicious POST operations, especially with secret/token/env content
@@ -603,6 +617,28 @@ func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {
 }
 
 // checkObfuscationDetection detects obfuscated code patterns
+// obfuscationPattern is a precompiled obfuscation signature.
+//
+// Compiled once at package initialisation rather than per step: recompiling
+// these inside the job/step loop made regex compilation a dominant cost.
+type obfuscationPattern struct {
+	re          *regexp.Regexp
+	description string
+	severity    Severity
+}
+
+var obfuscationPatterns = []obfuscationPattern{
+	{regexp.MustCompile(`(?i)\$\{[^}]*\[.*\*.*\].*\}`), "Variable expansion with wildcards", High},
+	{regexp.MustCompile(`(?i)eval\s*\$\(.*base64.*\)`), "Base64 decoded eval", Critical},
+	{regexp.MustCompile(`(?i)\$\(\$\(.*\)\)`), "Nested command substitution", Medium},
+	// Non-printable character detection was removed: too many false positives
+	// against ordinary GitHub Actions syntax.
+	{regexp.MustCompile(`(?i)\\x[0-9a-f]{2}`), "Hex-encoded characters", Medium},
+	{regexp.MustCompile(`(?i)\$\{[^}]*#[^}]*\$\{\{[^}]*\}\}[^}]*\}`), "Parameter expansion with user input pattern removal", High},
+	{regexp.MustCompile(`(?i)\|\s*xxd\s*-r`), "Hex decode pipeline", High},
+	{regexp.MustCompile(`(?i)printf.*\\[0-9]{3}`), "Octal escape sequences", Medium},
+}
+
 func checkObfuscationDetection(workflow parser.WorkflowFile) []Finding {
 	var findings []Finding
 	lineMapper := linenum.NewLineMapper(workflow.Content)
@@ -618,26 +654,8 @@ func checkObfuscationDetection(workflow parser.WorkflowFile) []Finding {
 				stepName = fmt.Sprintf("Step %d", stepIdx+1)
 			}
 
-			// Check for various obfuscation patterns
-			obfuscationPatterns := []struct {
-				pattern     string
-				description string
-				severity    Severity
-			}{
-				{`\$\{[^}]*\[.*\*.*\].*\}`, "Variable expansion with wildcards", High},
-				{`eval\s*\$\(.*base64.*\)`, "Base64 decoded eval", Critical},
-				{`\$\(\$\(.*\)\)`, "Nested command substitution", Medium},
-				// Removed: Non-printable characters - too many false positives with GitHub Actions syntax
-				{`\\x[0-9a-f]{2}`, "Hex-encoded characters", Medium},
-				// More specific pattern for potentially dangerous parameter expansion
-				{`\$\{[^}]*#[^}]*\$\{\{[^}]*\}\}[^}]*\}`, "Parameter expansion with user input pattern removal", High},
-				{`\|\s*xxd\s*-r`, "Hex decode pipeline", High},
-				{`printf.*\\[0-9]{3}`, "Octal escape sequences", Medium},
-			}
-
 			for _, obfPattern := range obfuscationPatterns {
-				re := regexp.MustCompile(`(?i)` + obfPattern.pattern)
-				if re.MatchString(step.Run) {
+				if obfPattern.re.MatchString(step.Run) {
 					pattern := linenum.FindPattern{
 						Key:   "run",
 						Value: step.Run,

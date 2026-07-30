@@ -43,7 +43,7 @@
 
 - [CLI Reference](reference/cli-reference.md) - All commands and options
 - [Configuration](reference/configuration.md) - Configure Flowlyt behavior
-- [Security Rules](reference/security-rules.md) - All 85+ security rules
+- [Security Rules](reference/security-rules.md) - All 110+ security rules
 - [Custom Rules](reference/custom-rules.md) - Write your own rules
 - [Reporting](reference/reporting.md) - Output formats and reporting
 

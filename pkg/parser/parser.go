@@ -42,6 +42,7 @@ type Workflow struct {
 	Jobs        map[string]Job         `yaml:"jobs"`
 	Permissions interface{}            `yaml:"permissions,omitempty"`
 	Defaults    map[string]interface{} `yaml:"defaults,omitempty"`
+	Concurrency interface{}            `yaml:"concurrency,omitempty"` // string group name or map with group/cancel-in-progress
 }
 
 // Job represents a job in a GitHub Actions workflow
@@ -63,6 +64,7 @@ type Job struct {
 	Strategy        map[string]interface{} `yaml:"strategy,omitempty"`
 	Outputs         map[string]string      `yaml:"outputs,omitempty"`
 	Environment     interface{}            `yaml:"environment,omitempty"`
+	Concurrency     interface{}            `yaml:"concurrency,omitempty"` // string group name or map with group/cancel-in-progress
 }
 
 // Step represents a step in a GitHub Actions job

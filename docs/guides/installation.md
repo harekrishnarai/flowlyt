@@ -189,10 +189,10 @@ flowlyt --platform gitlab --workflow .gitlab-ci.yml
 
 ## Next Steps
 
-1. **Learn about Configuration**: Set up a [`.flowlyt.yml` configuration file](configuration.md)
-2. **Explore Security Rules**: Understand the [built-in security rules](security-rules.md)
-3. **Custom Rules**: Create [custom security rules](custom-rules.md) for your organization
-4. **CI/CD Integration**: Integrate Flowlyt into your [CI/CD pipeline](cicd-integration.md)
+1. **Learn about Configuration**: Set up a [`.flowlyt.yml` configuration file](../reference/configuration.md)
+2. **Explore Security Rules**: Understand the [built-in security rules](../reference/security-rules.md)
+3. **Custom Rules**: Create [custom security rules](../reference/custom-rules.md) for your organization
+4. **CI/CD Integration**: Integrate Flowlyt into your [CI/CD pipeline](../integrations/cicd-integration.md)
 
 ## Troubleshooting
 
@@ -229,4 +229,4 @@ For more troubleshooting help, see the [Troubleshooting Guide](troubleshooting.m
 
 ---
 
-**Next:** [Multi-Platform Support](multi-platform-support.md)
+**Next:** [Multi-Platform Support](../features/multi-platform-support.md)

