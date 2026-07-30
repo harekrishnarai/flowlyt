@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/matcher"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
@@ -113,7 +114,39 @@ var hardcodedSecretPatterns = []secretPattern{
 	{regexp.MustCompile(`['"][A-Za-z0-9+/]{40,}={0,2}['"]`), nil},
 }
 
+// secretAnchorMatcher answers, in one pass over the content, which anchor
+// literals are present. Checking each anchor with strings.Contains instead
+// means one full scan per literal — and those scans all run to completion
+// precisely in the common case where a workflow contains none of them.
+//
+// Built once at package initialisation from the anchors declared above, so the
+// table above stays the single source of truth.
+var secretAnchorMatcher, secretAnchorIDs = buildSecretAnchorIndex()
+
+func buildSecretAnchorIndex() (*matcher.Matcher, [][]int) {
+	var literals []string
+	byLiteral := map[string]int{}
+	ids := make([][]int, len(hardcodedSecretPatterns))
+
+	for i, sp := range hardcodedSecretPatterns {
+		for _, a := range sp.anchors {
+			id, seen := byLiteral[a]
+			if !seen {
+				id = len(literals)
+				byLiteral[a] = id
+				literals = append(literals, a)
+			}
+			ids[i] = append(ids[i], id)
+		}
+	}
+
+	return matcher.New(literals), ids
+}
+
 // mayMatch reports whether the content can possibly contain this pattern.
+//
+// Retained as the reference definition of the anchor semantics; the scan path
+// uses the shared automaton, and a test asserts the two agree.
 func (sp secretPattern) mayMatch(lowerContent string) bool {
 	if len(sp.anchors) == 0 {
 		return true
@@ -157,11 +190,12 @@ func checkHardcodedSecretsWithConfig(workflow parser.WorkflowFile, config interf
 	// Track found secrets to avoid duplicates
 	foundSecrets := make(map[string]bool)
 
-	// Lowercased once and reused as the anchor pre-filter for every pattern.
-	lowerContent := strings.ToLower(content)
+	// One pass determines which anchor literals occur anywhere in the content;
+	// each pattern then just tests membership.
+	anchorHits := secretAnchorMatcher.Scan(strings.ToLower(content))
 
-	for _, pattern := range secretPatterns {
-		if !pattern.mayMatch(lowerContent) {
+	for patternIdx, pattern := range secretPatterns {
+		if len(pattern.anchors) > 0 && !anchorHits.HasAny(secretAnchorIDs[patternIdx]) {
 			continue
 		}
 		matches := pattern.re.FindAllStringSubmatchIndex(content, -1)

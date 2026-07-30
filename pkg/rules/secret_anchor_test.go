@@ -105,3 +105,64 @@ func TestSecretPatternAnchors_RandomisedDifferential(t *testing.T) {
 		}
 	}
 }
+
+// The scan path uses a shared Aho-Corasick automaton while mayMatch remains the
+// reference definition of the anchor semantics. They must agree exactly, or the
+// optimisation would silently change which patterns run.
+func TestSecretAnchorMatcher_AgreesWithReference(t *testing.T) {
+	corpus := []string{
+		`api_key: "AKIAIOSFODNN7EXAMPLE12345"`,
+		`ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`,
+		"-----BEGIN RSA PRIVATE KEY-----",
+		`https://hooks.slack.com/services/AAAA`,
+		`mongodb_uri: "mongodb://u:p@h:27017"`,
+		`name: CI`,
+		`uses: actions/checkout@v4`,
+		`run: npm ci && make build`,
+		``,
+		`token`,
+		`CLIENT_SECRET=abc`,
+		`eyJhbGciOiJIUzI1NiJ9.eyJhIjoxfQ.sig`,
+	}
+
+	for _, text := range corpus {
+		lower := strings.ToLower(text)
+		hits := secretAnchorMatcher.Scan(lower)
+
+		for i, sp := range hardcodedSecretPatterns {
+			viaMatcher := len(sp.anchors) == 0 || hits.HasAny(secretAnchorIDs[i])
+			viaReference := sp.mayMatch(lower)
+			if viaMatcher != viaReference {
+				t.Errorf("pattern %d on %q: matcher=%v reference=%v (anchors %v)",
+					i, text, viaMatcher, viaReference, sp.anchors)
+			}
+		}
+	}
+}
+
+// Randomised differential check, so an anchor added later cannot silently
+// diverge between the two paths.
+func TestSecretAnchorMatcher_RandomisedAgreesWithReference(t *testing.T) {
+	rng := rand.New(rand.NewSource(23))
+	fragments := []string{
+		"api", "key", "_", "-", "secret", "token", "password", "aws", "ghp_",
+		"database", "connection", "eyJ", "-----BEGIN", "oauth", "client",
+		"discord", "slack", "hooks.slack.com", "btc", "ses", "abc123", ":", "=",
+	}
+
+	for i := 0; i < 5000; i++ {
+		var b strings.Builder
+		for j := 0; j < 1+rng.Intn(6); j++ {
+			b.WriteString(fragments[rng.Intn(len(fragments))])
+		}
+		lower := strings.ToLower(b.String())
+		hits := secretAnchorMatcher.Scan(lower)
+
+		for k, sp := range hardcodedSecretPatterns {
+			viaMatcher := len(sp.anchors) == 0 || hits.HasAny(secretAnchorIDs[k])
+			if viaMatcher != sp.mayMatch(lower) {
+				t.Fatalf("divergence on %q for pattern %d (anchors %v)", lower, k, sp.anchors)
+			}
+		}
+	}
+}

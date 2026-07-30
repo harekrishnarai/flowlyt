@@ -59,15 +59,65 @@ func TestNewLineMapper_ReusesInstanceForSameContent(t *testing.T) {
 
 // The cache must stay bounded rather than growing with every workflow scanned.
 func TestNewLineMapper_CacheIsBounded(t *testing.T) {
-	for i := 0; i < mapperCacheLimit+50; i++ {
+	for i := 0; i < DefaultMapperCacheLimit+50; i++ {
 		NewLineMapper([]byte(fmt.Sprintf("unique content %d\n", i)))
 	}
 
-	mapperCacheMu.RLock()
-	size := len(mapperCache)
-	mapperCacheMu.RUnlock()
+	if size := DefaultCache().Len(); size > DefaultMapperCacheLimit {
+		t.Errorf("cache grew to %d entries, expected at most %d", size, DefaultMapperCacheLimit)
+	}
+}
 
-	if size > mapperCacheLimit {
-		t.Errorf("cache grew to %d entries, expected at most %d", size, mapperCacheLimit)
+// A cache is a value a caller owns, so its lifetime can be tied to a scan
+// rather than to the process.
+func TestMapperCache_IsOwnableAndResettable(t *testing.T) {
+	c := NewMapperCache(4)
+
+	first := c.Get([]byte("a\nb\n"))
+	if c.Get([]byte("a\nb\n")) != first {
+		t.Error("expected the same instance from one cache")
+	}
+	if c.Len() != 1 {
+		t.Errorf("Len = %d, want 1", c.Len())
+	}
+
+	// A separate cache is genuinely separate.
+	other := NewMapperCache(4)
+	if other.Get([]byte("a\nb\n")) == first {
+		t.Error("distinct caches must not share entries")
+	}
+
+	c.Reset()
+	if c.Len() != 0 {
+		t.Errorf("Len after Reset = %d, want 0", c.Len())
+	}
+	if c.Get([]byte("a\nb\n")) == first {
+		t.Error("Reset must discard cached mappers")
+	}
+}
+
+// A nil cache is valid and simply does not memoise, so callers need no special
+// case when they do not want caching.
+func TestMapperCache_NilIsUsable(t *testing.T) {
+	var c *MapperCache
+	lm := c.Get([]byte("x\ny\n"))
+	if lm == nil || lm.TotalLines() != 3 {
+		t.Fatalf("nil cache should still build a working mapper, got %+v", lm)
+	}
+	if c.Len() != 0 {
+		t.Error("nil cache should report zero length")
+	}
+	c.Reset() // must not panic
+}
+
+// Eviction must not discard the whole cache, which would throw away the
+// workflow currently being scanned along with everything else.
+func TestMapperCache_EvictsOneEntryNotAll(t *testing.T) {
+	c := NewMapperCache(4)
+	for i := 0; i < 10; i++ {
+		c.Get([]byte(fmt.Sprintf("content %d\n", i)))
+	}
+	if got := c.Len(); got != 4 {
+		t.Errorf("Len = %d, want the cache held at its limit of 4", got)
 	}
 }

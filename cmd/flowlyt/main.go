@@ -33,6 +33,7 @@ import (
 	"github.com/harekrishnarai/flowlyt/v2/pkg/errors"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/github"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/gitlab"
+	"github.com/harekrishnarai/flowlyt/v2/pkg/linenum"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/organization"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/policies"
@@ -1138,6 +1139,12 @@ func scan(c *cli.Context, outputFormat, outputFile string) error {
 	if err != nil {
 		return err
 	}
+
+	// Line mappers are memoised per workflow content and shared across rules.
+	// Releasing them when the scan ends keeps the cache's lifetime tied to the
+	// scan rather than to the process, which matters for the long-running
+	// organization command that scans many repositories in sequence.
+	defer linenum.DefaultCache().Reset()
 
 	fmt.Printf("Found %d workflow files.\n", len(workflowFiles))
 

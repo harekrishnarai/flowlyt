@@ -31,22 +31,63 @@ type LineMapper struct {
 	initialized bool
 }
 
-// NewLineMapper creates a new line mapper for the given content.
+// MapperCache memoises mappers by content.
 //
-// Mappers are memoised by content. Every rule builds a mapper for the workflow
-// it is scanning, so a single workflow would otherwise be split into lines once
-// per rule — around seventy times — which made this the largest single source
-// of allocation in a scan. The returned mapper is immutable once constructed,
-// so sharing one between rules and across goroutines is safe.
-func NewLineMapper(content []byte) *LineMapper {
+// Every rule builds a mapper for the workflow it is scanning, so without
+// memoisation a single workflow is split into lines once per rule — around
+// seventy times — which was the largest single source of allocation in a scan.
+//
+// A cache is a value that a caller owns, so its lifetime can be tied to a scan
+// rather than to the process. The package keeps one default instance for
+// callers that do not want to manage their own; see DefaultCache.
+//
+// Mappers are immutable once constructed, so a cached mapper is safe to share
+// between rules and across goroutines.
+type MapperCache struct {
+	mu      sync.RWMutex
+	entries map[uint64]*LineMapper
+	limit   int
+}
+
+// DefaultMapperCacheLimit bounds the default cache. A repository has far fewer
+// workflows than this, so in practice the cache holds an entire scan.
+const DefaultMapperCacheLimit = 512
+
+// NewMapperCache creates a cache holding at most limit mappers. A limit of zero
+// or less uses DefaultMapperCacheLimit.
+func NewMapperCache(limit int) *MapperCache {
+	if limit <= 0 {
+		limit = DefaultMapperCacheLimit
+	}
+	return &MapperCache{entries: make(map[uint64]*LineMapper), limit: limit}
+}
+
+// defaultCache backs NewLineMapper.
+var defaultCache = NewMapperCache(DefaultMapperCacheLimit)
+
+// DefaultCache returns the cache used by NewLineMapper, so that a caller can
+// bound its lifetime — typically by resetting it at the start of a scan.
+func DefaultCache() *MapperCache { return defaultCache }
+
+// Get returns a mapper for the content, building one on a miss.
+//
+// A nil cache is valid and simply builds without memoising, so callers need no
+// special case when they do not want caching.
+func (c *MapperCache) Get(content []byte) *LineMapper {
+	if c == nil {
+		lm := &LineMapper{content: string(content)}
+		lm.initialize()
+		return lm
+	}
+
 	key := hashBytes(content)
 
-	mapperCacheMu.RLock()
-	cached, ok := mapperCache[key]
-	mapperCacheMu.RUnlock()
+	c.mu.RLock()
+	cached, ok := c.entries[key]
+	c.mu.RUnlock()
 
-	// Compare the content as well as the hash: a hash collision must not
-	// silently return line numbers for a different file.
+	// Compare the content as well as the hash: a collision must never return
+	// line numbers belonging to a different file.
 	if ok && cached.content == string(content) {
 		return cached
 	}
@@ -54,28 +95,47 @@ func NewLineMapper(content []byte) *LineMapper {
 	lm := &LineMapper{content: string(content)}
 	lm.initialize()
 
-	mapperCacheMu.Lock()
-	// Bound the cache so a long-running process scanning many repositories
-	// cannot grow it without limit. Workflows are scanned in batches, so
-	// clearing wholesale is simpler than tracking recency and costs at most one
-	// rebuild per rule for the workflow in flight.
-	if len(mapperCache) >= mapperCacheLimit {
-		mapperCache = make(map[uint64]*LineMapper, mapperCacheLimit)
+	c.mu.Lock()
+	// Evict a single entry rather than clearing wholesale, which would discard
+	// the workflow currently being scanned along with everything else.
+	if len(c.entries) >= c.limit {
+		for k := range c.entries {
+			delete(c.entries, k)
+			break
+		}
 	}
-	mapperCache[key] = lm
-	mapperCacheMu.Unlock()
+	c.entries[key] = lm
+	c.mu.Unlock()
 
 	return lm
 }
 
-// mapperCacheLimit caps the number of memoised mappers. A repository has far
-// fewer workflows than this, so the cache holds an entire scan in practice.
-const mapperCacheLimit = 512
+// Len reports how many mappers are cached.
+func (c *MapperCache) Len() int {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return len(c.entries)
+}
 
-var (
-	mapperCacheMu sync.RWMutex
-	mapperCache   = make(map[uint64]*LineMapper)
-)
+// Reset discards every cached mapper, releasing the memory held for a completed
+// scan.
+func (c *MapperCache) Reset() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.entries = make(map[uint64]*LineMapper)
+	c.mu.Unlock()
+}
+
+// NewLineMapper creates a line mapper for the given content, memoised in the
+// package default cache.
+func NewLineMapper(content []byte) *LineMapper {
+	return defaultCache.Get(content)
+}
 
 // hashBytes computes an FNV-1a 64-bit hash of content.
 //

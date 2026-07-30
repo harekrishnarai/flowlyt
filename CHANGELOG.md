@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚡ Literal pre-filtering and cache ownership
+
+New `pkg/matcher` provides an Aho-Corasick automaton for the common pattern of
+gating an expensive regular expression behind a set of cheap literal checks.
+The secret-detection rule declares 55 anchor literals across 22 patterns;
+checking each with `strings.Contains` meant up to 55 full scans of the content,
+and those scans all run to completion precisely in the common case where a
+workflow contains none of them. One pass now answers the whole question.
+
+The first implementation stored children in a map per node and measured
+*slower* than the naive approach, because Go's `strings.Contains` is
+SIMD-optimised while a map lookup per input byte is not. Folding failure links
+into a flat transition table makes matching one array index per byte, which is
+3.1x faster than the brute-force scan (925ns vs 2857ns on a representative
+workflow). Both implementations were validated against a brute-force reference
+over randomised inputs, and a differential test asserts the automaton path and
+the reference `mayMatch` semantics agree exactly.
+
+`LineMapper` memoisation is now an ownable `MapperCache` value rather than loose
+package-level maps. `linenum.DefaultCache()` exposes the instance backing
+`NewLineMapper` so a caller can bound its lifetime; the scan command now resets
+it on completion, which matters for the organization command that scans many
+repositories in sequence. Eviction drops a single entry instead of clearing
+wholesale, which previously discarded the workflow being scanned along with
+everything else. A nil cache is valid and simply does not memoise.
+
 ### 🕸️ Cross-job taint analysis
 
 Flowlyt now models a workflow's jobs as a dependency graph and propagates taint
