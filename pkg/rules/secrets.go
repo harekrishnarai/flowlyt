@@ -75,6 +75,12 @@ var hardcodedSecretPatterns = []secretPattern{
 	{regexp.MustCompile(`ghu_[A-Za-z0-9_]{36}`), []string{"ghu_"}}, // GitHub User-to-Server Token
 	{regexp.MustCompile(`ghs_[A-Za-z0-9_]{36}`), []string{"ghs_"}}, // GitHub Server-to-Server Token
 	{regexp.MustCompile(`ghr_[A-Za-z0-9_]{36}`), []string{"ghr_"}}, // GitHub Refresh Token
+	// Fine-grained personal access token. Introduced in 2022 and now GitHub's
+	// recommended token type, so it appears in modern repositories far more
+	// often than the classic ghp_ format. The length is matched permissively
+	// rather than pinned to an exact count: the github_pat_ prefix is already
+	// highly specific, and a missed credential is worse than a loose match.
+	{regexp.MustCompile(`github_pat_[A-Za-z0-9_]{22,}`), []string{"github_pat_"}},
 
 	// Database Connection Strings
 	{regexp.MustCompile(`(?i)(database[_-]?url|db[_-]?url|connection[_-]?string)\s*[:=]\s*['"]([^'"{}\s]{20,})['"]`),
@@ -500,6 +506,7 @@ func determineSecretSeverity(secret string, pattern *regexp.Regexp) Severity {
 
 	// Critical severity for private keys and high-value tokens
 	if strings.Contains(patternStr, "PRIVATE KEY") ||
+		strings.Contains(secretLower, "github_pat_") || // GitHub fine-grained PAT
 		strings.Contains(secretLower, "ghp_") || // GitHub Personal Access Token
 		strings.Contains(secretLower, "gho_") || // GitHub OAuth Token
 		strings.Contains(secretLower, "ghu_") || // GitHub User-to-Server Token

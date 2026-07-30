@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔑 Fine-grained PAT detection
+
+`HARDCODED_SECRET` now detects fine-grained personal access tokens
+(`github_pat_`). Only the classic formats (`ghp_`, `gho_`, `ghu_`, `ghs_`,
+`ghr_`) were covered, so GitHub's recommended token type — in wide use since
+2022 — was missed entirely unless it happened to sit next to a `token:` key
+that a generic key-value pattern matched. A bare token, for example in an
+`Authorization: Bearer` header, was not detected at all.
+
+The length is matched permissively rather than pinned to an exact character
+count: the `github_pat_` prefix is already highly specific, and a missed
+credential is worse than a loose match.
+
 ### ⚡ Literal pre-filtering and cache ownership
 
 New `pkg/matcher` provides an Aho-Corasick automaton for the common pattern of

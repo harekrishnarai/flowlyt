@@ -32,6 +32,7 @@ func TestSecretPatternAnchors_AreNecessaryConditions(t *testing.T) {
 		`gitlab-personal-access-token: "abcdefghijklmnopqrstuvwx"`,
 		`bitbucket_pat: "abcdefghijklmnopqrstuvwx"`,
 		`ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`,
+		`github_pat_11ABCDEFG0aaaaaaaaaaaa_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`,
 		`gho_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb`,
 		`ghu_cccccccccccccccccccccccccccccccccccc`,
 		`ghs_dddddddddddddddddddddddddddddddddddd`,
