@@ -7,7 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.1.0] - 2026-07-30
+
+Flowlyt becomes an interprocedural supply chain analyzer: it now follows
+attacker-controlled data across job boundaries and into local composite actions
+and reusable workflows. Rule count grows from 95 to 115, the AI layer is
+reworked, and scans are roughly 5x faster on a single core.
+
+### ⚠️ Upgrade notes
+
+These change observable behaviour. Nothing requires action for CLI users, but
+anyone consuming Flowlyt as a library or parsing its output should read them.
+
+- **Finding categories were unified.** `SECRETS_EXPOSURE` (plural) now emits as
+  `SECRET_EXPOSURE`, and a lowercase `injection` value that was never a defined
+  category now emits as `INJECTION_ATTACK` or `MALICIOUS_PATTERN`. If you filter
+  findings by category downstream, drop any workaround matching both spellings
+  and stop matching the removed values. `rules.SecretsExposure` remains as a
+  deprecated alias so existing Go importers still compile.
+- **`ai.Client.VerifyBatch` changed signature** from `[]rules.Finding` to
+  `[]ai.ContextualFinding`, so each finding can carry the workflow context the
+  model needs. This only affects code implementing a custom AI client.
+- **AI verdicts are now acted on.** With `--ai`, findings the model confidently
+  judges false positives are demoted to `INFO` by default rather than reported
+  unchanged. Set `--ai-fp-confidence 0` to restore annotate-only behaviour.
+- **Five rules were removed** as redundant with existing coverage:
+  `OBFUSCATED_BASE64_INJECTION`, `VARIABLE_INDIRECTION_INJECTION`,
+  `COMMAND_SUBSTITUTION_INJECTION`, `TUNNELING_EXFILTRATION`, and
+  `ENCODED_EXFILTRATION`. Each fired only on lines already reported by another
+  rule; the coverage they did add uniquely was folded into
+  `MALICIOUS_DATA_EXFILTRATION`.
+
+### 🔒 Security
+
+- Updated `go.opentelemetry.io/otel` and friends to v1.44.0, clearing
+  GO-2026-5426 and GO-2026-5158, and `golang.org/x/crypto` to v0.54.0.
+  `govulncheck` reports no vulnerabilities in imported packages.
+  One advisory remains in a required module (GO-2026-5932 in `x/crypto`) with no
+  fixed version released; it is not reachable from this code.
+- Dockerfile base images are now pinned by digest. Flowlyt ships an
+  `UNPINNED_CONTAINER_IMAGE` rule for exactly this, so its own image should
+  comply.
+
 
 ### 🔑 Fine-grained PAT detection
 
