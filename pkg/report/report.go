@@ -76,25 +76,25 @@ type ResultSummary struct {
 
 // Generator creates a formatted report from scan results
 type Generator struct {
-	Result              ScanResult
-	Format              string
-	Verbose             bool
-	FilePath            string
-	EnhancedFormatting  bool   // Use enhanced formatting for CLI output
-	CLIStyle            string // CLI style: "standard", "detailed", "compact", "boxed"
-	term                *terminal.Terminal // Intelligent terminal for xterm output
+	Result             ScanResult
+	Format             string
+	Verbose            bool
+	FilePath           string
+	EnhancedFormatting bool               // Use enhanced formatting for CLI output
+	CLIStyle           string             // CLI style: "standard", "detailed", "compact", "boxed"
+	term               *terminal.Terminal // Intelligent terminal for xterm output
 }
 
 // NewGenerator creates a new report generator
 func NewGenerator(result ScanResult, format string, verbose bool, filePath string) *Generator {
 	return &Generator{
-		Result:              result,
-		Format:              format,
-		Verbose:             verbose,
-		FilePath:            filePath,
-		EnhancedFormatting:  true, // Enable enhanced formatting by default
-		CLIStyle:            "detailed", // Use detailed style by default
-		term:                terminal.Default(), // Initialize intelligent terminal
+		Result:             result,
+		Format:             format,
+		Verbose:            verbose,
+		FilePath:           filePath,
+		EnhancedFormatting: true,               // Enable enhanced formatting by default
+		CLIStyle:           "detailed",         // Use detailed style by default
+		term:               terminal.Default(), // Initialize intelligent terminal
 	}
 }
 
@@ -402,19 +402,18 @@ func (g *Generator) generateJSONReport() error {
 		GeneratedByAST:  g.Result.GeneratedByAST,
 	}
 
-	if len(g.Result.Findings) > 0 {
-		deduped := deduplicateFindings(g.Result.Findings, cleanFilePath)
-		enhancedFindings := make([]FindingReport, 0, len(deduped))
-		for _, f := range deduped {
-			codeContext := buildCodeContext(f.FilePath, f.LineNumber)
-			f.FilePath = cleanFilePath(f.FilePath)
-			enhancedFindings = append(enhancedFindings, FindingReport{
-				Finding:     f,
-				CodeContext: codeContext,
-			})
-		}
-		report.Findings = enhancedFindings
+	// Always emit an array so consumers never have to guard against null.
+	deduped := deduplicateFindings(g.Result.Findings, cleanFilePath)
+	enhancedFindings := make([]FindingReport, 0, len(deduped))
+	for _, f := range deduped {
+		codeContext := buildCodeContext(f.FilePath, f.LineNumber)
+		f.FilePath = cleanFilePath(f.FilePath)
+		enhancedFindings = append(enhancedFindings, FindingReport{
+			Finding:     f,
+			CodeContext: codeContext,
+		})
 	}
+	report.Findings = enhancedFindings
 
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
