@@ -109,7 +109,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Flowlyt
-        uses: harekrishnarai/flowlyt@v2.0.0
+        uses: harekrishnarai/flowlyt@v2.2.0
         with:
           output-format: 'sarif'
           output-file: 'flowlyt-results.sarif'
