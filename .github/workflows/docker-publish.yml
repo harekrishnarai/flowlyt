@@ -84,8 +84,11 @@ jobs:
           DIGEST: ${{ steps.build-and-push.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          echo "Signing ${TAGS}@${DIGEST}"
-          cosign sign --yes --recursive "${TAGS}@${DIGEST}"
+          while IFS= read -r tag; do
+            [ -n "$tag" ] || continue
+            echo "Signing ${tag}@${DIGEST}"
+            cosign sign --yes --recursive "${tag}@${DIGEST}"
+          done <<< "${TAGS}"
 
       - name: Generate SBOM attestation
         if: github.event_name != 'pull_request'
