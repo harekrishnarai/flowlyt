@@ -79,9 +79,14 @@ func main() {
 				Usage:   "Scan repository or workflow files for security issues",
 				Flags: []cli.Flag{
 					&cli.StringFlag{
+						Name:    "config",
+						Aliases: []string{"c"},
+						Usage:   "Path to configuration file (default: auto-discover .flowlyt.yml)",
+					},
+					&cli.StringFlag{
 						Name:    "platform",
 						Aliases: []string{"pl"},
-						Usage:   "CI/CD platform (github, gitlab, jenkins, azure)",
+						Usage:   "CI/CD platform (github, gitlab)",
 						Value:   constants.DefaultPlatform,
 					},
 					&cli.StringFlag{
@@ -112,7 +117,7 @@ func main() {
 					&cli.StringFlag{
 						Name:    "output",
 						Aliases: []string{"o"},
-						Usage:   "Output format (json, yaml, table, sarif)",
+						Usage:   "Output format (cli, json, markdown, sarif)",
 						Value:   constants.DefaultOutputFormat,
 					},
 					&cli.StringFlag{
@@ -370,8 +375,9 @@ func analyzeOrgAction(c *cli.Context) error {
 
 // loadAndOverrideConfig loads configuration and applies CLI flag overrides
 func loadAndOverrideConfig(c *cli.Context, outputFormat, outputFile string) (*config.Config, error) {
-	// Load configuration from .flowlyt.yml if it exists, otherwise use defaults
-	cfg, err := config.LoadConfig("")
+	// Load configuration from the explicit --config path when given, otherwise
+	// auto-discover .flowlyt.yml from the working directory and then $HOME.
+	cfg, err := config.LoadConfig(c.String("config"))
 	if err != nil {
 		return nil, errors.NewConfigError("Failed to load configuration", err,
 			"Check the .flowlyt.yml file syntax if it exists",

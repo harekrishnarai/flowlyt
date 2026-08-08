@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
+### 🐛 Fixed
+
+- **`scan` had no `--config` flag, so a configuration file could never be
+  specified explicitly.** `config.LoadConfig` has always accepted a path, but
+  `scan` never declared the flag and the loader was called with an empty
+  string, restricting configuration to auto-discovery from the working
+  directory and `$HOME`. `analyze-org` declared `--config` but discarded it
+  the same way.
+
+  `scan` now takes `--config` / `-c`, and both commands honour it. This also
+  repairs the GitHub Action, which failed on **every default invocation**:
+  `config-file` defaults to `.flowlyt.yml` and the action passed it as
+  `--config`, so urfave/cli aborted with
+  `flag provided but not defined: -config` before scanning anything. The only
+  workaround was setting `config-file: ''`.
+
+- **`enable-ast-analysis: true` aborted the scan** in the GitHub Action,
+  appending an `--enable-ast-analysis` flag that has never existed. AST
+  analysis and reachability filtering run unconditionally, so the input is
+  now documented as deprecated and ignored.
+
+- **The action reported wrong finding counts for three of four output
+  formats.** For `cli` and `markdown` it grepped for `Found N issues` and
+  `N Critical`, neither of which the v2 CLI emits — it prints
+  `N finding(s)   a critical · b high` in lowercase. Counts silently fell back
+  to empty strings, which then broke the `-gt` threshold comparisons with
+  `integer expression expected`. `cli` output is now parsed from the real
+  summary line with ANSI codes stripped, `markdown` from its summary table,
+  and every count is coerced to an integer before comparison.
+
+  For `sarif`, medium and low counts were derived from the SARIF `level`
+  field, which maps MEDIUM and LOW both to `warning` and INFO to `note` — so
+  low findings were reported as medium, and info as low. Counts now come from
+  `properties.severity`, consistent with the critical and high counts.
+
+- **`findings` serialised as `null` rather than `[]`** in JSON output when a
+  scan found nothing, forcing every consumer to guard with `// []`. It is now
+  always an array.
+
+- **SARIF reported `tool.driver.version` as `1.0.8`** on every release since
+  that version, because it was hardcoded. It is now sourced from
+  `constants.AppVersion`.
+
+- **`--help` advertised platforms and output formats that are rejected at
+  runtime.** `--platform` listed `jenkins` and `azure`, neither of which
+  passes validation; `--output` listed `yaml` and `table`, which do not
+  exist, while omitting `cli` and `markdown`, which do.
+
+---
+
 ## [2.1.0] - 2026-07-30
 
 Flowlyt becomes an interprocedural supply chain analyzer: it now follows
@@ -508,6 +564,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 
 ## [1.0.11] - 2026-03-27
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - **CACHE_WRITE_IN_PR_WORKFLOW**: Deduplicate findings across matrix-expanded jobs — one finding per `actions/cache` step instead of N
@@ -525,6 +585,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 ---
 
 ## [1.0.10] - 2026-03-19
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
 
 ### 🐛 Fixed
 
@@ -562,6 +626,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 - `pkg/rules/oidc_abuse.go` — OA-001/002
 - `pkg/rules/cache_poisoning.go` — CP-001/002
 - Integration test fixtures (`testdata/workflows/`) with FP regression and detection tests
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
 
 ### 🐛 Fixed
 
@@ -645,6 +713,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 
 ## [1.0.6] - 2026-01-06
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - **Eliminated false positives for internal organization actions** (#19)
@@ -703,6 +775,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
   - Data flow tracking
   - Reachability analysis
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - GitLab CI/CD integration issues
@@ -740,6 +816,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 - Improved entropy-based detection
 - Better SARIF output for GitHub Security
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - Remote repository cloning (#12)
@@ -764,6 +844,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 - Advanced configuration options
 - Template workflow scanning
 - Shell script security analysis
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
 
 ### 🐛 Fixed
 
@@ -824,6 +908,10 @@ First stable release of Flowlyt!
 - GitHub Security tab integration
 - Severity mapping improvements
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - Various parsing bugs
@@ -834,6 +922,10 @@ First stable release of Flowlyt!
 ---
 
 ## [0.0.8] - 2025-11-01
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
 
 ### 🐛 Fixed
 
