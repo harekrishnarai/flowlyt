@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### 🐛 Fixed
+
+- **The GitHub Action failed on every default invocation.** `config-file`
+  defaults to `.flowlyt.yml`, and the action passed that value to the scanner
+  as `--config` — a flag `scan` does not define — so urfave/cli aborted with
+  `flag provided but not defined: -config` before any scanning happened. The
+  only workaround was to explicitly set `config-file: ''`.
+
+  The action now stages the requested file as `./.flowlyt.yml` so the
+  scanner's existing working-directory auto-discovery picks it up. This makes
+  `config-file` work as documented for the first time, including for paths
+  outside the discovery list such as `ci/flowlyt.yml`.
+
+- **`enable-ast-analysis: true` also aborted the scan**, appending an
+  `--enable-ast-analysis` flag that has never existed. AST analysis and
+  reachability filtering run unconditionally, so the input is now documented
+  as deprecated and ignored rather than passed through.
+
+- **The action reported wrong finding counts for three of four output
+  formats.** For `cli` and `markdown` it grepped for `Found N issues` and
+  `N Critical`, neither of which the v2 CLI emits — it prints
+  `N finding(s)   a critical · b high` in lowercase. Counts silently fell back
+  to empty strings, which then broke the `-gt` threshold comparisons with
+  `integer expression expected`. `cli` output is now parsed from the real
+  summary line with ANSI codes stripped, `markdown` from its summary table,
+  and every count is coerced to an integer before comparison.
+
+  For `sarif`, medium and low counts were derived from the SARIF `level`
+  field, which maps MEDIUM and LOW both to `warning` and INFO to `note` — so
+  low findings were reported as medium, and info as low. Counts now come from
+  `properties.severity`, consistent with the critical and high counts.
+
+- **`findings` serialised as `null` rather than `[]`** in JSON output when a
+  scan found nothing, forcing every consumer to guard with `// []`. It is now
+  always an array.
+
+- **SARIF reported `tool.driver.version` as `1.0.8`** on every release since
+  that version, because it was hardcoded. It is now sourced from
+  `constants.AppVersion`.
+
+- **`--help` advertised platforms and output formats that are rejected at
+  runtime.** `--platform` listed `jenkins` and `azure`, neither of which
+  passes validation; `--output` listed `yaml` and `table`, which do not
+  exist, while omitting `cli` and `markdown`, which do.
+
+---
+
 ## [2.1.0] - 2026-07-30
 
 Flowlyt becomes an interprocedural supply chain analyzer: it now follows

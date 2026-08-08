@@ -53,7 +53,7 @@ inputs:
     required: false
     default: 'false'
   enable-ast-analysis:
-    description: 'Enable Advanced Static Analysis with data flow tracking'
+    description: 'Deprecated and ignored. AST analysis with data flow tracking always runs.'
     required: false
     default: 'false'
   policy-config:
@@ -256,7 +256,6 @@ runs:
         FLOWLYT_MIN_SEVERITY: ${{ inputs.min-severity }}
         FLOWLYT_POLICY_ENFORCEMENT: ${{ inputs.enable-policy-enforcement }}
         FLOWLYT_VULN_INTEL: ${{ inputs.enable-vuln-intel }}
-        FLOWLYT_AST_ANALYSIS: ${{ inputs.enable-ast-analysis }}
         FLOWLYT_POLICY_CONFIG: ${{ inputs.policy-config }}
         FLOWLYT_COMPLIANCE_FRAMEWORKS: ${{ inputs.compliance-frameworks }}
         FLOWLYT_VERBOSE: ${{ inputs.verbose }}
@@ -285,9 +284,19 @@ runs:
           "--min-severity" "$FLOWLYT_MIN_SEVERITY"
         )
 
-        # Only add config if specified
+        # `flowlyt scan` has no --config flag: configuration is auto-discovered
+        # from the working directory (.flowlyt.yml, .flowlyt.yaml, flowlyt.yml,
+        # flowlyt.yaml) and then $HOME. Stage the requested file as
+        # ./.flowlyt.yml -- the first candidate -- so the scanner picks it up.
         if [ -n "$FLOWLYT_CONFIG" ]; then
-          SCAN_ARGS+=("--config" "$FLOWLYT_CONFIG")
+          if [ ! -f "$FLOWLYT_CONFIG" ]; then
+            echo "::debug::No Flowlyt config at '$FLOWLYT_CONFIG'; using built-in defaults"
+          elif [ "$FLOWLYT_CONFIG" -ef "$(pwd)/.flowlyt.yml" ]; then
+            echo "Using Flowlyt config: $FLOWLYT_CONFIG"
+          else
+            echo "Using Flowlyt config: $FLOWLYT_CONFIG"
+            cp "$FLOWLYT_CONFIG" "$(pwd)/.flowlyt.yml"
+          fi
         fi
 
         # Add optional flags
@@ -297,10 +306,6 @@ runs:
 
         if [ "$FLOWLYT_VULN_INTEL" = "true" ]; then
           SCAN_ARGS+=("--enable-vuln-intel")
-        fi
-
-        if [ "$FLOWLYT_AST_ANALYSIS" = "true" ]; then
-          SCAN_ARGS+=("--enable-ast-analysis")
         fi
 
         if [ -n "$FLOWLYT_POLICY_CONFIG" ]; then
@@ -329,23 +334,57 @@ runs:
         # Parse scan output for metrics
         if [ -f "$FLOWLYT_OUTPUT_FILE" ]; then
           if [ "$FLOWLYT_OUTPUT_FORMAT" = "sarif" ]; then
-            TOTAL_FINDINGS=$(jq '.runs[0].results | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
-            CRITICAL_COUNT=$(jq '[.runs[0].results[] | select(.level == "error" and (.properties.severity // "HIGH") == "CRITICAL")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
-            HIGH_COUNT=$(jq '[.runs[0].results[] | select(.level == "error" and (.properties.severity // "HIGH") == "HIGH")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
-            MEDIUM_COUNT=$(jq '[.runs[0].results[] | select(.level == "warning")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
-            LOW_COUNT=$(jq '[.runs[0].results[] | select(.level == "note")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            # Severity must come from properties.severity, not level: the SARIF
+            # level mapping folds MEDIUM and LOW both into "warning" and maps
+            # INFO to "note", so level alone cannot distinguish them.
+            sarif_count() {
+              jq --arg sev "$1" \
+                '[.runs[0].results[]? | select((.properties.severity // "") == $sev)] | length' \
+                "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0"
+            }
+            TOTAL_FINDINGS=$(jq '.runs[0].results? // [] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            CRITICAL_COUNT=$(sarif_count CRITICAL)
+            HIGH_COUNT=$(sarif_count HIGH)
+            MEDIUM_COUNT=$(sarif_count MEDIUM)
+            LOW_COUNT=$(sarif_count LOW)
           elif [ "$FLOWLYT_OUTPUT_FORMAT" = "json" ]; then
-            TOTAL_FINDINGS=$(jq '.findings | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
-            CRITICAL_COUNT=$(jq '[.findings[] | select(.Severity == "CRITICAL")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
-            HIGH_COUNT=$(jq '[.findings[] | select(.Severity == "HIGH")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
-            MEDIUM_COUNT=$(jq '[.findings[] | select(.Severity == "MEDIUM")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
-            LOW_COUNT=$(jq '[.findings[] | select(.Severity == "LOW")] | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            # `findings` is an array as of this release, but older binaries
+            # emit null on a clean scan, hence the `// []` guard.
+            json_count() {
+              jq --arg sev "$1" \
+                '[(.findings // [])[] | select(.Severity == $sev)] | length' \
+                "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0"
+            }
+            TOTAL_FINDINGS=$(jq '(.findings // []) | length' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null || echo "0")
+            CRITICAL_COUNT=$(json_count CRITICAL)
+            HIGH_COUNT=$(json_count HIGH)
+            MEDIUM_COUNT=$(json_count MEDIUM)
+            LOW_COUNT=$(json_count LOW)
+          elif [ "$FLOWLYT_OUTPUT_FORMAT" = "markdown" ]; then
+            # Read the summary table, e.g. "| 🔴 Critical | 3 |".
+            md_count() {
+              awk -F '|' -v want="$1" '
+                $0 ~ want { gsub(/[^0-9]/, "", $3); if ($3 != "") { print $3; exit } }
+              ' "$FLOWLYT_OUTPUT_FILE" 2>/dev/null
+            }
+            TOTAL_FINDINGS=$(md_count 'Total')
+            CRITICAL_COUNT=$(md_count 'Critical')
+            HIGH_COUNT=$(md_count 'High')
+            MEDIUM_COUNT=$(md_count 'Medium')
+            LOW_COUNT=$(md_count 'Low')
           else
-            TOTAL_FINDINGS=$(grep -E "Found [0-9]+ issues" scan_output.log | sed -E 's/.*Found ([0-9]+) issues.*/\1/' || echo "0")
-            CRITICAL_COUNT=$(grep -E "[0-9]+ Critical" scan_output.log | sed -E 's/.*([0-9]+) Critical.*/\1/' || echo "0")
-            HIGH_COUNT=$(grep -E "[0-9]+ High" scan_output.log | sed -E 's/.*([0-9]+) High.*/\1/' || echo "0")
-            MEDIUM_COUNT=$(grep -E "[0-9]+ Medium" scan_output.log | sed -E 's/.*([0-9]+) Medium.*/\1/' || echo "0")
-            LOW_COUNT=$(grep -E "[0-9]+ Low" scan_output.log | sed -E 's/.*([0-9]+) Low.*/\1/' || echo "0")
+            # CLI summary line, e.g. "2 finding(s)   1 critical · 1 high".
+            # Strip ANSI colour codes before matching.
+            SUMMARY=$(sed -E $'s/\033\\[[0-9;]*m//g' scan_output.log 2>/dev/null \
+              | grep -E '[0-9]+ finding\(s\)' | tail -1)
+            cli_count() {
+              echo "$SUMMARY" | grep -oE "[0-9]+ $1" | grep -oE '^[0-9]+' | head -1
+            }
+            TOTAL_FINDINGS=$(cli_count 'finding\(s\)')
+            CRITICAL_COUNT=$(cli_count 'critical')
+            HIGH_COUNT=$(cli_count 'high')
+            MEDIUM_COUNT=$(cli_count 'medium')
+            LOW_COUNT=$(cli_count 'low')
           fi
         else
           TOTAL_FINDINGS=0
@@ -354,6 +393,14 @@ runs:
           MEDIUM_COUNT=0
           LOW_COUNT=0
         fi
+
+        # A parse miss yields an empty string, which would break the numeric
+        # threshold comparisons below. Force every count to an integer.
+        for _var in TOTAL_FINDINGS CRITICAL_COUNT HIGH_COUNT MEDIUM_COUNT LOW_COUNT; do
+          case "${!_var}" in
+            ''|*[!0-9]*) printf -v "$_var" '%s' 0 ;;
+          esac
+        done
 
         # Output metrics
         echo "findings-count=$TOTAL_FINDINGS" >> $GITHUB_OUTPUT

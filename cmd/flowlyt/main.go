@@ -81,7 +81,7 @@ func main() {
 					&cli.StringFlag{
 						Name:    "platform",
 						Aliases: []string{"pl"},
-						Usage:   "CI/CD platform (github, gitlab, jenkins, azure)",
+						Usage:   "CI/CD platform (github, gitlab)",
 						Value:   constants.DefaultPlatform,
 					},
 					&cli.StringFlag{
@@ -112,7 +112,7 @@ func main() {
 					&cli.StringFlag{
 						Name:    "output",
 						Aliases: []string{"o"},
-						Usage:   "Output format (json, yaml, table, sarif)",
+						Usage:   "Output format (cli, json, markdown, sarif)",
 						Value:   constants.DefaultOutputFormat,
 					},
 					&cli.StringFlag{
