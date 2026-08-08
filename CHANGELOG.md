@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [2.2.0] - 2026-08-08
+
+Corrective release. The GitHub Action failed on every default invocation in
+2.1.0, and three of the four output formats reported wrong finding counts to
+it. Anyone consuming Flowlyt through the Action should upgrade.
 
 ### ✨ Added
 
