@@ -284,19 +284,12 @@ runs:
           "--min-severity" "$FLOWLYT_MIN_SEVERITY"
         )
 
-        # `flowlyt scan` has no --config flag: configuration is auto-discovered
-        # from the working directory (.flowlyt.yml, .flowlyt.yaml, flowlyt.yml,
-        # flowlyt.yaml) and then $HOME. Stage the requested file as
-        # ./.flowlyt.yml -- the first candidate -- so the scanner picks it up.
-        if [ -n "$FLOWLYT_CONFIG" ]; then
-          if [ ! -f "$FLOWLYT_CONFIG" ]; then
-            echo "::debug::No Flowlyt config at '$FLOWLYT_CONFIG'; using built-in defaults"
-          elif [ "$FLOWLYT_CONFIG" -ef "$(pwd)/.flowlyt.yml" ]; then
-            echo "Using Flowlyt config: $FLOWLYT_CONFIG"
-          else
-            echo "Using Flowlyt config: $FLOWLYT_CONFIG"
-            cp "$FLOWLYT_CONFIG" "$(pwd)/.flowlyt.yml"
-          fi
+        # Only add config if the file actually exists. The input defaults to
+        # .flowlyt.yml, which most repositories do not have, and an explicit
+        # path to a missing file would otherwise be silently ignored anyway.
+        if [ -n "$FLOWLYT_CONFIG" ] && [ -f "$FLOWLYT_CONFIG" ]; then
+          echo "Using Flowlyt config: $FLOWLYT_CONFIG"
+          SCAN_ARGS+=("--config" "$FLOWLYT_CONFIG")
         fi
 
         # Add optional flags

@@ -9,23 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
-- **The GitHub Action failed on every default invocation.** `config-file`
-  defaults to `.flowlyt.yml`, and the action passed that value to the scanner
-  as `--config` — a flag `scan` does not define — so urfave/cli aborted with
-  `flag provided but not defined: -config` before any scanning happened. The
-  only workaround was to explicitly set `config-file: ''`.
+- **`scan` had no `--config` flag, so a configuration file could never be
+  specified explicitly.** `config.LoadConfig` has always accepted a path, but
+  `scan` never declared the flag and the loader was called with an empty
+  string, restricting configuration to auto-discovery from the working
+  directory and `$HOME`. `analyze-org` declared `--config` but discarded it
+  the same way.
 
-  The action now stages the requested file as `./.flowlyt.yml` so the
-  scanner's existing working-directory auto-discovery picks it up. This makes
-  `config-file` work as documented for the first time, including for paths
-  outside the discovery list such as `ci/flowlyt.yml`.
+  `scan` now takes `--config` / `-c`, and both commands honour it. This also
+  repairs the GitHub Action, which failed on **every default invocation**:
+  `config-file` defaults to `.flowlyt.yml` and the action passed it as
+  `--config`, so urfave/cli aborted with
+  `flag provided but not defined: -config` before scanning anything. The only
+  workaround was setting `config-file: ''`.
 
-- **`enable-ast-analysis: true` also aborted the scan**, appending an
-  `--enable-ast-analysis` flag that has never existed. AST analysis and
-  reachability filtering run unconditionally, so the input is now documented
-  as deprecated and ignored rather than passed through.
+- **`enable-ast-analysis: true` aborted the scan** in the GitHub Action,
+  appending an `--enable-ast-analysis` flag that has never existed. AST
+  analysis and reachability filtering run unconditionally, so the input is
+  now documented as deprecated and ignored.
 
 - **The action reported wrong finding counts for three of four output
   formats.** For `cli` and `markdown` it grepped for `Found N issues` and
@@ -557,6 +564,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 
 ## [1.0.11] - 2026-03-27
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - **CACHE_WRITE_IN_PR_WORKFLOW**: Deduplicate findings across matrix-expanded jobs — one finding per `actions/cache` step instead of N
@@ -574,6 +585,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 ---
 
 ## [1.0.10] - 2026-03-19
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
 
 ### 🐛 Fixed
 
@@ -611,6 +626,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 - `pkg/rules/oidc_abuse.go` — OA-001/002
 - `pkg/rules/cache_poisoning.go` — CP-001/002
 - Integration test fixtures (`testdata/workflows/`) with FP regression and detection tests
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
 
 ### 🐛 Fixed
 
@@ -694,6 +713,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 
 ## [1.0.6] - 2026-01-06
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - **Eliminated false positives for internal organization actions** (#19)
@@ -752,6 +775,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
   - Data flow tracking
   - Reachability analysis
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - GitLab CI/CD integration issues
@@ -789,6 +816,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 - Improved entropy-based detection
 - Better SARIF output for GitHub Security
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - Remote repository cloning (#12)
@@ -813,6 +844,10 @@ A major release focused on correctness, finding precision, and a cleaner CLI.
 - Advanced configuration options
 - Template workflow scanning
 - Shell script security analysis
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
 
 ### 🐛 Fixed
 
@@ -873,6 +908,10 @@ First stable release of Flowlyt!
 - GitHub Security tab integration
 - Severity mapping improvements
 
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
+
 ### 🐛 Fixed
 
 - Various parsing bugs
@@ -883,6 +922,10 @@ First stable release of Flowlyt!
 ---
 
 ## [0.0.8] - 2025-11-01
+
+### ✨ Added
+
+- `scan --config` / `-c` to point at a configuration file explicitly.
 
 ### 🐛 Fixed
 
