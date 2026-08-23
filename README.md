@@ -28,6 +28,7 @@ go build -o flowlyt cmd/flowlyt/main.go
 ```
 
 ## Usage
+<img width="2081" height="1210" alt="flowlyt-demo" src="https://github.com/user-attachments/assets/0c1469db-67b0-425c-a142-c7a05f9715f2" />
 
 ### Scan a local repository
 
