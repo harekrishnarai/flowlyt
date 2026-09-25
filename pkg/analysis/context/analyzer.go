@@ -22,14 +22,20 @@ import (
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
+// Severity levels used when adjusting and comparing findings.
+const (
+	severityCritical = "CRITICAL"
+	severityMedium   = "MEDIUM"
+)
+
 // severityRank orders severities for comparison (higher = more severe).
 func severityRank(s string) int {
 	switch strings.ToUpper(s) {
-	case "CRITICAL":
+	case severityCritical:
 		return 4
 	case "HIGH":
 		return 3
-	case "MEDIUM":
+	case severityMedium:
 		return 2
 	case "LOW":
 		return 1
@@ -50,9 +56,9 @@ type WorkflowContext struct {
 
 // ContextAnalyzer provides comprehensive workflow context analysis
 type ContextAnalyzer struct {
-	intentDetector   *IntentDetector
-	permAnalyzer     *PermissionAnalyzer
-	triggerAnalyzer  *TriggerAnalyzer
+	intentDetector  *IntentDetector
+	permAnalyzer    *PermissionAnalyzer
+	triggerAnalyzer *TriggerAnalyzer
 }
 
 // NewContextAnalyzer creates a new context analyzer
@@ -93,7 +99,7 @@ func (ca *ContextAnalyzer) AdjustSeverity(ruleID string, baseSeverity string, ct
 
 	case "PR_TARGET_ABUSE", "DANGEROUS_WRITE_OPERATION":
 		// Always critical - no adjustment
-		return "CRITICAL"
+		return severityCritical
 
 	case "REPO_JACKING_VULNERABILITY", "CACHE_POISONING", "UNSOUND_CONTAINS":
 		// Supply chain issues - keep high for all workflows
@@ -116,7 +122,7 @@ func (ca *ContextAnalyzer) AdjustSeverity(ruleID string, baseSeverity string, ct
 // adjustDefault provides default context-aware adjustment for unhandled rules
 func (ca *ContextAnalyzer) adjustDefault(severity string, ctx *WorkflowContext) string {
 	// Don't downgrade CRITICAL findings by default
-	if severity == "CRITICAL" {
+	if severity == severityCritical {
 		return severity
 	}
 
@@ -124,21 +130,16 @@ func (ca *ContextAnalyzer) adjustDefault(severity string, ctx *WorkflowContext) 
 	if ctx.Intent.IsReadOnly() && !ctx.HasUntrustedInput {
 		switch severity {
 		case "HIGH":
-			return "MEDIUM"
-		case "MEDIUM":
+			return severityMedium
+		case severityMedium:
 			return "LOW"
 		}
 	}
 
-	// For trusted triggers (tags, releases), slightly downgrade
-	if ctx.IsTrusted {
-		switch severity {
-		case "HIGH":
-			// Keep HIGH for critical workflows, downgrade for others
-			if !ctx.Intent.IsCritical() {
-				return "MEDIUM"
-			}
-		}
+	// For trusted triggers (tags, releases), slightly downgrade non-critical
+	// workflows, but keep HIGH for critical ones.
+	if ctx.IsTrusted && severity == "HIGH" && !ctx.Intent.IsCritical() {
+		return severityMedium
 	}
 
 	return severity
@@ -167,7 +168,7 @@ func (ca *ContextAnalyzer) adjustBroadPermissions(baseSeverity string, ctx *Work
 	}
 
 	// Otherwise downgrade to MEDIUM
-	return "MEDIUM"
+	return severityMedium
 }
 
 // adjustStaleActionRefs adjusts severity for STALE_ACTION_REFS findings
@@ -179,7 +180,7 @@ func (ca *ContextAnalyzer) adjustStaleActionRefs(baseSeverity string, ctx *Workf
 
 	// Read-only workflows (tests) can use tags
 	if ctx.Intent.IsReadOnly() {
-		return "MEDIUM"
+		return severityMedium
 	}
 
 	// Workflows with untrusted input should use commit SHAs
@@ -188,7 +189,7 @@ func (ca *ContextAnalyzer) adjustStaleActionRefs(baseSeverity string, ctx *Workf
 	}
 
 	// Otherwise it's acceptable
-	return "MEDIUM"
+	return severityMedium
 }
 
 // adjustArtipacked adjusts severity for ARTIPACKED_VULNERABILITY findings.
@@ -203,7 +204,7 @@ func (ca *ContextAnalyzer) adjustArtipacked(baseSeverity string, ctx *WorkflowCo
 	// A genuine exposure (HIGH: .git can be packed into an artifact) stays HIGH
 	// regardless of intent — having write permissions does not make leaking the
 	// token into a downloadable artifact acceptable.
-	if baseSeverity == "HIGH" || baseSeverity == "CRITICAL" {
+	if baseSeverity == "HIGH" || baseSeverity == severityCritical {
 		return baseSeverity
 	}
 
@@ -226,7 +227,7 @@ func (ca *ContextAnalyzer) adjustArtipacked(baseSeverity string, ctx *WorkflowCo
 func (ca *ContextAnalyzer) adjustInjection(baseSeverity string, ctx *WorkflowContext) string {
 	// If workflow has untrusted input, keep CRITICAL
 	if ctx.HasUntrustedInput {
-		return "CRITICAL"
+		return severityCritical
 	}
 
 	// If workflow is trusted, downgrade slightly
@@ -308,15 +309,17 @@ func (ca *ContextAnalyzer) GetRecommendations(ctx *WorkflowContext) []string {
 
 	// Intent-based recommendations
 	if ctx.Intent.IsCritical() {
-		recommendations = append(recommendations, "Use commit SHAs for all actions in critical workflows")
-		recommendations = append(recommendations, "Declare explicit permissions with minimal scope")
+		recommendations = append(recommendations,
+			"Use commit SHAs for all actions in critical workflows",
+			"Declare explicit permissions with minimal scope")
 	}
 
 	// Trigger-based recommendations
 	if ctx.HasUntrustedInput {
-		recommendations = append(recommendations, "Use persist-credentials: false for checkout actions")
-		recommendations = append(recommendations, "Validate and sanitize all inputs before use")
-		recommendations = append(recommendations, "Avoid using secrets in workflows with untrusted input")
+		recommendations = append(recommendations,
+			"Use persist-credentials: false for checkout actions",
+			"Validate and sanitize all inputs before use",
+			"Avoid using secrets in workflows with untrusted input")
 	}
 
 	// Permission-based recommendations

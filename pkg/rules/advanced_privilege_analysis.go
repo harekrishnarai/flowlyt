@@ -25,9 +25,17 @@ import (
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
+// Permission levels and trigger names shared across the rules package.
+const (
+	permissionWrite          = "write"
+	permissionWriteAll       = "write-all"
+	triggerPullRequest       = "pull_request"
+	triggerPullRequestTarget = "pull_request_target"
+)
+
 // CheckAdvancedPrivilegeAnalysis performs advanced workflow privilege analysis
 func CheckAdvancedPrivilegeAnalysis(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 6)
 
 	// Analyze repository context
 	repoAnalyzer := context.NewRepositoryAnalyzer(workflow.Path)
@@ -516,13 +524,13 @@ func hasSecretsAccess(step parser.Step) bool {
 func hasWritePermissions(workflow parser.WorkflowFile) bool {
 	// Check workflow-level permissions
 	if perms, ok := workflow.Workflow.Permissions.(string); ok {
-		return perms == "write-all" || perms == "write"
+		return perms == permissionWriteAll || perms == permissionWrite
 	}
 
 	if perms, ok := workflow.Workflow.Permissions.(map[string]interface{}); ok {
 		for _, perm := range perms {
 			if permStr, ok := perm.(string); ok {
-				if permStr == "write" {
+				if permStr == permissionWrite {
 					return true
 				}
 			}
@@ -532,7 +540,7 @@ func hasWritePermissions(workflow parser.WorkflowFile) bool {
 	// Check job-level permissions
 	for _, job := range workflow.Workflow.Jobs {
 		if perms, ok := job.Permissions.(string); ok {
-			if perms == "write-all" || perms == "write" {
+			if perms == permissionWriteAll || perms == permissionWrite {
 				return true
 			}
 		}
@@ -540,7 +548,7 @@ func hasWritePermissions(workflow parser.WorkflowFile) bool {
 		if perms, ok := job.Permissions.(map[string]interface{}); ok {
 			for _, perm := range perms {
 				if permStr, ok := perm.(string); ok {
-					if permStr == "write" {
+					if permStr == permissionWrite {
 						return true
 					}
 				}
@@ -558,18 +566,18 @@ func hasPullRequestTargetTrigger(workflow parser.WorkflowFile) bool {
 
 	switch on := workflow.Workflow.On.(type) {
 	case map[string]interface{}:
-		_, hasPRTarget := on["pull_request_target"]
+		_, hasPRTarget := on[triggerPullRequestTarget]
 		return hasPRTarget
 	case []interface{}:
 		for _, trigger := range on {
 			if triggerStr, ok := trigger.(string); ok {
-				if triggerStr == "pull_request_target" {
+				if triggerStr == triggerPullRequestTarget {
 					return true
 				}
 			}
 		}
 	case string:
-		return on == "pull_request_target"
+		return on == triggerPullRequestTarget
 	}
 
 	return false

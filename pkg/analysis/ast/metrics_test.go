@@ -33,7 +33,7 @@ func TestMetricsCollector(t *testing.T) {
 	metrics := collector.GetMetrics()
 
 	if metrics.totalAnalyses != 2 {
-		t.Errorf("Expected 2 analyses, got %d", metrics.totalAnalyses)
+		t.Errorf("Expected 2 analyzes, got %d", metrics.totalAnalyses)
 	}
 
 	if metrics.averageParseTime != 7500*time.Microsecond {
@@ -114,7 +114,7 @@ func TestMetricsCollectorCacheTracking(t *testing.T) {
 func TestMetricsCollectorComplexityTracking(t *testing.T) {
 	collector := NewMetricsCollector()
 
-	// Need to record analyses first to establish a baseline count
+	// Need to record analyzes first to establish a baseline count
 	collector.RecordAnalysis(5*time.Millisecond, 10*time.Millisecond, "small", nil)
 	collector.UpdateComplexityMetrics(5, 10, 2.5, 3, 8)
 
@@ -124,12 +124,12 @@ func TestMetricsCollectorComplexityTracking(t *testing.T) {
 	metrics := collector.GetMetrics()
 	profile := metrics.performanceProfile
 
-	// After 2 analyses: (5+3)/2 = 4.0 average job count
+	// After 2 analyzes: (5+3)/2 = 4.0 average job count
 	if profile.ComplexityMetrics.AverageJobCount != 4.0 {
 		t.Errorf("Expected average job count 4.0, got %f", profile.ComplexityMetrics.AverageJobCount)
 	}
 
-	// After 2 analyses: (10+8)/2 = 9.0 average step count
+	// After 2 analyzes: (10+8)/2 = 9.0 average step count
 	if profile.ComplexityMetrics.AverageStepCount != 9.0 {
 		t.Errorf("Expected average step count 9.0, got %f", profile.ComplexityMetrics.AverageStepCount)
 	}
@@ -150,7 +150,7 @@ func TestMetricsReportGeneration(t *testing.T) {
 	report := collector.GenerateReport()
 
 	if report.TotalAnalyses != 2 {
-		t.Errorf("Expected 2 analyses in report, got %d", report.TotalAnalyses)
+		t.Errorf("Expected 2 analyzes in report, got %d", report.TotalAnalyses)
 	}
 
 	// Should recommend optimization for slow analysis
@@ -179,7 +179,7 @@ func TestMetricsCollectorDisable(t *testing.T) {
 	metrics := collector.GetMetrics()
 
 	if metrics.totalAnalyses != 0 {
-		t.Errorf("Expected 0 analyses when disabled, got %d", metrics.totalAnalyses)
+		t.Errorf("Expected 0 analyzes when disabled, got %d", metrics.totalAnalyses)
 	}
 
 	if metrics.cacheHits != 0 {

@@ -27,7 +27,7 @@ import (
 
 // CheckSupplyChainVulnerabilities checks for supply chain security issues
 func CheckSupplyChainVulnerabilities(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 9)
 
 	// Basic supply chain checks
 	findings = append(findings, checkKnownVulnerableActions(workflow)...)

@@ -463,7 +463,7 @@ func contains(slice []string, item string) bool {
 
 func matchesPatterns(patterns []string, text string) bool {
 	for _, pattern := range patterns {
-		if matched, _ := filepath.Match(pattern, text); matched {
+		if matched, err := filepath.Match(pattern, text); err == nil && matched {
 			return true
 		}
 		if matched, _ := regexp.MatchString(pattern, text); matched {

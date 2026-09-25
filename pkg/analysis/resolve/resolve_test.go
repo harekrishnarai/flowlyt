@@ -209,7 +209,7 @@ func TestResolveUses_CachesAndRemembersMisses(t *testing.T) {
 	if _, ok := r.ResolveUses("./.github/actions/missing"); ok {
 		t.Error("missing action must not resolve")
 	}
-	if !r.misses[mustAbs(t, filepath.Join(root, ".github/actions/missing"))] {
+	if !r.misses[mustAbs(t, filepath.Join(root, ".github", "actions", "missing"))] {
 		t.Error("expected the miss to be recorded")
 	}
 }

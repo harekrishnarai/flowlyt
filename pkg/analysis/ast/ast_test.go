@@ -188,7 +188,7 @@ func TestReachabilityAnalyzer(t *testing.T) {
 
 	for _, tc := range testCases {
 		condition := analyzer.parseCondition(tc.expression)
-		hasFunc := condition.Always || condition.Failure || condition.Success || condition.Cancelled
+		hasFunc := condition.Always || condition.Failure || condition.Success || condition.Canceled
 
 		if hasFunc != tc.expectFunc {
 			t.Errorf("parseCondition(%q) function detection = %v, expected %v", tc.expression, hasFunc, tc.expectFunc)

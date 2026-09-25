@@ -237,7 +237,7 @@ func (v *Validator) ValidateOutputFile(outputPath string) error {
 		if stat, err := os.Stat(dir); err != nil {
 			if os.IsNotExist(err) {
 				// Try to create directory
-				if err := os.MkdirAll(dir, 0755); err != nil {
+				if err := os.MkdirAll(dir, 0750); err != nil {
 					return errors.NewReportError(fmt.Sprintf("Cannot create output directory: %s", dir), err, outputPath,
 						"Ensure you have write permissions",
 						"Check the directory path and permissions",

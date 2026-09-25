@@ -27,7 +27,7 @@ import (
 // CheckOIDCAbuse is the entry point for OIDC token abuse detection.
 // It checks for OA-001 (workflow-level id-token:write) and OA-002 (id-token:write without environment scope).
 func CheckOIDCAbuse(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 2)
 	findings = append(findings, checkOIDCWorkflowLevelPermission(workflow)...)
 	findings = append(findings, checkOIDCWithoutEnvironmentScope(workflow)...)
 	return findings
@@ -37,7 +37,7 @@ func CheckOIDCAbuse(workflow parser.WorkflowFile) []Finding {
 // Flags id-token: write at the workflow level when there is more than 1 job,
 // because all jobs inherit the permission even if only one needs OIDC.
 func checkOIDCWorkflowLevelPermission(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 1)
 
 	if !hasIDTokenWrite(workflow.Workflow.Permissions) {
 		return findings

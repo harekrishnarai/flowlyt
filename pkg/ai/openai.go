@@ -182,11 +182,12 @@ func (c *OpenAIClient) VerifyFinding(ctx context.Context, finding rules.Finding)
 		if err != nil {
 			lastErr = fmt.Errorf("failed to make request: %w", err)
 		} else {
-			defer resp.Body.Close()
-
 			var response openAIResponse
-			if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-				lastErr = fmt.Errorf("failed to decode response: %w", err)
+			decodeErr := json.NewDecoder(resp.Body).Decode(&response)
+			resp.Body.Close()
+
+			if decodeErr != nil {
+				lastErr = fmt.Errorf("failed to decode response: %w", decodeErr)
 			} else if response.Error != nil {
 				lastErr = fmt.Errorf("OpenAI API error: %s", response.Error.Message)
 			} else if len(response.Choices) == 0 {
@@ -201,7 +202,7 @@ func (c *OpenAIClient) VerifyFinding(ctx context.Context, finding rules.Finding)
 			select {
 			case <-time.After(backoff):
 			case <-ctx.Done():
-				return nil, fmt.Errorf("OpenAI request cancelled during backoff: %w", ctx.Err())
+				return nil, fmt.Errorf("OpenAI request canceled during backoff: %w", ctx.Err())
 			}
 		}
 	}

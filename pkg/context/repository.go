@@ -126,9 +126,6 @@ func (ra *RepositoryAnalyzer) determineRepositoryVisibility(ctx *RepositoryConte
 	if publicFileCount >= 3 && hasOpenSourceStructure && hasCIConfig {
 		ctx.IsPublic = true
 		ctx.IsPrivate = false
-	} else if publicFileCount <= 1 && !hasOpenSourceStructure {
-		ctx.IsPublic = false
-		ctx.IsPrivate = true
 	} else {
 		// Default to private for security (conservative approach)
 		ctx.IsPublic = false

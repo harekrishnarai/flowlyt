@@ -76,7 +76,7 @@ func NewContextProvider(files []parser.WorkflowFile) *ContextProvider {
 }
 
 // snippetRadius is the number of source lines included either side of a
-// finding. Wide enough to show a step in full and its immediate neighbours,
+// finding. Wide enough to show a step in full and its immediate neighbors,
 // narrow enough to keep many findings within one request.
 const snippetRadius = 12
 

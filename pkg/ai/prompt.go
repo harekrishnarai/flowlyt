@@ -104,10 +104,13 @@ func composeBatchPrompt(class string, findings []ContextualFinding) (string, str
 		}
 	}
 
-	raw, _ := json.MarshalIndent(items, "", "  ")
+	raw, err := json.MarshalIndent(items, "", "  ")
+	if err != nil {
+		raw = []byte("[]")
+	}
 	user := fmt.Sprintf(
-		"Analyse each finding below. Each includes the workflow triggers, the workflow- and job-level "+
-			"permissions, the full step definition, and a numbered source snippet centred on the "+
+		"Analyze each finding below. Each includes the workflow triggers, the workflow- and job-level "+
+			"permissions, the full step definition, and a numbered source snippet centered on the "+
 			"reported line (marked with `>`).\n\n"+
 			"Base your judgement only on the evidence provided. If the evidence is insufficient to "+
 			"decide, say so in the reasoning and return a confidence at or below 0.5.\n\n"+
@@ -174,7 +177,7 @@ const secretsContextSystemPrompt = `You are a CI/CD security expert specialising
 
 You are given, for each finding: the matched evidence, the full step definition, the file context, and a numbered source snippet.
 
-Distinguish live credentials from placeholders, references, and test fixtures. A finding is a TRUE POSITIVE when the evidence contains a credential with real structure (high entropy, or a known token prefix such as ghp_, sk-, AKIA). A finding is a FALSE POSITIVE when the evidence is a ${{ secrets.X }} reference, an environment variable lookup, a clearly labelled placeholder ("your-api-key-here", "<TOKEN>"), a value in a test or example file, or a commented-out line in the snippet.
+Distinguish live credentials from placeholders, references, and test fixtures. A finding is a TRUE POSITIVE when the evidence contains a credential with real structure (high entropy, or a known token prefix such as ghp_, sk-, AKIA). A finding is a FALSE POSITIVE when the evidence is a ${{ secrets.X }} reference, an environment variable lookup, a clearly labeled placeholder ("your-api-key-here", "<TOKEN>"), a value in a test or example file, or a commented-out line in the snippet.
 
 Reply ONLY with a JSON array. Per item: index, is_likely_false_positive, confidence (0-1), reasoning (1-2 sentences, cite the specific token or pattern), suggested_severity, remediation (one concrete fix).`
 
@@ -187,7 +190,7 @@ Evaluate third-party action trust beyond SHA pinning, which static analysis alre
 Reply ONLY with a JSON array. Per item: index, is_likely_false_positive, confidence (0-1), reasoning (1-2 sentences, name the action and the trust concern), suggested_severity, remediation (one concrete fix).`
 
 // sharedPromptTemplate is kept for the single-finding fallback path (composeFindingPrompt).
-const sharedPromptTemplate = `You are a CI/CD security reviewer. Analyse this finding in context.
+const sharedPromptTemplate = `You are a CI/CD security reviewer. Analyze this finding in context.
 
 Context: trigger=%s | runner=%s | file=%s
 Rule: %s (%s) | severity=%s | category=%s
@@ -206,12 +209,12 @@ func safePromptValue(value, fallback string) string {
 }
 
 func trimEvidence(e string) string {
-	const max = 600
-	if len(e) <= max {
+	const maxEvidenceLen = 600
+	if len(e) <= maxEvidenceLen {
 		return e
 	}
 	// Prefer keeping the start; indicate truncation
-	return e[:max] + " \u2026[truncated]"
+	return e[:maxEvidenceLen] + " \u2026[truncated]"
 }
 
 // parseBatchResponse parses a JSON array of BatchVerificationResult from the

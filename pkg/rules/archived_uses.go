@@ -175,7 +175,7 @@ func checkArchivedActionSource(workflow parser.WorkflowFile) []Finding {
 			JobName:     ref.jobName,
 			StepName:    ref.stepName,
 			Evidence:    fmt.Sprintf("%s is archived (read-only) on GitHub", ref.fullName),
-			Remediation: fmt.Sprintf("Replace %s with a maintained alternative, or inline its behaviour in a `run:` step (many wrapper actions can be replaced by a `gh` CLI call)", ref.fullName),
+			Remediation: fmt.Sprintf("Replace %s with a maintained alternative, or inline its behavior in a `run:` step (many wrapper actions can be replaced by a `gh` CLI call)", ref.fullName),
 			LineNumber:  lineNumber,
 		})
 	}

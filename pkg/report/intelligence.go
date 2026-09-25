@@ -221,8 +221,8 @@ func (ig *IntelligenceGenerator) generateIntelligenceCLIReport(report Intelligen
 	// Risk score distribution
 	if len(report.IntelligenceSummary.RiskScoreDistribution) > 0 {
 		fmt.Println("\nRisk Score Distribution:")
-		for range_, count := range report.IntelligenceSummary.RiskScoreDistribution {
-			fmt.Printf("  %s: %d\n", range_, count)
+		for scoreRange, count := range report.IntelligenceSummary.RiskScoreDistribution {
+			fmt.Printf("  %s: %d\n", scoreRange, count)
 		}
 	}
 
@@ -287,8 +287,8 @@ func (ig *IntelligenceGenerator) generateIntelligenceMarkdownReport(report Intel
 		markdownBuilder.WriteString("\n### Risk Score Distribution\n\n")
 		markdownBuilder.WriteString("| Risk Range | Count |\n")
 		markdownBuilder.WriteString("|------------|-------|\n")
-		for range_, count := range report.IntelligenceSummary.RiskScoreDistribution {
-			markdownBuilder.WriteString(fmt.Sprintf("| %s | %d |\n", range_, count))
+		for scoreRange, count := range report.IntelligenceSummary.RiskScoreDistribution {
+			markdownBuilder.WriteString(fmt.Sprintf("| %s | %d |\n", scoreRange, count))
 		}
 	}
 
@@ -296,7 +296,7 @@ func (ig *IntelligenceGenerator) generateIntelligenceMarkdownReport(report Intel
 	content := markdownBuilder.String()
 	if ig.FilePath != "" {
 		// Append to existing file
-		file, err := os.OpenFile(ig.FilePath, os.O_APPEND|os.O_WRONLY, 0644)
+		file, err := os.OpenFile(ig.FilePath, os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
 			return fmt.Errorf("failed to open markdown file for append: %w", err)
 		}

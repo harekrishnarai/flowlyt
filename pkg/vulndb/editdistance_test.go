@@ -6,7 +6,7 @@ import (
 )
 
 // referenceEditDistance is the textbook full-matrix Levenshtein implementation,
-// used only to validate the optimised bounded version.
+// used only to validate the optimized bounded version.
 func referenceEditDistance(a, b string) int {
 	m := make([][]int, len(a)+1)
 	for i := range m {
@@ -55,7 +55,7 @@ func TestEditDistanceWithin_MatchesReference(t *testing.T) {
 	}
 }
 
-// Randomised differential test: the bounded result must agree with the
+// Randomized differential test: the bounded result must agree with the
 // reference for every input, which is what makes the band and early-exit
 // pruning safe.
 func TestEditDistanceWithin_RandomisedAgainstReference(t *testing.T) {

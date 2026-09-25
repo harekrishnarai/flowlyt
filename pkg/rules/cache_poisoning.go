@@ -28,7 +28,7 @@ import (
 // CheckCachePoisoning is the public entry point that detects cache poisoning
 // attack vectors (CP-001 and CP-002).
 func CheckCachePoisoning(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 2)
 	findings = append(findings, checkBroadRestoreKeys(workflow)...)
 	findings = append(findings, checkCacheWriteInPR(workflow)...)
 	return findings
@@ -49,7 +49,7 @@ func hasPRTrigger(workflow parser.WorkflowFile) bool {
 		return false
 	}
 
-	prTriggers := []string{"pull_request", "pull_request_target"}
+	prTriggers := []string{triggerPullRequest, "pull_request_target"}
 
 	switch v := on.(type) {
 	case string:

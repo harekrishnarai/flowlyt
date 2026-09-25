@@ -155,10 +155,6 @@ func TestWorkflowJob_Structure(t *testing.T) {
 		Config: nil,
 	}
 
-	if job == nil {
-		t.Fatal("Expected job to be created, got nil")
-	}
-
 	// Verify we can create jobs with nil fields (they'll be populated later)
 	if job.StandardRules != nil {
 		t.Log("StandardRules is not nil")

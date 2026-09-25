@@ -338,7 +338,7 @@ func (parg *PolicyAwareReportGenerator) generateRecommendations(findings []Polic
 		recommendations = append(recommendations, PolicyRecommendation{
 			ID:          "compliance-violations",
 			Title:       "Address Compliance Framework Violations",
-			Description: fmt.Sprintf("Found violations affecting compliance frameworks"),
+			Description: "Found violations affecting compliance frameworks",
 			Priority:    "HIGH",
 			Actions: []string{
 				"Review compliance requirements",

@@ -45,7 +45,7 @@ type ConditionAnalyzer struct {
 	Always            bool     // always() function used
 	Failure           bool     // failure() function used
 	Success           bool     // success() function used
-	Cancelled         bool     // cancelled() function used
+	Canceled          bool     // canceled() function used
 	StaticEval        *bool    // static evaluation result if determinable
 	ContextDependency bool     // depends on runtime context
 	Complexity        int      // complexity score for the condition
@@ -202,7 +202,7 @@ func (ra *ReachabilityAnalyzer) parseCondition(expr string) *ConditionAnalyzer {
 	condition.Always = strings.Contains(cleanExpr, "always()")
 	condition.Failure = strings.Contains(cleanExpr, "failure()")
 	condition.Success = strings.Contains(cleanExpr, "success()")
-	condition.Cancelled = strings.Contains(cleanExpr, "cancelled()")
+	condition.Canceled = strings.Contains(cleanExpr, "canceled()")
 
 	// Extract logical operators
 	operators := []string{"&&", "||", "!", "==", "!=", "<", ">", "<=", ">=", "contains", "startsWith", "endsWith"}
@@ -281,7 +281,7 @@ func (ra *ReachabilityAnalyzer) calculateComplexity(condition *ConditionAnalyzer
 	complexity += len(condition.Functions)  // Functions add complexity
 
 	// Special function complexity
-	if condition.Always || condition.Failure || condition.Success || condition.Cancelled {
+	if condition.Always || condition.Failure || condition.Success || condition.Canceled {
 		complexity += 3 // Status functions add significant complexity
 	}
 
@@ -297,7 +297,8 @@ func (ra *ReachabilityAnalyzer) hasContextDependency(condition *ConditionAnalyze
 	}
 
 	// Check all context references
-	allRefs := append(condition.Github, condition.Steps...)
+	allRefs := append([]string{}, condition.Github...)
+	allRefs = append(allRefs, condition.Steps...)
 	allRefs = append(allRefs, condition.Jobs...)
 	allRefs = append(allRefs, condition.Needs...)
 
@@ -310,7 +311,7 @@ func (ra *ReachabilityAnalyzer) hasContextDependency(condition *ConditionAnalyze
 	}
 
 	// Status functions depend on runtime context
-	return condition.Always || condition.Failure || condition.Success || condition.Cancelled
+	return condition.Always || condition.Failure || condition.Success || condition.Canceled
 }
 
 func (ra *ReachabilityAnalyzer) evaluateStatically(expr string, condition *ConditionAnalyzer) *bool {
@@ -624,7 +625,7 @@ func (rr *ReachabilityReport) GetStaticallyFalseConditions() []string {
 // AnalyzeConditionComplexity analyzes the complexity of conditional expressions
 func (ca *ConditionAnalyzer) AnalyzeConditionComplexity() map[string]interface{} {
 	complexity := map[string]interface{}{
-		"has_functions":    ca.Always || ca.Failure || ca.Success || ca.Cancelled,
+		"has_functions":    ca.Always || ca.Failure || ca.Success || ca.Canceled,
 		"function_count":   0,
 		"variable_count":   len(ca.Variables),
 		"secret_count":     len(ca.Secrets),
@@ -644,7 +645,7 @@ func (ca *ConditionAnalyzer) AnalyzeConditionComplexity() map[string]interface{}
 	if ca.Success {
 		functionCount++
 	}
-	if ca.Cancelled {
+	if ca.Canceled {
 		functionCount++
 	}
 	complexity["function_count"] = functionCount

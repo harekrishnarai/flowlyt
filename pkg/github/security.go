@@ -18,7 +18,6 @@ package github
 
 import (
 	"fmt"
-	"os"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -99,14 +98,5 @@ func cleanupGitCredentials() error {
 	cmd := exec.Command("git", "credential", "reject")
 	cmd.Stdin = strings.NewReader("protocol=https\nhost=github.com\n")
 
-	// Ignore errors on cleanup
-	_ = cmd.Run()
-	return nil
-}
-
-// isTokenInEnvironment checks if GitHub token is available in environment
-// without exposing the actual token value
-func isTokenInEnvironment() bool {
-	token := os.Getenv("GITHUB_TOKEN")
-	return token != "" && len(token) > 0
+	return cmd.Run()
 }

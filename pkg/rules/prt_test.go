@@ -19,9 +19,10 @@ package rules_test
 import (
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
-	"gopkg.in/yaml.v3"
 )
 
 // buildPRTWorkflowFile parses a YAML string into a parser.WorkflowFile for PRT rule tests.

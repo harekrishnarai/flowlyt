@@ -113,7 +113,7 @@ func candidateTagNames(claimedTag string) []string {
 // checkRefVersionMismatch verifies that a SHA-pinned action actually
 // corresponds to the version its trailing comment claims.
 //
-// Pinning by commit SHA is the recommended defence against tag mutation, but
+// Pinning by commit SHA is the recommended defense against tag mutation, but
 // reviewers rely almost entirely on the adjacent `# v1.2.3` comment to judge
 // what is being pinned. A SHA that does not match the claimed tag is therefore
 // a potent social-engineering vector: a malicious pull request can point at an

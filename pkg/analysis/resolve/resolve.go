@@ -119,7 +119,7 @@ func IsLocal(uses string) bool {
 //
 // Returns false when the reference is remote, missing, unparseable, or an
 // action that is not composite. A JavaScript or Docker action has no steps to
-// analyse from source, so it is deliberately not resolved.
+// analyze from source, so it is deliberately not resolved.
 func (r *Repo) ResolveUses(uses string) (*Definition, bool) {
 	if r == nil || r.root == "" || !IsLocal(uses) {
 		return nil, false

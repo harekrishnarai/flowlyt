@@ -236,7 +236,7 @@ func (c *PerplexityClient) cleanJSONContent(content string) string {
 	content = string(bytes.ReplaceAll([]byte(content), []byte("\\'"), []byte("'")))
 	content = string(bytes.ReplaceAll([]byte(content), []byte("\\`"), []byte("`")))
 
-	return string(content)
+	return content
 }
 
 // Close cleans up resources

@@ -304,7 +304,7 @@ jobs:
 }
 
 // ---------------------------------------------------------------------------
-// Shared scanner behaviour
+// Shared scanner behavior
 // ---------------------------------------------------------------------------
 
 // Commented-out commands must never produce findings.

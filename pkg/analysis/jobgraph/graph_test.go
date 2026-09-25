@@ -57,7 +57,7 @@ jobs:
 	}
 }
 
-// Order must not depend on Go's randomised map iteration, or findings would
+// Order must not depend on Go's randomized map iteration, or findings would
 // shuffle between runs.
 func TestBuild_OrderIsDeterministic(t *testing.T) {
 	src := `

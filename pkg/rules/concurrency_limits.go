@@ -36,7 +36,7 @@ func CheckConcurrencyLimits(workflow parser.WorkflowFile) []Finding {
 // schedule-only or manually dispatched workflows.
 var rapidRetriggerTriggers = []string{
 	"push",
-	"pull_request",
+	triggerPullRequest,
 	"pull_request_target",
 }
 
@@ -91,10 +91,10 @@ const (
 	// concurrencyAbsent means no concurrency block is declared at all.
 	concurrencyAbsent concurrencyState = iota
 	// concurrencyNoCancel means a group is declared but superseded runs are
-	// not cancelled (either the shorthand string form, or an explicit
+	// not canceled (either the shorthand string form, or an explicit
 	// cancel-in-progress: false).
 	concurrencyNoCancel
-	// concurrencyCancels means superseded runs are cancelled, either
+	// concurrencyCancels means superseded runs are canceled, either
 	// unconditionally or via an expression.
 	concurrencyCancels
 )
@@ -176,7 +176,7 @@ func classifyCancelInProgress(value interface{}) concurrencyState {
 // configures cancellation, since a job-level setting is a legitimate way to
 // scope the limit more narrowly.
 func checkConcurrencyLimits(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 1)
 
 	if !hasRapidRetriggerTrigger(workflow) {
 		return findings
@@ -208,7 +208,7 @@ func checkConcurrencyLimits(workflow parser.WorkflowFile) []Finding {
 			"  cancel-in-progress: true"
 		severity = Low
 	} else {
-		evidence = "Workflow declares `concurrency:` without cancel-in-progress, so superseded runs queue instead of being cancelled"
+		evidence = "Workflow declares `concurrency:` without cancel-in-progress, so superseded runs queue instead of being canceled"
 		remediation = "Set `cancel-in-progress: true` on the existing concurrency block so that re-triggering the workflow cancels the in-flight run"
 		severity = Low
 	}

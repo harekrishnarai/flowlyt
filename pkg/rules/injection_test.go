@@ -19,8 +19,9 @@ package rules
 import (
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"gopkg.in/yaml.v3"
+
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // parseWorkflowFromYAML is a test helper that parses YAML content into a WorkflowFile.

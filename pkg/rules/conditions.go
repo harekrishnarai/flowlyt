@@ -186,7 +186,7 @@ func hasUnsoundLogic(condition string) bool {
 		`github\.event\.issue\.title.*==.*[^'].*[^']`,            // Unquoted issue title comparison
 		`github\.event\.comment\.body.*==.*[^'].*[^']`,           // Unquoted comment body comparison
 		`\|\|.*always\(\).*github\.event`,                        // Combining always() with event data unsafely
-		`&&.*\!.*cancelled\(\).*github\.event`,                   // Complex negation with event data
+		`&&.*\!.*canceled\(\).*github\.event`,                    // Complex negation with event data
 	}
 
 	for _, pattern := range unsoundPatterns {

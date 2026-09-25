@@ -15,7 +15,7 @@ func benchWorkflowYAML(jobs, steps int) string {
 	for j := 0; j < jobs; j++ {
 		s += fmt.Sprintf("  job%d:\n    runs-on: ubuntu-latest\n    steps:\n", j)
 		for k := 0; k < steps; k++ {
-			s += fmt.Sprintf("      - uses: actions/checkout@v4\n")
+			s += "      - uses: actions/checkout@v4\n"
 			s += fmt.Sprintf("      - name: build %d\n        run: |\n          npm ci\n          make build TARGET=%d\n          echo \"done ${{ github.sha }}\"\n", k, k)
 		}
 	}

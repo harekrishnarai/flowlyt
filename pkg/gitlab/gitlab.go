@@ -22,8 +22,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"gopkg.in/yaml.v3"
+
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 // GitLabWorkflow represents a GitLab CI/CD pipeline

@@ -23,9 +23,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/owenrumney/go-sarif/v2/sarif"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
-	"github.com/owenrumney/go-sarif/v2/sarif"
 )
 
 // generateSARIFReport creates a SARIF-compliant report using the go-sarif library
@@ -328,16 +329,13 @@ func (g *Generator) normalizeFilePath(filePath string) string {
 		}
 	} else if strings.HasSuffix(normalized, ".gitlab-ci.yml") {
 		normalized = ".gitlab-ci.yml"
-	} else {
-		// Try to make relative to current directory
-		if strings.HasPrefix(normalized, "/") {
-			// Remove absolute path prefixes
-			parts := strings.Split(normalized, "/")
-			for i, part := range parts {
-				if strings.HasPrefix(part, ".github") || strings.HasSuffix(part, ".yml") || strings.HasSuffix(part, ".yaml") {
-					normalized = strings.Join(parts[i:], "/")
-					break
-				}
+	} else if strings.HasPrefix(normalized, "/") {
+		// Try to make relative to current directory by removing absolute path prefixes
+		parts := strings.Split(normalized, "/")
+		for i, part := range parts {
+			if strings.HasPrefix(part, ".github") || strings.HasSuffix(part, ".yml") || strings.HasSuffix(part, ".yaml") {
+				normalized = strings.Join(parts[i:], "/")
+				break
 			}
 		}
 	}
@@ -390,15 +388,9 @@ func (g *Generator) formatRemediation(remediation string) string {
 			continue
 		}
 
-		// Convert code snippets
-		if strings.Contains(line, "`") {
-			markdownLines = append(markdownLines, line)
-		} else if strings.Contains(line, "http") {
-			// Convert URLs to links
-			markdownLines = append(markdownLines, line)
-		} else {
-			markdownLines = append(markdownLines, line)
-		}
+		// Code snippets and URLs are already valid Markdown; pass all other
+		// lines through unchanged as well.
+		markdownLines = append(markdownLines, line)
 	}
 
 	return strings.Join(markdownLines, "\n")

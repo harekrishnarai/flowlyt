@@ -25,8 +25,9 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
-	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
 	"gopkg.in/yaml.v3"
+
+	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
 )
 
 // Config represents the complete Flowlyt configuration
@@ -313,7 +314,7 @@ func validateConfig(config *Config) error {
 	}
 
 	// Validate false positive patterns are valid regex
-	allPatterns := append(config.Rules.FalsePositives.Global.Patterns, config.Rules.FalsePositives.Secrets.Patterns...)
+	allPatterns := append(append([]string{}, config.Rules.FalsePositives.Global.Patterns...), config.Rules.FalsePositives.Secrets.Patterns...)
 	for ruleName, ruleIgnores := range config.Rules.FalsePositives.Rules {
 		allPatterns = append(allPatterns, ruleIgnores.Patterns...)
 		_ = ruleName // avoid unused variable
@@ -343,7 +344,7 @@ func isValidRuleType(ruleType string) bool {
 func isValidSeverity(severity string) bool {
 	validSeverities := []string{"CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"}
 	for _, valid := range validSeverities {
-		if strings.ToUpper(severity) == valid {
+		if strings.EqualFold(severity, valid) {
 			return true
 		}
 	}

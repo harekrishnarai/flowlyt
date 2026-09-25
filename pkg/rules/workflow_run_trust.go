@@ -32,7 +32,7 @@ var artifactDownloadActions = []string{
 // It returns findings for all three rules covering the CVE-2025-30066 (tj-actions/reviewdog)
 // supply chain attack pattern where workflow_run triggers allow untrusted artifact injection.
 func CheckWorkflowRunTrust(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 3)
 
 	if !isWorkflowRunTrigger(workflow) {
 		return findings
@@ -248,7 +248,7 @@ func writesToGitHubEnvOrPath(run string) bool {
 }
 
 // jobHasWritePermission returns true if the job or the workflow-level permissions grant any write access.
-// It recognises "write-all" (string) and maps where any permission value is "write".
+// It recognizes "write-all" (string) and maps where any permission value is "write".
 func jobHasWritePermission(job parser.Job, workflow parser.Workflow) bool {
 	if hasWriteInPermissions(job.Permissions) {
 		return true
@@ -267,16 +267,16 @@ func hasWriteInPermissions(perms interface{}) bool {
 
 	switch v := perms.(type) {
 	case string:
-		return v == "write-all"
+		return v == permissionWriteAll
 	case map[interface{}]interface{}:
 		for _, val := range v {
-			if s, ok := val.(string); ok && s == "write" {
+			if s, ok := val.(string); ok && s == permissionWrite {
 				return true
 			}
 		}
 	case map[string]interface{}:
 		for _, val := range v {
-			if s, ok := val.(string); ok && s == "write" {
+			if s, ok := val.(string); ok && s == permissionWrite {
 				return true
 			}
 		}

@@ -71,12 +71,12 @@ func checkInsecurePullRequestTarget(workflow parser.WorkflowFile) []Finding {
 
 	switch on := workflow.Workflow.On.(type) {
 	case string:
-		usesPullRequestTarget = on == "pull_request_target"
+		usesPullRequestTarget = on == triggerPullRequestTarget
 	case map[string]interface{}:
-		_, usesPullRequestTarget = on["pull_request_target"]
+		_, usesPullRequestTarget = on[triggerPullRequestTarget]
 	case []interface{}:
 		for _, event := range on {
-			if eventStr, ok := event.(string); ok && eventStr == "pull_request_target" {
+			if eventStr, ok := event.(string); ok && eventStr == triggerPullRequestTarget {
 				usesPullRequestTarget = true
 				break
 			}
@@ -143,12 +143,12 @@ func checkPRTargetAbuse(workflow parser.WorkflowFile) []Finding {
 	hasPRTarget := false
 	switch on := workflow.Workflow.On.(type) {
 	case string:
-		hasPRTarget = on == "pull_request_target"
+		hasPRTarget = on == triggerPullRequestTarget
 	case map[string]interface{}:
-		_, hasPRTarget = on["pull_request_target"]
+		_, hasPRTarget = on[triggerPullRequestTarget]
 	case []interface{}:
 		for _, event := range on {
-			if eventStr, ok := event.(string); ok && eventStr == "pull_request_target" {
+			if eventStr, ok := event.(string); ok && eventStr == triggerPullRequestTarget {
 				hasPRTarget = true
 				break
 			}
@@ -166,7 +166,7 @@ func checkPRTargetAbuse(workflow parser.WorkflowFile) []Finding {
 			if perms, ok := job.Permissions.(map[string]interface{}); ok {
 				for permission, levelInterface := range perms {
 					if level, ok := levelInterface.(string); ok {
-						if (permission == "contents" || permission == "actions" || permission == "packages") && level == "write" {
+						if (permission == "contents" || permission == "actions" || permission == "packages") && level == permissionWrite {
 							lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 								Key:   permission,
 								Value: level,
@@ -429,8 +429,8 @@ func checkArtifactPoisoning(workflow parser.WorkflowFile) []Finding {
 func hasUntrustedWorkflowTriggersForArtifacts(workflow parser.WorkflowFile) bool {
 	// Events that could allow untrusted actors to control artifacts
 	untrustedEvents := []string{
-		"pull_request",
-		"pull_request_target",
+		triggerPullRequest,
+		triggerPullRequestTarget,
 		"pull_request_review",
 		"pull_request_review_comment",
 		"issues",
@@ -633,7 +633,7 @@ func checkExternalTrigger(workflow parser.WorkflowFile) []Finding {
 	// pull_request_target is always dangerous (elevated permissions on fork code).
 	// Other triggers are only flagged when the workflow has write permissions.
 	dangerousTriggers := map[string]string{
-		"pull_request_target": "Can be triggered by external pull requests with elevated permissions",
+		triggerPullRequestTarget: "Can be triggered by external pull requests with elevated permissions",
 	}
 
 	// These triggers are only concerning when the workflow has write permissions

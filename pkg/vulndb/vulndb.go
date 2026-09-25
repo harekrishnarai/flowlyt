@@ -339,7 +339,7 @@ func editDistanceWithin(a, b string, maxDist int) bool {
 			if a[i-1] == b[j-1] {
 				cost = 0
 			}
-			curr[i] = min(prev[i]+1, curr[i-1]+1, prev[i-1]+cost)
+			curr[i] = minInt3(prev[i]+1, curr[i-1]+1, prev[i-1]+cost)
 			if curr[i] < best {
 				best = curr[i]
 			}
@@ -357,7 +357,7 @@ func editDistanceWithin(a, b string, maxDist int) bool {
 	return prev[len(a)] <= maxDist
 }
 
-func min(a, b, c int) int {
+func minInt3(a, b, c int) int {
 	if a < b {
 		if a < c {
 			return a

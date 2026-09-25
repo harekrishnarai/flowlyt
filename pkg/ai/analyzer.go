@@ -269,7 +269,7 @@ func (a *Analyzer) AnalyzeFindings(ctx context.Context, findings []rules.Finding
 	a.flushPersistentCache()
 
 	if overall.Err() != nil {
-		return enhancedFindings, fmt.Errorf("AI analysis timed out or was cancelled: %w", overall.Err())
+		return enhancedFindings, fmt.Errorf("AI analysis timed out or was canceled: %w", overall.Err())
 	}
 
 	return enhancedFindings, nil
@@ -432,13 +432,17 @@ func (a *Analyzer) flushPersistentCache() {
 	if b.Len() == 0 {
 		return
 	}
-	_ = os.MkdirAll(strings.TrimSuffix(a.cacheFilePath, "/"+filepathBase(a.cacheFilePath)), 0o755)
-	f, err := os.OpenFile(a.cacheFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err := os.MkdirAll(strings.TrimSuffix(a.cacheFilePath, "/"+filepathBase(a.cacheFilePath)), 0o750); err != nil {
+		return
+	}
+	f, err := os.OpenFile(a.cacheFilePath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return
 	}
 	defer f.Close()
-	_, _ = f.WriteString(b.String())
+	if _, err := f.WriteString(b.String()); err != nil {
+		return
+	}
 }
 
 func filepathBase(p string) string {

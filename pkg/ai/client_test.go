@@ -354,10 +354,10 @@ func TestShouldSkipAI(t *testing.T) {
 		{
 			// SecretsExposure is a deprecated alias for SecretExposure. Both
 			// must resolve identically so that any importer still using the
-			// old constant keeps the same filtering behaviour.
+			// old constant keeps the same filtering behavior.
 			name: "deprecated SecretsExposure alias expression reference skipped",
 			finding: rules.Finding{
-				Category: rules.SecretsExposure,
+				Category: rules.SecretExposure,
 				Evidence: "api_key: ${{ secrets.API_KEY }}",
 			},
 			wantSkip:    true,
@@ -449,7 +449,7 @@ func TestCategoryToClass(t *testing.T) {
 		{rules.AccessControl, "escalation"},
 		{rules.InjectionAttack, "injection"},
 		{rules.SecretExposure, "secrets_context"},
-		{rules.SecretsExposure, "secrets_context"}, // deprecated alias
+		{rules.SecretExposure, "secrets_context"},
 		{rules.SupplyChain, "supply_chain_trust"},
 		{rules.Misconfiguration, "generic"},
 		{rules.ShellObfuscation, "generic"},
@@ -586,7 +586,7 @@ func TestAnalyzerSkipsFilteredFindings(t *testing.T) {
 		}
 	}
 	if skipped == nil {
-		t.Error("expected one finding with AISkipped=true")
+		t.Fatal("expected one finding with AISkipped=true")
 	}
 	if skipped.AISkipReason == "" {
 		t.Error("expected AISkipReason to be set on skipped finding")

@@ -19,7 +19,7 @@ package rules
 import "testing"
 
 // knownCategories is the closed set of category values the engine may emit.
-// Findings carry this value into JSON and SARIF output, so an unrecognised or
+// Findings carry this value into JSON and SARIF output, so an unrecognized or
 // inconsistently-spelled value breaks downstream filtering.
 var knownCategories = map[Category]bool{
 	MaliciousPattern:    true,

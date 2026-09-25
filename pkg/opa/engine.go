@@ -20,9 +20,10 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/open-policy-agent/opa/rego"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
-	"github.com/open-policy-agent/opa/rego"
 )
 
 // Engine represents the OPA-based rule engine

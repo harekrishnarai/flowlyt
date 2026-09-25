@@ -268,7 +268,6 @@ func (cg *CallGraph) FindPaths(fromID, toID string, maxDepth int) [][]string {
 
 		// Backtrack
 		visited[currentID] = false
-		path = path[:len(path)-1]
 	}
 
 	dfs(fromID, []string{}, 0)

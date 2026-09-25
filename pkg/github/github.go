@@ -222,7 +222,7 @@ func (c *Client) CloneRepositoryWithProgressAndBranch(repoURL, destDir, branch s
 		destDir = tempDir
 	} else if _, err := os.Stat(destDir); os.IsNotExist(err) {
 		// Create the specified directory if it doesn't exist
-		if err := os.MkdirAll(destDir, 0755); err != nil {
+		if err := os.MkdirAll(destDir, 0750); err != nil {
 			return "", fmt.Errorf("failed to create directory: %w", err)
 		}
 	}
@@ -235,8 +235,13 @@ func (c *Client) CloneRepositoryWithProgressAndBranch(repoURL, destDir, branch s
 		if err := setupGitCredentialHelper(token); err != nil {
 			// Log warning but continue - might work without auth for public repos
 			// Don't expose the error details as they might contain sensitive info
+			fmt.Fprintln(os.Stderr, "warning: failed to configure git credentials; continuing without authentication")
 		}
-		defer cleanupGitCredentials()
+		defer func() {
+			if err := cleanupGitCredentials(); err != nil {
+				fmt.Fprintf(os.Stderr, "warning: failed to clean up git credentials: %v\n", err)
+			}
+		}()
 	} else {
 		// Public repo without credentials
 		cloneURL = fmt.Sprintf("https://github.com/%s/%s.git", owner, repo)
@@ -250,9 +255,9 @@ func (c *Client) CloneRepositoryWithProgressAndBranch(repoURL, destDir, branch s
 	// Build git clone command with optional branch
 	var cmd *exec.Cmd
 	if branch != "" {
-		cmd = exec.Command("git", "clone", "--branch", branch, "--single-branch", cloneURL, destDir)
+		cmd = exec.Command("git", "clone", "--branch", branch, "--single-branch", cloneURL, destDir) //nolint:gosec // G204: args are passed to git directly, not through a shell
 	} else {
-		cmd = exec.Command("git", "clone", cloneURL, destDir)
+		cmd = exec.Command("git", "clone", cloneURL, destDir) //nolint:gosec // G204: args are passed to git directly, not through a shell
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -268,9 +273,9 @@ func (c *Client) cloneWithProgress(cloneURL, destDir, branch string, progressCal
 	// Build git clone command with progress reporting and optional branch
 	var cmd *exec.Cmd
 	if branch != "" {
-		cmd = exec.Command("git", "clone", "--progress", "--branch", branch, "--single-branch", cloneURL, destDir)
+		cmd = exec.Command("git", "clone", "--progress", "--branch", branch, "--single-branch", cloneURL, destDir) //nolint:gosec // G204: arguments are passed to git directly, not interpreted by a shell
 	} else {
-		cmd = exec.Command("git", "clone", "--progress", cloneURL, destDir)
+		cmd = exec.Command("git", "clone", "--progress", cloneURL, destDir) //nolint:gosec // G204: arguments are passed to git directly, not interpreted by a shell
 	}
 
 	// Create pipes to capture stderr (where git outputs progress)
@@ -459,7 +464,7 @@ func (c *Client) DownloadWorkflowFiles(owner, repo, destDir, ref string) ([]stri
 
 	// Create workflows directory
 	workflowsDir := filepath.Join(destDir, ".github", "workflows")
-	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
+	if err := os.MkdirAll(workflowsDir, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create workflows directory: %w", err)
 	}
 
@@ -648,7 +653,7 @@ func localGitHeadSHA() string {
 
 func fetchGitHubDefaultBranch(owner, repo string) string {
 	reqURL := fmt.Sprintf("https://api.github.com/repos/%s/%s", owner, repo)
-	req, err := http.NewRequest("GET", reqURL, nil)
+	req, err := http.NewRequest("GET", reqURL, http.NoBody)
 	if err != nil {
 		return ""
 	}

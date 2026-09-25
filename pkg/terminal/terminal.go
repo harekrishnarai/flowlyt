@@ -94,14 +94,14 @@ var (
 	ColorBrightWhite   = Color{Code: 97}
 
 	// Presets for common use cases
-	ColorCritical = Color{R: 220, G: 38, B: 38, IsRGB: true}   // Bright red
-	ColorHigh     = Color{R: 251, G: 191, B: 36, IsRGB: true}  // Orange/Yellow
-	ColorMedium   = Color{R: 251, G: 146, B: 60, IsRGB: true}  // Orange
-	ColorLow      = Color{R: 59, G: 130, B: 246, IsRGB: true}  // Blue
-	ColorInfo     = Color{R: 99, G: 102, B: 241, IsRGB: true}  // Indigo
-	ColorSuccess  = Color{R: 34, G: 197, B: 94, IsRGB: true}   // Green
-	ColorWarning  = Color{R: 234, G: 179, B: 8, IsRGB: true}   // Amber
-	ColorError    = Color{R: 239, G: 68, B: 68, IsRGB: true}   // Red
+	ColorCritical = Color{R: 220, G: 38, B: 38, IsRGB: true}  // Bright red
+	ColorHigh     = Color{R: 251, G: 191, B: 36, IsRGB: true} // Orange/Yellow
+	ColorMedium   = Color{R: 251, G: 146, B: 60, IsRGB: true} // Orange
+	ColorLow      = Color{R: 59, G: 130, B: 246, IsRGB: true} // Blue
+	ColorInfo     = Color{R: 99, G: 102, B: 241, IsRGB: true} // Indigo
+	ColorSuccess  = Color{R: 34, G: 197, B: 94, IsRGB: true}  // Green
+	ColorWarning  = Color{R: 234, G: 179, B: 8, IsRGB: true}  // Amber
+	ColorError    = Color{R: 239, G: 68, B: 68, IsRGB: true}  // Red
 )
 
 var (
@@ -340,7 +340,7 @@ func rgbTo256(r, g, b uint8) int {
 		if r > 248 {
 			return 231
 		}
-		return int(((r-8)/10)+232)
+		return int(((r - 8) / 10) + 232)
 	}
 
 	// Color

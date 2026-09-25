@@ -174,11 +174,11 @@ func (c *Client) CloneRepositoryWithBranch(repoURL, tempDir, branch string) (str
 		// a commit SHA; fall back to a full clone followed by an explicit
 		// checkout, which works for branches, tags, and SHAs alike.
 		_ = os.RemoveAll(repoPath)
-		fullOut, fullErr := exec.Command("git", "clone", cloneURL, repoPath).CombinedOutput()
+		fullOut, fullErr := exec.Command("git", "clone", cloneURL, repoPath).CombinedOutput() //nolint:gosec // G204: args are passed to git directly, not through a shell
 		if fullErr != nil {
 			return "", fmt.Errorf("failed to clone repository: %w\nOutput: %s", fullErr, string(fullOut))
 		}
-		coOut, coErr := exec.Command("git", "-C", repoPath, "checkout", branch).CombinedOutput()
+		coOut, coErr := exec.Command("git", "-C", repoPath, "checkout", branch).CombinedOutput() //nolint:gosec // G204: args are passed to git directly, not through a shell
 		if coErr != nil {
 			return "", fmt.Errorf("failed to checkout ref %q: %w\nOutput: %s", branch, coErr, string(coOut))
 		}
@@ -283,7 +283,7 @@ func fetchGitLabDefaultBranch(instanceURL, owner, repo string) string {
 	// GET /api/v4/projects/:id  where :id is URL-encoded "namespace/project"
 	project := url.QueryEscape(fmt.Sprintf("%s/%s", owner, repo))
 	reqURL := fmt.Sprintf("%s/api/v4/projects/%s", strings.TrimRight(instanceURL, "/"), project)
-	req, err := http.NewRequest("GET", reqURL, nil)
+	req, err := http.NewRequest("GET", reqURL, http.NoBody)
 	if err != nil {
 		return ""
 	}
@@ -316,8 +316,6 @@ func fetchGitLabDefaultBranch(instanceURL, owner, repo string) string {
 func FetchGitLabDefaultBranch(instanceURL, owner, repo string) string {
 	return fetchGitLabDefaultBranch(instanceURL, owner, repo)
 }
-
-var netHttpClient http.Client
 
 func localGitHeadSHA() string {
 	if _, err := exec.LookPath("git"); err != nil {

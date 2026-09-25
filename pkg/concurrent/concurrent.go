@@ -148,7 +148,6 @@ func (cp *ConcurrentProcessor) ProcessWorkflows(
 	policyEngine *policies.PolicyEngine,
 	cfg *config.Config,
 ) ([]rules.Finding, error) {
-
 	if len(workflowFiles) == 0 {
 		return []rules.Finding{}, nil
 	}
@@ -180,7 +179,6 @@ func (cp *ConcurrentProcessor) processSequentially(
 	policyEngine *policies.PolicyEngine,
 	cfg *config.Config,
 ) ([]rules.Finding, error) {
-
 	var allFindings []rules.Finding
 
 	for _, workflow := range workflowFiles {
@@ -218,7 +216,6 @@ func (cp *ConcurrentProcessor) processConcurrently(
 	policyEngine *policies.PolicyEngine,
 	cfg *config.Config,
 ) ([]rules.Finding, error) {
-
 	// Calculate optimal number of workers
 	numWorkers := cp.config.MaxWorkers
 	if numWorkers > len(workflowFiles) {

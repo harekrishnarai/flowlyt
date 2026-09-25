@@ -27,7 +27,7 @@ import (
 
 // CheckDefinitionHygiene runs the workflow-readability checks.
 func CheckDefinitionHygiene(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 2)
 	findings = append(findings, checkAnonymousDefinition(workflow)...)
 	findings = append(findings, checkUndocumentedPermissions(workflow)...)
 	return findings

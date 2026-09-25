@@ -108,7 +108,7 @@ func FindWorkflows(repoPath string) ([]WorkflowFile, error) {
 		}
 
 		// Read the file
-		content, err := os.ReadFile(path)
+		content, err := os.ReadFile(path) //nolint:gosec // G122: scanning a trusted local path; the walk root is operator-controlled
 		if err != nil {
 			return fmt.Errorf("failed to read workflow file %s: %w", path, err)
 		}

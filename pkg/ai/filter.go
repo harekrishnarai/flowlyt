@@ -35,7 +35,7 @@ var (
 // It subsumes the previous shouldSendToAI severity/rule-list gate — env-based
 // filters (AI_MIN_SEVERITY, AI_INCLUDE_RULES, AI_EXCLUDE_RULES) run first.
 func ShouldSkipAI(f rules.Finding) (bool, string) {
-	// 1. Env-based filters (run first, preserve existing behaviour)
+	// 1. Env-based filters (run first, preserve existing behavior)
 	if skip, reason := envBasedFilter(f); skip {
 		return true, reason
 	}
@@ -83,7 +83,7 @@ func ShouldSkipAI(f rules.Finding) (bool, string) {
 }
 
 // envBasedFilter preserves the existing AI_MIN_SEVERITY / AI_INCLUDE_RULES /
-// AI_EXCLUDE_RULES environment variable behaviour.
+// AI_EXCLUDE_RULES environment variable behavior.
 func envBasedFilter(f rules.Finding) (bool, string) {
 	excludeRules := parseCSVSet(os.Getenv("AI_EXCLUDE_RULES"))
 	if _, denied := excludeRules[strings.ToUpper(f.RuleID)]; denied {

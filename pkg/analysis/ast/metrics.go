@@ -307,7 +307,7 @@ func (mc *MetricsCollector) GenerateReport() *PerformanceReport {
 type PerformanceReport struct {
 	GeneratedAt     time.Time     `json:"generated_at"`
 	UpTime          time.Duration `json:"uptime"`
-	TotalAnalyses   int64         `json:"total_analyses"`
+	TotalAnalyses   int64         `json:"total_analyzes"`
 	Metrics         *Metrics      `json:"metrics"`
 	Recommendations []string      `json:"recommendations"`
 }
@@ -399,7 +399,7 @@ func (m *Metrics) GetErrorRate() float64 {
 	return float64(m.errorCount) / float64(m.totalAnalyses) * 100
 }
 
-// GetThroughput returns analyses per second
+// GetThroughput returns analyzes per second
 func (m *Metrics) GetThroughput() float64 {
 	uptime := time.Since(m.startTime)
 	if uptime == 0 {

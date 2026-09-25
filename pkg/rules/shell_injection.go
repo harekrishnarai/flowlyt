@@ -26,7 +26,7 @@ import (
 
 // CheckShellInjectionVulnerabilities is the main entry point for shell injection checks
 func CheckShellInjectionVulnerabilities(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 3)
 
 	findings = append(findings, checkShellInjectionVulnerabilities(workflow)...)
 	findings = append(findings, checkSelfHostedRunnerSecurity(workflow)...)
@@ -248,7 +248,7 @@ func checkSelfHostedRunnerSecurity(workflow parser.WorkflowFile) []Finding {
 // isPullRequestTriggered checks if workflow can be triggered by pull requests
 func isPullRequestTriggered(workflow parser.WorkflowFile) bool {
 	prEvents := []string{
-		"pull_request",
+		triggerPullRequest,
 		"pull_request_target",
 		"pull_request_review",
 		"pull_request_review_comment",

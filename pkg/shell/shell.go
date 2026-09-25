@@ -20,9 +20,10 @@ import (
 	"regexp"
 	"strings"
 
+	"mvdan.cc/sh/v3/syntax"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
-	"mvdan.cc/sh/v3/syntax"
 )
 
 // Analyzer represents a shell script analyzer

@@ -76,7 +76,7 @@ func TestSecretPatternAnchors_AreNecessaryConditions(t *testing.T) {
 	}
 }
 
-// Randomised differential check over generated strings, to catch anchor sets
+// Randomized differential check over generated strings, to catch anchor sets
 // that are necessary for the hand-written corpus but not in general.
 func TestSecretPatternAnchors_RandomisedDifferential(t *testing.T) {
 	rng := rand.New(rand.NewSource(7))
@@ -141,7 +141,7 @@ func TestSecretAnchorMatcher_AgreesWithReference(t *testing.T) {
 	}
 }
 
-// Randomised differential check, so an anchor added later cannot silently
+// Randomized differential check, so an anchor added later cannot silently
 // diverge between the two paths.
 func TestSecretAnchorMatcher_RandomisedAgreesWithReference(t *testing.T) {
 	rng := rand.New(rand.NewSource(23))

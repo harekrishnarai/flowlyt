@@ -122,7 +122,6 @@ func checkLocalActionUsage(workflow parser.WorkflowFile) []Finding {
 			// Check for local action patterns (relative paths)
 			if strings.HasPrefix(step.Uses, "./") || strings.HasPrefix(step.Uses, "../") ||
 				(!strings.Contains(step.Uses, "/") && !strings.Contains(step.Uses, "@")) {
-
 				// For test workflows or workflows that explicitly test the action itself,
 				// reduce severity as it's expected behavior
 				severity := Medium
@@ -351,7 +350,6 @@ func checkRefConfusion(workflow parser.WorkflowFile) []Finding {
 					// Check for potentially confusing refs — only mutable branch-style
 					// refs pose a supply-chain risk; semver tags are stable.
 					if isMutableRef(ref) {
-
 						pattern := linenum.FindPattern{
 							Key:   "uses",
 							Value: step.Uses,
@@ -613,7 +611,6 @@ func checkUseTrustedPublishing(workflow parser.WorkflowFile) []Finding {
 			if step.Uses != "" && (strings.Contains(step.Uses, "pypi") ||
 				strings.Contains(step.Uses, "twine") ||
 				strings.Contains(step.Uses, "pypa/gh-action-pypi-publish")) {
-
 				usingOIDC := false
 				hasCredentials := false
 
@@ -790,7 +787,7 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 					}
 					seenCheckout[checkoutKey] = true
 
-					// Default persist-credentials behaviour is only HIGH-risk when
+					// Default persist-credentials behavior is only HIGH-risk when
 					// this job uploads an artifact that may include .git (where
 					// the token is stored). Otherwise it is a LOW hardening note,
 					// so we don't flag every checkout in the world at HIGH.
@@ -823,7 +820,6 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 			// Check for artifact upload/download actions
 			if step.Uses != "" && (strings.Contains(step.Uses, "upload-artifact") ||
 				strings.Contains(step.Uses, "download-artifact")) {
-
 				if step.With != nil {
 					// Check for overly broad path patterns
 					if path, exists := step.With["path"]; exists {
@@ -833,7 +829,6 @@ func checkArtipackedVulnerability(workflow parser.WorkflowFile) []Finding {
 						if pathStr == "." || pathStr == "/*" || pathStr == "**" ||
 							strings.Contains(pathStr, "../") ||
 							strings.Contains(pathStr, "~") {
-
 							pattern := linenum.FindPattern{
 								Key:   "path",
 								Value: pathStr,
