@@ -439,9 +439,12 @@ func (a *Analyzer) flushPersistentCache() {
 	if err != nil {
 		return
 	}
-	defer f.Close()
 	if _, err := f.WriteString(b.String()); err != nil {
+		_ = f.Close()
 		return
+	}
+	if err := f.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to flush AI cache: %v\n", err)
 	}
 }
 

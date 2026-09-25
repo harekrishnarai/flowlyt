@@ -300,10 +300,12 @@ func (ig *IntelligenceGenerator) generateIntelligenceMarkdownReport(report Intel
 		if err != nil {
 			return fmt.Errorf("failed to open markdown file for append: %w", err)
 		}
-		defer file.Close()
-
 		if _, err := file.WriteString(content); err != nil {
+			_ = file.Close()
 			return fmt.Errorf("failed to append intelligence section to markdown: %w", err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed to close markdown file: %w", err)
 		}
 		fmt.Printf("Intelligence section appended to %s\n", ig.FilePath)
 	} else {
