@@ -120,8 +120,14 @@ func (cre *CustomRuleEngine) createRegexCheck(customRule CustomRule) (func(workf
 	}
 
 	// Convert severity and category for the check function
-	severity, _ := convertSeverity(customRule.Severity)
-	category, _ := convertCategory(customRule.Category)
+	severity, err := convertSeverity(customRule.Severity)
+	if err != nil {
+		return nil, err
+	}
+	category, err := convertCategory(customRule.Category)
+	if err != nil {
+		return nil, err
+	}
 
 	return func(workflow parser.WorkflowFile) []rules.Finding {
 		var findings []rules.Finding

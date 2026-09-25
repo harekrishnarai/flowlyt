@@ -174,7 +174,7 @@ func (lm *LineMapper) initialize() {
 
 	// Build line-to-character position mapping. lineToChar is sorted by
 	// construction, which is what lets CharToLine binary search it instead of
-	// materialising a position-to-line table.
+	// materializing a position-to-line table.
 	lm.lineToChar[0] = 0
 	for i, line := range lm.lines {
 		lm.lineToChar[i+1] = lm.lineToChar[i] + len(line) + 1 // +1 for newline

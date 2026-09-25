@@ -22,13 +22,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/opa"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/platform/github"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/platform/gitlab"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
-	"gopkg.in/yaml.v3"
 )
 
 // HybridEngine combines Go-native rules with OPA policies
@@ -237,7 +238,10 @@ func (he *HybridEngine) AnalyzeWorkflow(workflowPath string) (*AnalysisResult, e
 	// works on both Unix ("/") and Windows ("C:\\"). The previous `dir != "/"`
 	// check never matched the Windows root and looped forever.
 	if workflow.RepositoryOwner == "" {
-		absPath, _ := filepath.Abs(workflowPath)
+		absPath, err := filepath.Abs(workflowPath)
+		if err != nil {
+			absPath = workflowPath
+		}
 		dir := filepath.Dir(absPath)
 		for {
 			if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {

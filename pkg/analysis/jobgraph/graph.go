@@ -64,14 +64,14 @@ type Graph struct {
 //
 // A `needs:` entry naming a job that does not exist is ignored rather than
 // treated as an error: the workflow is invalid, but the remaining edges are
-// still worth analysing.
+// still worth analyzing.
 //
 // Runs in O(V + E).
 func Build(workflow parser.Workflow) *Graph {
 	g := &Graph{Nodes: make(map[string]*Node, len(workflow.Jobs))}
 
 	// Job IDs are iterated in sorted order throughout so that results do not
-	// depend on Go's randomised map iteration.
+	// depend on Go's randomized map iteration.
 	ids := make([]string, 0, len(workflow.Jobs))
 	for id := range workflow.Jobs {
 		ids = append(ids, id)

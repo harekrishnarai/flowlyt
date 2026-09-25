@@ -22,6 +22,9 @@ import (
 	"strings"
 )
 
+// Data type identifiers used for flow compatibility checks.
+const dataTypeSecret = "secret"
+
 // DataFlowAnalyzer tracks data flow through the workflow
 type DataFlowAnalyzer struct {
 	sources   map[string]*DataSource
@@ -263,7 +266,7 @@ func (dfa *DataFlowAnalyzer) areDataTypesCompatible(source *DataSource, sink *Da
 	}
 
 	// Secrets should only flow to specific secure contexts
-	if source.Type == "secret" {
+	if source.Type == dataTypeSecret {
 		return sink.Type == "action_input" || sink.Type == "env" ||
 			(sink.Type == "network" && sink.Sensitive) ||
 			(sink.Type == "log" && sink.Sensitive)
@@ -291,9 +294,9 @@ func (dfa *DataFlowAnalyzer) pathInvolvesSameData(source *DataSource, sink *Data
 	}
 
 	// If both involve secrets/tokens, likely related
-	sourceHasSecret := strings.Contains(strings.ToLower(source.Name), "secret") ||
+	sourceHasSecret := strings.Contains(strings.ToLower(source.Name), dataTypeSecret) ||
 		strings.Contains(strings.ToLower(source.Name), "token")
-	sinkHasSecret := strings.Contains(strings.ToLower(sink.Name), "secret") ||
+	sinkHasSecret := strings.Contains(strings.ToLower(sink.Name), dataTypeSecret) ||
 		strings.Contains(strings.ToLower(sink.Name), "token")
 
 	if sourceHasSecret && sinkHasSecret {
@@ -364,7 +367,7 @@ func (dfa *DataFlowAnalyzer) isObviousFalsePositive(source *DataSource, sink *Da
 	}
 
 	// Don't create flows between unrelated secrets
-	if source.Type == "secret" && sink.Type == "action_input" &&
+	if source.Type == dataTypeSecret && sink.Type == "action_input" &&
 		!strings.Contains(strings.ToLower(sink.Command), strings.ToLower(source.Name)) {
 		return true
 	}
@@ -391,7 +394,7 @@ func (dfa *DataFlowAnalyzer) identifyDataSources(workflow *WorkflowAST) {
 	for secretName := range workflow.Secrets {
 		source := &DataSource{
 			ID:      fmt.Sprintf("global_secret_%s", secretName),
-			Type:    "secret",
+			Type:    dataTypeSecret,
 			Name:    secretName,
 			NodeID:  "global",
 			Tainted: true, // All secrets are tainted
@@ -634,7 +637,7 @@ func (dfa *DataFlowAnalyzer) isSensitiveActionInput(actionName, inputName string
 	}
 
 	// General patterns for sensitive input names
-	sensitiveNames := []string{"password", "secret", "key", "token", "credential", "auth"}
+	sensitiveNames := []string{"password", dataTypeSecret, "key", "token", "credential", "auth"}
 	inputLower := strings.ToLower(inputName)
 	for _, sensitiveName := range sensitiveNames {
 		if strings.Contains(inputLower, sensitiveName) {
@@ -842,78 +845,13 @@ func (dfa *DataFlowAnalyzer) findShortestPath(start, end string) []string {
 	return []string{} // No path found
 }
 
-func (dfa *DataFlowAnalyzer) canDataFlow(source *DataSource, sink *DataSink, workflow *WorkflowAST) bool {
-	// Data can flow if:
-	// 1. Source and sink are in the same step
-	// 2. Source is in an earlier step in the same job
-	// 3. Source is global and sink is anywhere
-	// 4. Source is job-level and sink is in the same job
-
-	if source.NodeID == "global" {
-		return true // Global sources can reach any sink
-	}
-
-	if source.NodeID == sink.NodeID {
-		return true // Same step
-	}
-
-	// Extract job and step information
-	sourceJob, sourceStep := dfa.parseNodeID(source.NodeID)
-	sinkJob, sinkStep := dfa.parseNodeID(sink.NodeID)
-
-	if sourceJob == sinkJob {
-		// Same job - check step ordering
-		if sourceStep == -1 {
-			return true // Job-level source can reach any step in the job
-		}
-		if sinkStep > sourceStep {
-			return true // Source step comes before sink step
-		}
-	}
-
-	// Check job dependencies
-	if sinkJob != "" && sourceJob != "" {
-		if job, exists := workflow.Jobs[sinkJob]; exists {
-			for _, neededJob := range job.Needs {
-				if neededJob == sourceJob {
-					return true // Sink job depends on source job
-				}
-			}
-		}
-	}
-
-	return false
-}
-
-func (dfa *DataFlowAnalyzer) parseNodeID(nodeID string) (job string, step int) {
-	if nodeID == "global" {
-		return "", -1
-	}
-
-	if strings.HasPrefix(nodeID, "job_") {
-		return strings.TrimPrefix(nodeID, "job_"), -1
-	}
-
-	if strings.HasPrefix(nodeID, "step_") {
-		parts := strings.Split(nodeID, "_")
-		if len(parts) >= 3 {
-			jobName := strings.Join(parts[1:len(parts)-1], "_")
-			stepIdx := -1
-			fmt.Sscanf(parts[len(parts)-1], "%d", &stepIdx)
-			return jobName, stepIdx
-		}
-	}
-
-	return "", -1
-}
-
 func (dfa *DataFlowAnalyzer) calculateFlowSeverity(source *DataSource, sink *DataSink) string {
 	if source.Tainted && sink.Sensitive {
 		switch sink.Type {
 		case "network":
 			return "CRITICAL" // Tainted data leaving via the network
 		case "log":
-			if source.Type == "secret" {
+			if source.Type == dataTypeSecret {
 				return "HIGH" // Secret written to logs
 			}
 			return "MEDIUM"
@@ -937,10 +875,10 @@ func (dfa *DataFlowAnalyzer) calculateFlowSeverity(source *DataSource, sink *Dat
 }
 
 func (dfa *DataFlowAnalyzer) calculateFlowRisk(source *DataSource, sink *DataSink) string {
-	if source.Type == "secret" && sink.Type == "network" {
+	if source.Type == dataTypeSecret && sink.Type == "network" {
 		return "Secret exposure via network call"
 	}
-	if source.Type == "secret" && sink.Type == "log" {
+	if source.Type == dataTypeSecret && sink.Type == "log" {
 		return "Secret exposure in logs"
 	}
 	if source.Tainted && sink.Type == "file" {

@@ -89,7 +89,7 @@ func checkCrossFileTaint(workflow parser.WorkflowFile) []Finding {
 				taintedInput, taintExpr, kind, def.RelPath, def.RelPath, use.Line, use.SinkKind,
 			),
 			Remediation: fmt.Sprintf(
-				"Either sanitise the value before passing it, or change %s so that input `%s` is "+
+				"Either sanitize the value before passing it, or change %s so that input `%s` is "+
 					"consumed through an `env:` variable and referenced as a quoted shell variable "+
 					"rather than interpolated into the script.",
 				def.RelPath, taintedInput,

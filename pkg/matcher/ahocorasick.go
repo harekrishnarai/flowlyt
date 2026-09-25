@@ -39,9 +39,9 @@ type Matcher struct {
 	// one array index per byte with no hashing and no failure-chain walking.
 	// An earlier version stored children in a map per node, which was
 	// measurably *slower* than simply calling strings.Contains once per
-	// literal, because Go's Contains is SIMD-optimised while a map lookup per
-	// input byte is not. The table costs numNodes*256*4 bytes, built once.
-	trans []int32
+	// literal, because Go's Contains is SIMD-optimized while a map lookup per
+	// input byte is not. The table costs numNodes*256*8 bytes, built once.
+	trans []int
 	// output lists the literal IDs that end at a node, including those
 	// inherited through failure links.
 	output [][]int
@@ -54,7 +54,7 @@ type Matcher struct {
 // Literal IDs correspond to positions in the slice. Empty literals are skipped,
 // since they would match everywhere and carry no information.
 //
-// Matching is byte-exact: callers wanting case-insensitive behaviour should
+// Matching is byte-exact: callers wanting case-insensitive behavior should
 // supply lowercase literals and lowercase the text.
 func New(literals []string) *Matcher {
 	// Build the trie with sparse children first; the dense table is derived
@@ -82,7 +82,7 @@ func New(literals []string) *Matcher {
 	}
 
 	m := &Matcher{
-		trans:  make([]int32, len(children)*256),
+		trans:  make([]int, len(children)*256),
 		output: output,
 		count:  len(literals),
 	}
@@ -101,15 +101,15 @@ func New(literals []string) *Matcher {
 // Outputs are merged the same way, so reporting matches never walks the failure
 // chain.
 func (m *Matcher) buildTransitions(children []map[byte]int) {
-	fail := make([]int32, len(children))
+	fail := make([]int, len(children))
 
 	// Root row: explicit children, everything else back to the root.
-	queue := make([]int32, 0, len(children))
+	queue := make([]int, 0, len(children))
 	for b := 0; b < 256; b++ {
 		if next, ok := children[0][byte(b)]; ok {
-			m.trans[b] = int32(next)
+			m.trans[b] = next
 			fail[next] = 0
-			queue = append(queue, int32(next))
+			queue = append(queue, next)
 		}
 	}
 
@@ -117,15 +117,15 @@ func (m *Matcher) buildTransitions(children []map[byte]int) {
 		node := queue[0]
 		queue = queue[1:]
 
-		base := int(node) << 8
-		failBase := int(fail[node]) << 8
+		base := node << 8
+		failBase := fail[node] << 8
 
 		for b := 0; b < 256; b++ {
 			if next, ok := children[node][byte(b)]; ok {
-				m.trans[base+b] = int32(next)
+				m.trans[base+b] = next
 				fail[next] = m.trans[failBase+b]
 				m.output[next] = append(m.output[next], m.output[fail[next]]...)
-				queue = append(queue, int32(next))
+				queue = append(queue, next)
 			} else {
 				// No explicit edge: behave as the failure target does.
 				m.trans[base+b] = m.trans[failBase+b]
@@ -165,9 +165,9 @@ func (m *Matcher) Scan(text string) Set {
 		return found
 	}
 
-	node := int32(0)
+	node := 0
 	for i := 0; i < len(text); i++ {
-		node = m.trans[int(node)<<8|int(text[i])]
+		node = m.trans[node<<8|int(text[i])]
 		if outs := m.output[node]; len(outs) > 0 {
 			for _, id := range outs {
 				found[id] = true

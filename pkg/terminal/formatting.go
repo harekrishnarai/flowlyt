@@ -453,7 +453,7 @@ func (t *Terminal) Hyperlink(text, url string) string {
 	if !t.isTTY {
 		return fmt.Sprintf("%s (%s)", text, url)
 	}
-	
+
 	// OSC 8 hyperlink escape sequence
 	// Format: \033]8;;URL\033\\TEXT\033]8;;\033\\
 	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, text)
@@ -465,7 +465,7 @@ func (t *Terminal) PrintHyperlink(text, url string, style Style) {
 		t.Printf("%s: %s\n", text, url)
 		return
 	}
-	
+
 	// Apply style and create hyperlink
 	styledText := t.applyStyle(text, style)
 	hyperlink := fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, styledText)

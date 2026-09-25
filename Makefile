@@ -145,7 +145,7 @@ install: ## Install the binary
 
 install-tools: ## Install development tools
 	@echo "$(GREEN)Installing development tools...$(NC)"
-	@go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 	@go install honnef.co/go/tools/cmd/staticcheck@latest
 	@go install github.com/axw/gocov/gocov@latest
 	@go install github.com/AlekSi/gocov-xml@latest

@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
@@ -453,7 +454,7 @@ func (ef *EnhancedFormatter) FormatBoxedFinding(finding rules.Finding, number in
 
 	if finding.StepName != "" {
 		boxStyle.Fprint(&output, "│")
-		output.WriteString(fmt.Sprintf("        └── Step: \"%s\"\n", finding.StepName))
+		output.WriteString(fmt.Sprintf("        └── Step: %q\n", finding.StepName))
 	}
 
 	// Description
@@ -473,10 +474,10 @@ func (ef *EnhancedFormatter) FormatBoxedFinding(finding rules.Finding, number in
 func cleanFilePath(filePath string) string {
 	// Normalize path separators
 	cleanPath := strings.ReplaceAll(filePath, "\\", "/")
-	
+
 	// Remove leading slash
 	cleanPath = strings.TrimPrefix(cleanPath, "/")
-	
+
 	// Extract the repository-relative portion
 	// Look for .github/workflows/ or .gitlab-ci.yml patterns
 	if idx := strings.Index(cleanPath, ".github/workflows/"); idx != -1 {
@@ -491,7 +492,7 @@ func cleanFilePath(filePath string) string {
 	if strings.HasSuffix(cleanPath, ".gitlab-ci.yaml") {
 		return ".gitlab-ci.yaml"
 	}
-	
+
 	// If it contains a temp directory pattern, try to extract the meaningful part
 	// Pattern: /tmp/flowlyt-workflows-*/path/to/file
 	if strings.Contains(cleanPath, "/flowlyt-workflows-") {
@@ -503,7 +504,7 @@ func cleanFilePath(filePath string) string {
 			}
 		}
 	}
-	
+
 	// If it contains tmp pattern, try to extract after tmp
 	if strings.HasPrefix(cleanPath, "tmp/") {
 		parts := strings.Split(cleanPath, "/")
@@ -512,7 +513,7 @@ func cleanFilePath(filePath string) string {
 			return strings.Join(parts[2:], "/")
 		}
 	}
-	
+
 	// Return as-is if we can't clean it further
 	return cleanPath
 }

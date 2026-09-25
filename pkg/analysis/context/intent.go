@@ -62,9 +62,9 @@ func (w WorkflowIntent) String() string {
 // IntentDetector analyzes workflows to determine their purpose
 type IntentDetector struct {
 	// Patterns for workflow name analysis
-	readOnlyPatterns  []*regexp.Regexp
-	deployPatterns    []*regexp.Regexp
-	releasePatterns   []*regexp.Regexp
+	readOnlyPatterns []*regexp.Regexp
+	deployPatterns   []*regexp.Regexp
+	releasePatterns  []*regexp.Regexp
 
 	// Patterns for operation detection
 	writeOperations   []*regexp.Regexp
@@ -192,7 +192,7 @@ func (d *IntentDetector) detectFromTriggers(workflow *parser.Workflow) WorkflowI
 				if inputs, ok := wdConfig["inputs"].(map[string]interface{}); ok {
 					for key := range inputs {
 						if strings.Contains(strings.ToLower(key), "environment") ||
-						   strings.Contains(strings.ToLower(key), "deploy") {
+							strings.Contains(strings.ToLower(key), "deploy") {
 							return IntentDeploy
 						}
 					}
@@ -241,25 +241,25 @@ func (d *IntentDetector) detectFromOperations(workflow *parser.Workflow) Workflo
 
 				// Release actions
 				if strings.Contains(stepUsesLower, "gh-release") ||
-				   strings.Contains(stepUsesLower, "create-release") ||
-				   strings.Contains(stepUsesLower, "goreleaser") ||
-				   strings.Contains(stepUsesLower, "semantic-release") {
+					strings.Contains(stepUsesLower, "create-release") ||
+					strings.Contains(stepUsesLower, "goreleaser") ||
+					strings.Contains(stepUsesLower, "semantic-release") {
 					hasReleaseOps = true
 					hasOnlyReadOps = false
 				}
 
 				// Deploy actions
 				if strings.Contains(stepUsesLower, "deploy") ||
-				   strings.Contains(stepUsesLower, "kubernetes") ||
-				   strings.Contains(stepUsesLower, "aws-actions") {
+					strings.Contains(stepUsesLower, "kubernetes") ||
+					strings.Contains(stepUsesLower, "aws-actions") {
 					hasDeployOps = true
 					hasOnlyReadOps = false
 				}
 
 				// Write actions
 				if strings.Contains(stepUsesLower, "upload-artifact") ||
-				   strings.Contains(stepUsesLower, "upload-release-asset") ||
-				   strings.Contains(stepUsesLower, "publish") {
+					strings.Contains(stepUsesLower, "upload-release-asset") ||
+					strings.Contains(stepUsesLower, "publish") {
 					hasWriteOps = true
 					hasOnlyReadOps = false
 				}
@@ -298,9 +298,9 @@ func (d *IntentDetector) detectFromOperations(workflow *parser.Workflow) Workflo
 
 				// Check for common read-only operations
 				if strings.Contains(runLower, "test") ||
-				   strings.Contains(runLower, "lint") ||
-				   strings.Contains(runLower, "check") ||
-				   strings.Contains(runLower, "validate") {
+					strings.Contains(runLower, "lint") ||
+					strings.Contains(runLower, "check") ||
+					strings.Contains(runLower, "validate") {
 					// These are read-only operations
 					continue
 				}

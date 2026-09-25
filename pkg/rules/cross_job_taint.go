@@ -92,7 +92,7 @@ func checkCrossJobTaint(workflow parser.WorkflowFile) []Finding {
 			Remediation: fmt.Sprintf(
 				"Do not carry untrusted input through job outputs into an execution context. "+
 					"Pass `%s` via the consuming step's `env:` block and reference it as a quoted shell "+
-					"variable, or sanitise it in job `%s` before writing the output.",
+					"variable, or sanitize it in job `%s` before writing the output.",
 				flow.SinkExpression, flow.Origin.JobID,
 			),
 			LineNumber: lineNumber,

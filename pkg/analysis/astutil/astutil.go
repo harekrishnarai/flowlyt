@@ -375,4 +375,3 @@ func lookupRunner(jobRunners map[string]string, jobName string) string {
 func normalizePath(path string) string {
 	return filepath.ToSlash(path)
 }
-

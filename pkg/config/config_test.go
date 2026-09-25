@@ -17,9 +17,10 @@ limitations under the License.
 package config
 
 import (
-	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 	"os"
 	"testing"
+
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -231,7 +232,7 @@ func TestSaveAndLoadConfig(t *testing.T) {
 }
 
 // convertCategory must accept every category the engine can emit. It previously
-// recognised only five, so a custom rule declaring e.g. SUPPLY_CHAIN was
+// recognized only five, so a custom rule declaring e.g. SUPPLY_CHAIN was
 // rejected and silently filed under MISCONFIGURATION.
 func TestConvertCategory_AcceptsEveryEmittedCategory(t *testing.T) {
 	cases := map[string]rules.Category{

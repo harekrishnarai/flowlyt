@@ -23,9 +23,13 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
 	"gopkg.in/yaml.v3"
+
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
 )
+
+// platformName is the canonical platform identifier for GitLab CI workflows.
+const platformName = "gitlab-ci"
 
 // GitLabPlatform implements the Platform interface for GitLab CI
 type GitLabPlatform struct{}
@@ -37,7 +41,7 @@ func NewGitLabPlatform() *GitLabPlatform {
 
 // Name returns the platform name
 func (glp *GitLabPlatform) Name() string {
-	return "gitlab-ci"
+	return platformName
 }
 
 // DetectWorkflows finds GitLab CI workflow files
@@ -96,7 +100,7 @@ func (glp *GitLabPlatform) ParseWorkflow(path string) (*platform.Workflow, error
 
 	// Convert to generic workflow structure
 	workflow := &platform.Workflow{
-		Platform:    "gitlab-ci",
+		Platform:    platformName,
 		Name:        glWorkflow.Workflow.Name,
 		FilePath:    path,
 		Content:     content,
@@ -142,7 +146,7 @@ func (glp *GitLabPlatform) GetSecurityContext(workflow *platform.Workflow) *plat
 
 // ValidateWorkflow validates a GitLab CI workflow
 func (glp *GitLabPlatform) ValidateWorkflow(workflow *platform.Workflow) error {
-	if workflow.Platform != "gitlab-ci" {
+	if workflow.Platform != platformName {
 		return fmt.Errorf("workflow is not a GitLab CI workflow")
 	}
 
@@ -290,7 +294,7 @@ func (glp *GitLabPlatform) convertJobs(glWorkflow GitLabWorkflow) []platform.Job
 		job := platform.Job{
 			ID:           jobID,
 			Name:         jobID, // GitLab CI doesn't have separate name field
-			Platform:     "gitlab-ci",
+			Platform:     platformName,
 			Image:        glp.convertImage(glJob.Image),
 			Environment:  glJob.Variables,
 			Dependencies: glJob.Dependencies,
@@ -365,7 +369,7 @@ func (glp *GitLabPlatform) convertSteps(glJob GitLabJob) []platform.Step {
 		steps = append(steps, platform.Step{
 			ID:       fmt.Sprintf("before_script_%d", stepID),
 			Name:     fmt.Sprintf("Before Script %d", stepID),
-			Platform: "gitlab-ci",
+			Platform: platformName,
 			Type:     "script",
 			Script:   []string{script},
 		})
@@ -377,7 +381,7 @@ func (glp *GitLabPlatform) convertSteps(glJob GitLabJob) []platform.Step {
 		steps = append(steps, platform.Step{
 			ID:       fmt.Sprintf("script_%d", stepID),
 			Name:     fmt.Sprintf("Script %d", stepID),
-			Platform: "gitlab-ci",
+			Platform: platformName,
 			Type:     "script",
 			Script:   []string{script},
 		})
@@ -389,7 +393,7 @@ func (glp *GitLabPlatform) convertSteps(glJob GitLabJob) []platform.Step {
 		steps = append(steps, platform.Step{
 			ID:       fmt.Sprintf("after_script_%d", stepID),
 			Name:     fmt.Sprintf("After Script %d", stepID),
-			Platform: "gitlab-ci",
+			Platform: platformName,
 			Type:     "script",
 			Script:   []string{script},
 		})
@@ -424,7 +428,7 @@ func (glp *GitLabPlatform) extractUserControlledVars(workflow *platform.Workflow
 							Context:  script,
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "gitlab-ci",
+							Platform: platformName,
 						})
 					}
 				}
@@ -440,7 +444,7 @@ func (glp *GitLabPlatform) extractUserControlledVars(workflow *platform.Workflow
 							Context:  value,
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "gitlab-ci",
+							Platform: platformName,
 						})
 					}
 				}
@@ -465,7 +469,7 @@ func (glp *GitLabPlatform) extractExternalActions(workflow *platform.Workflow) [
 						Source:   "gitlab",
 						JobID:    "",
 						StepID:   "",
-						Platform: "gitlab-ci",
+						Platform: platformName,
 					})
 				}
 				if remote, ok := includeMap["remote"].(string); ok {
@@ -475,7 +479,7 @@ func (glp *GitLabPlatform) extractExternalActions(workflow *platform.Workflow) [
 						Source:   "remote",
 						JobID:    "",
 						StepID:   "",
-						Platform: "gitlab-ci",
+						Platform: platformName,
 					})
 				}
 			}
@@ -491,7 +495,7 @@ func (glp *GitLabPlatform) extractExternalActions(workflow *platform.Workflow) [
 				Source:   "container_registry",
 				JobID:    job.ID,
 				StepID:   "",
-				Platform: "gitlab-ci",
+				Platform: platformName,
 			})
 		}
 	}
@@ -512,7 +516,7 @@ func (glp *GitLabPlatform) extractPermissions(workflow *platform.Workflow) []pla
 				Level:    "deploy",
 				Context:  fmt.Sprintf("environment: %v", env),
 				JobID:    job.ID,
-				Platform: "gitlab-ci",
+				Platform: platformName,
 			})
 		}
 
@@ -523,7 +527,7 @@ func (glp *GitLabPlatform) extractPermissions(workflow *platform.Workflow) []pla
 				Level:    "write",
 				Context:  "release creation",
 				JobID:    job.ID,
-				Platform: "gitlab-ci",
+				Platform: platformName,
 			})
 		}
 	}
@@ -551,7 +555,7 @@ func (glp *GitLabPlatform) extractSecrets(workflow *platform.Workflow) []platfor
 								Context:  script,
 								JobID:    job.ID,
 								StepID:   step.ID,
-								Platform: "gitlab-ci",
+								Platform: platformName,
 								Type:     "env",
 							})
 						}
@@ -570,7 +574,7 @@ func (glp *GitLabPlatform) extractSecrets(workflow *platform.Workflow) []platfor
 								Context:  key + "=" + value,
 								JobID:    job.ID,
 								StepID:   step.ID,
-								Platform: "gitlab-ci",
+								Platform: platformName,
 								Type:     "env",
 							})
 						}
@@ -622,7 +626,7 @@ func (glp *GitLabPlatform) extractNetworkAccess(workflow *platform.Workflow) []p
 						Purpose:     "script",
 						JobID:       job.ID,
 						StepID:      step.ID,
-						Platform:    "gitlab-ci",
+						Platform:    platformName,
 						Protocols:   []string{"https"},
 					})
 				}
@@ -635,7 +639,7 @@ func (glp *GitLabPlatform) extractNetworkAccess(workflow *platform.Workflow) []p
 						Purpose:     "curl",
 						JobID:       job.ID,
 						StepID:      step.ID,
-						Platform:    "gitlab-ci",
+						Platform:    platformName,
 						Protocols:   []string{"http", "https"},
 					})
 				}
@@ -668,7 +672,7 @@ func (glp *GitLabPlatform) extractFileOperations(workflow *platform.Workflow) []
 							Purpose:  "script",
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "gitlab-ci",
+							Platform: platformName,
 						})
 					}
 				}
@@ -705,7 +709,7 @@ func (glp *GitLabPlatform) extractPrivilegeChanges(workflow *platform.Workflow) 
 							Target:   "system",
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "gitlab-ci",
+							Platform: platformName,
 							Severity: severity,
 						})
 					}
@@ -731,7 +735,7 @@ func (glp *GitLabPlatform) extractSupplyChainRisks(workflow *platform.Workflow) 
 						Component:  remote,
 						Source:     "remote",
 						Risks:      []string{"remote_include", "untrusted_source"},
-						Platform:   "gitlab-ci",
+						Platform:   platformName,
 						Confidence: 0.7,
 						Metadata: map[string]interface{}{
 							"include_type": "remote",
@@ -746,7 +750,7 @@ func (glp *GitLabPlatform) extractSupplyChainRisks(workflow *platform.Workflow) 
 						Component:  project,
 						Source:     "gitlab_project",
 						Risks:      []string{"external_project", "dependency_risk"},
-						Platform:   "gitlab-ci",
+						Platform:   platformName,
 						Confidence: 0.5,
 						Metadata: map[string]interface{}{
 							"include_type": "project",
@@ -782,7 +786,7 @@ func (glp *GitLabPlatform) extractSupplyChainRisks(workflow *platform.Workflow) 
 					Source:     "container_registry",
 					Risks:      riskList,
 					JobID:      job.ID,
-					Platform:   "gitlab-ci",
+					Platform:   platformName,
 					Confidence: confidence,
 					Metadata: map[string]interface{}{
 						"image_ref": job.Image,

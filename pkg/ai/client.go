@@ -56,7 +56,7 @@ type Client interface {
 	// VerifyFinding analyzes a security finding and determines if it's likely a false positive
 	VerifyFinding(ctx context.Context, finding rules.Finding) (*VerificationResult, error)
 
-	// VerifyBatch analyses up to 5 findings of the same class in one API call.
+	// VerifyBatch analyzes up to 5 findings of the same class in one API call.
 	VerifyBatch(ctx context.Context, class string, findings []ContextualFinding) ([]BatchVerificationResult, error)
 
 	// GetProvider returns the provider name
@@ -154,9 +154,9 @@ func GetAvailableModels(provider Provider) []string {
 		}
 	case ProviderClaude:
 		return []string{
-			"claude-sonnet-4-6",          // Default — balanced quality/cost
-			"claude-opus-4-6",            // Highest quality
-			"claude-haiku-4-5-20251001",  // Fastest, most cost-effective
+			"claude-sonnet-4-6",         // Default — balanced quality/cost
+			"claude-opus-4-6",           // Highest quality
+			"claude-haiku-4-5-20251001", // Fastest, most cost-effective
 		}
 	case ProviderGrok:
 		return []string{
@@ -165,9 +165,9 @@ func GetAvailableModels(provider Provider) []string {
 		}
 	case ProviderPerplexity:
 		return []string{
-			"sonar-pro",      // Cost-effective default
+			"sonar-pro",       // Cost-effective default
 			"sonar-reasoning", // Reasoning model
-			"sonar",          // Legacy
+			"sonar",           // Legacy
 		}
 	default:
 		return []string{}

@@ -22,6 +22,10 @@ import (
 	"strings"
 )
 
+// sourceMarketplace identifies metadata sourced from the GitHub Actions
+// marketplace rather than a custom or local action.
+const sourceMarketplace = "marketplace"
+
 // ActionAnalyzer provides analysis capabilities for GitHub Actions
 type ActionAnalyzer struct {
 	knownActions     map[string]*ActionMetadata
@@ -32,7 +36,7 @@ type ActionAnalyzer struct {
 // ActionMetadata contains information about an action's behavior
 type ActionMetadata struct {
 	Name             string
-	Source           string // "marketplace", "custom", "local"
+	Source           string // sourceMarketplace, "custom", or "local"
 	TrustedVendor    bool   // Whether this is from a trusted vendor
 	DataFlowRisks    []string
 	Permissions      []string
@@ -62,7 +66,7 @@ func (aa *ActionAnalyzer) initializeKnownActions() {
 	// GitHub official actions
 	aa.knownActions["actions/checkout"] = &ActionMetadata{
 		Name:             "Checkout",
-		Source:           "marketplace",
+		Source:           sourceMarketplace,
 		TrustedVendor:    true,
 		DataFlowRisks:    []string{"repository_access"},
 		Permissions:      []string{"contents:read"},
@@ -73,7 +77,7 @@ func (aa *ActionAnalyzer) initializeKnownActions() {
 
 	aa.knownActions["actions/setup-node"] = &ActionMetadata{
 		Name:             "Setup Node.js",
-		Source:           "marketplace",
+		Source:           sourceMarketplace,
 		TrustedVendor:    true,
 		DataFlowRisks:    []string{"package_installation"},
 		Permissions:      []string{"contents:read"},
@@ -83,7 +87,7 @@ func (aa *ActionAnalyzer) initializeKnownActions() {
 
 	aa.knownActions["actions/setup-python"] = &ActionMetadata{
 		Name:             "Setup Python",
-		Source:           "marketplace",
+		Source:           sourceMarketplace,
 		TrustedVendor:    true,
 		DataFlowRisks:    []string{"package_installation"},
 		Permissions:      []string{"contents:read"},
@@ -93,7 +97,7 @@ func (aa *ActionAnalyzer) initializeKnownActions() {
 
 	aa.knownActions["actions/upload-artifact"] = &ActionMetadata{
 		Name:             "Upload Artifact",
-		Source:           "marketplace",
+		Source:           sourceMarketplace,
 		TrustedVendor:    true,
 		DataFlowRisks:    []string{"artifact_upload", "data_persistence"},
 		Permissions:      []string{"actions:write"},
@@ -104,7 +108,7 @@ func (aa *ActionAnalyzer) initializeKnownActions() {
 
 	aa.knownActions["actions/download-artifact"] = &ActionMetadata{
 		Name:             "Download Artifact",
-		Source:           "marketplace",
+		Source:           sourceMarketplace,
 		TrustedVendor:    true,
 		DataFlowRisks:    []string{"artifact_download", "data_retrieval"},
 		Permissions:      []string{"actions:read"},
@@ -116,7 +120,7 @@ func (aa *ActionAnalyzer) initializeKnownActions() {
 	// Third-party but popular actions
 	aa.knownActions["docker/build-push-action"] = &ActionMetadata{
 		Name:             "Docker Build and Push",
-		Source:           "marketplace",
+		Source:           sourceMarketplace,
 		TrustedVendor:    true,
 		DataFlowRisks:    []string{"docker_registry_push", "credential_exposure"},
 		Permissions:      []string{"packages:write"},
@@ -128,7 +132,7 @@ func (aa *ActionAnalyzer) initializeKnownActions() {
 
 	aa.knownActions["aws-actions/configure-aws-credentials"] = &ActionMetadata{
 		Name:           "Configure AWS Credentials",
-		Source:         "marketplace",
+		Source:         sourceMarketplace,
 		TrustedVendor:  true,
 		DataFlowRisks:  []string{"credential_configuration", "cloud_access"},
 		InputPatterns:  []string{"aws-access-key-id", "aws-secret-access-key"},
@@ -299,7 +303,7 @@ func (aa *ActionAnalyzer) determineActionSource(ref *ActionReference) string {
 	trustedOrgs := []string{"actions", "github", "microsoft", "azure", "aws-actions", "docker"}
 	for _, org := range trustedOrgs {
 		if ref.Owner == org {
-			return "marketplace"
+			return sourceMarketplace
 		}
 	}
 
@@ -369,11 +373,7 @@ func (aa *ActionAnalyzer) hasVersionPinningRisk(uses string) bool {
 
 	// Check for major version only (e.g., v1, v2)
 	majorVersionPattern := regexp.MustCompile(`^v\d+$`)
-	if majorVersionPattern.MatchString(version) {
-		return true
-	}
-
-	return false
+	return majorVersionPattern.MatchString(version)
 }
 
 // hasCredentialExposureRisk checks if credentials might be exposed

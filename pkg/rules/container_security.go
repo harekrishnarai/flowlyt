@@ -28,7 +28,7 @@ import (
 // CheckContainerSecurity is the public entry point that runs both container
 // image pinning and container registry credential checks.
 func CheckContainerSecurity(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 2)
 	findings = append(findings, checkUnpinnedContainerImage(workflow)...)
 	findings = append(findings, checkHardcodedContainerCredentials(workflow)...)
 	return findings

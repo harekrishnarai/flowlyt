@@ -85,7 +85,7 @@ func TestSet_HasAnyAndBounds(t *testing.T) {
 	}
 }
 
-// Randomised differential test against the brute-force implementation. This is
+// Randomized differential test against the brute-force implementation. This is
 // what makes the optimisation safe to rely on.
 func TestScan_RandomisedAgainstBruteForce(t *testing.T) {
 	rng := rand.New(rand.NewSource(11))

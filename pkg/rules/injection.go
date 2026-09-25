@@ -19,6 +19,7 @@ package rules
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/ast"
@@ -36,7 +37,7 @@ var memdumpPatterns = []*regexp.Regexp{
 
 // CheckInjectionVulnerabilities is the main entry point for injection vulnerability checks
 func CheckInjectionVulnerabilities(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 5)
 
 	findings = append(findings, checkInjectionVulnerabilities(workflow)...)
 	findings = append(findings, checkUntrustedCheckoutExecution(workflow)...)
@@ -296,12 +297,13 @@ func GetInjectionPatterns() InjectionPatterns {
 
 // checkInjectionVulnerabilities detects injection vulnerabilities from user-controlled input
 func checkInjectionVulnerabilities(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 1)
 	patterns := GetInjectionPatterns()
 
 	// Compile regex patterns
 	var compiledPatterns []*regexp.Regexp
-	allPatterns := append(patterns.GitHub, patterns.GitLab...)
+	allPatterns := append([]string{}, patterns.GitHub...)
+	allPatterns = append(allPatterns, patterns.GitLab...)
 	allPatterns = append(allPatterns, patterns.Azure...)
 	allPatterns = append(allPatterns, patterns.Tekton...)
 
@@ -478,7 +480,7 @@ func checkUntrustedCheckoutExecution(workflow parser.WorkflowFile) []Finding {
 					for _, riskyStep := range riskySteps {
 						stepName := riskyStep.step.Name
 						if stepName == "" {
-							stepName = "Step " + string(rune('1'+riskyStep.index))
+							stepName = "Step " + strconv.Itoa(riskyStep.index+1)
 						}
 
 						pattern := linenum.FindPattern{
@@ -515,7 +517,7 @@ func checkUntrustedCheckoutExecution(workflow parser.WorkflowFile) []Finding {
 			for _, risk := range implicitRisks {
 				stepName := risk.step.Name
 				if stepName == "" {
-					stepName = "Step " + string(rune('1'+risk.index))
+					stepName = "Step " + strconv.Itoa(risk.index+1)
 				}
 
 				pattern := linenum.FindPattern{
@@ -555,7 +557,7 @@ func hasUntrustedTriggers(workflow parser.WorkflowFile) bool {
 		"issues",
 		"issue_comment",
 		"workflow_call",
-		"pull_request", // Can be risky in public repos
+		triggerPullRequest, // Can be risky in public repos
 	}
 
 	if workflow.Workflow.On == nil {

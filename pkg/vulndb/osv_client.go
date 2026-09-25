@@ -294,7 +294,7 @@ func (c *OSVClient) QueryVulnerabilityByID(vulnID string) (*OSVDetailedVulnerabi
 		return &cached, nil
 	}
 
-	req, err := http.NewRequest("GET", c.apiURL+"/vulns/"+vulnID, nil)
+	req, err := http.NewRequest("GET", c.apiURL+"/vulns/"+vulnID, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +366,7 @@ func (vc *VulnerabilityCache) Set(key string, vulns []OSVDetailedVulnerability) 
 	}
 
 	// Create cache directory if it doesn't exist
-	if err := os.MkdirAll(vc.cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(vc.cacheDir, 0750); err != nil {
 		return
 	}
 
@@ -377,7 +377,9 @@ func (vc *VulnerabilityCache) Set(key string, vulns []OSVDetailedVulnerability) 
 		return
 	}
 
-	os.WriteFile(cachePath, data, 0644)
+	if err := os.WriteFile(cachePath, data, 0600); err != nil {
+		return
+	}
 }
 
 // GetSingle retrieves a single cached vulnerability
@@ -515,8 +517,9 @@ func (c *OSVClient) generateRecommendations(actionRef string, vulns []OSVDetaile
 		return recommendations
 	}
 
-	recommendations = append(recommendations, "Update to the latest version of this action")
-	recommendations = append(recommendations, "Review the vulnerability details and assess impact on your workflow")
+	recommendations = append(recommendations,
+		"Update to the latest version of this action",
+		"Review the vulnerability details and assess impact on your workflow")
 
 	// Check if action is pinned
 	if !strings.Contains(actionRef, "@") || !isValidSHA(strings.Split(actionRef, "@")[1]) {

@@ -189,10 +189,10 @@ func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
 		if job.Permissions != nil {
 			if permMap, ok := job.Permissions.(map[string]interface{}); ok {
 				if idTokenValue, exists := permMap["id-token"]; exists {
-					if idToken, ok := idTokenValue.(string); ok && idToken == "write" {
+					if idToken, ok := idTokenValue.(string); ok && idToken == permissionWrite {
 						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 							Key:   "id-token",
-							Value: "write",
+							Value: permissionWrite,
 						})
 
 						lineNumber := 0
@@ -288,10 +288,10 @@ func checkDebugOidcActions(workflow parser.WorkflowFile) []Finding {
 	if workflow.Workflow.Permissions != nil {
 		if permMap, ok := workflow.Workflow.Permissions.(map[string]interface{}); ok {
 			if idTokenValue, exists := permMap["id-token"]; exists {
-				if idToken, ok := idTokenValue.(string); ok && idToken == "write" {
+				if idToken, ok := idTokenValue.(string); ok && idToken == permissionWrite {
 					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 						Key:   "id-token",
-						Value: "write",
+						Value: permissionWrite,
 					})
 
 					lineNumber := 0

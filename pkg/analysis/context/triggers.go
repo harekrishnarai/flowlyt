@@ -155,20 +155,6 @@ func (a *TriggerAnalyzer) parseTriggers(on interface{}) map[string]bool {
 	return triggers
 }
 
-// isProtectedBranch checks if branches include protected branches
-func (a *TriggerAnalyzer) isProtectedBranch(branches []string) bool {
-	if len(branches) == 0 {
-		return true // No filter means all branches, including protected ones
-	}
-
-	for _, branch := range branches {
-		if branch == "main" || branch == "master" || branch == "production" {
-			return true
-		}
-	}
-	return false
-}
-
 // HasUntrustedInput returns true if the workflow trigger accepts untrusted input
 func (a *TriggerAnalyzer) HasUntrustedInput(workflow *parser.Workflow) bool {
 	if workflow.On == nil {

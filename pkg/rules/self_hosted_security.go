@@ -27,7 +27,7 @@ import (
 
 // CheckSelfHostedRunnerSecurity performs comprehensive self-hosted runner security analysis
 func CheckSelfHostedRunnerSecurity(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 6)
 
 	// Analyze repository context
 	repoAnalyzer := context.NewRepositoryAnalyzer(workflow.Path)
@@ -174,7 +174,6 @@ func checkRunnerLabelConfusion(workflow parser.WorkflowFile, ctx *context.Workfl
 				for confusingLabel, description := range confusingLabels {
 					if strings.Contains(runner, confusingLabel) ||
 						(len(runners) > 1 && containsLabel(runners, confusingLabel)) {
-
 						pattern := linenum.FindPattern{
 							Key:   "runs-on",
 							Value: runner,
@@ -509,13 +508,13 @@ func hasUntrustedCodeExecution(job parser.Job) bool {
 
 func hasWriteAllPermissions(workflow parser.WorkflowFile) bool {
 	// Check workflow-level permissions
-	if perms, ok := workflow.Workflow.Permissions.(string); ok && perms == "write-all" {
+	if perms, ok := workflow.Workflow.Permissions.(string); ok && perms == permissionWriteAll {
 		return true
 	}
 
 	// Check job-level permissions
 	for _, job := range workflow.Workflow.Jobs {
-		if perms, ok := job.Permissions.(string); ok && perms == "write-all" {
+		if perms, ok := job.Permissions.(string); ok && perms == permissionWriteAll {
 			return true
 		}
 	}
@@ -542,13 +541,13 @@ func hasEnvironmentAccess(workflow parser.WorkflowFile) bool {
 	// Since parser.Job doesn't have Environment field, check for environment patterns
 	for _, job := range workflow.Workflow.Jobs {
 		// Check if job has environment-related configurations
-		if job.Env != nil && len(job.Env) > 0 {
+		if len(job.Env) > 0 {
 			return true
 		}
 
 		// Check steps for environment usage
 		for _, step := range job.Steps {
-			if step.Env != nil && len(step.Env) > 0 {
+			if len(step.Env) > 0 {
 				return true
 			}
 		}

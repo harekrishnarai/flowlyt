@@ -23,8 +23,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 	"github.com/owenrumney/go-sarif/v2/sarif"
+
+	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
 func TestSARIFGeneration(t *testing.T) {
@@ -73,7 +74,7 @@ func TestSARIFGeneration(t *testing.T) {
 	// Create generator
 	tmpDir := t.TempDir()
 	outputFile := filepath.Join(tmpDir, "test-output.sarif")
-	
+
 	generator := NewGenerator(result, "sarif", false, outputFile)
 
 	// Generate SARIF report
@@ -132,12 +133,12 @@ func TestSARIFGeneration(t *testing.T) {
 				t.Error("Expected physical location")
 			} else {
 				if *location.PhysicalLocation.ArtifactLocation.URI != ".github/workflows/test.yml" {
-					t.Errorf("Expected URI '.github/workflows/test.yml', got '%s'", 
+					t.Errorf("Expected URI '.github/workflows/test.yml', got '%s'",
 						*location.PhysicalLocation.ArtifactLocation.URI)
 				}
 				if location.PhysicalLocation.Region != nil {
 					if *location.PhysicalLocation.Region.StartLine != 10 {
-						t.Errorf("Expected start line 10, got %d", 
+						t.Errorf("Expected start line 10, got %d",
 							*location.PhysicalLocation.Region.StartLine)
 					}
 				}
@@ -146,7 +147,7 @@ func TestSARIFGeneration(t *testing.T) {
 	}
 
 	// Validate rules are defined
-	if run.Tool.Driver.Rules == nil || len(run.Tool.Driver.Rules) == 0 {
+	if len(run.Tool.Driver.Rules) == 0 {
 		t.Error("Expected rules to be defined in tool driver")
 	} else {
 		// Validate that rules have security-severity property
@@ -203,7 +204,7 @@ func TestSeverityToSARIFLevel(t *testing.T) {
 		t.Run(string(tt.severity), func(t *testing.T) {
 			level := generator.severityToSARIFLevel(tt.severity)
 			if level != tt.expected {
-				t.Errorf("Expected level '%s' for severity '%s', got '%s'", 
+				t.Errorf("Expected level '%s' for severity '%s', got '%s'",
 					tt.expected, tt.severity, level)
 			}
 		})
@@ -212,9 +213,9 @@ func TestSeverityToSARIFLevel(t *testing.T) {
 
 func TestGetSecuritySeverityScore(t *testing.T) {
 	tests := []struct {
-		severity     rules.Severity
-		expected     float64
-		description  string
+		severity    rules.Severity
+		expected    float64
+		description string
 	}{
 		{rules.Critical, 9.0, "Critical should map to 9.0 (9.0-10.0 range)"},
 		{rules.High, 8.0, "High should map to 8.0 (7.0-8.9 range)"},

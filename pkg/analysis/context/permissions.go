@@ -24,14 +24,14 @@ import (
 
 // PermissionNeeds represents which permissions a workflow actually needs
 type PermissionNeeds struct {
-	Contents      bool // Read/write repository contents
-	PullRequests  bool // Create/update pull requests
-	Issues        bool // Create/update issues
-	Packages      bool // Publish packages
-	Deployments   bool // Create deployments
-	Checks        bool // Create/update checks
-	Statuses      bool // Create/update statuses
-	Actions       bool // Manage Actions
+	Contents       bool // Read/write repository contents
+	PullRequests   bool // Create/update pull requests
+	Issues         bool // Create/update issues
+	Packages       bool // Publish packages
+	Deployments    bool // Create deployments
+	Checks         bool // Create/update checks
+	Statuses       bool // Create/update statuses
+	Actions        bool // Manage Actions
 	SecurityEvents bool // Manage security events
 }
 
@@ -83,14 +83,14 @@ func (a *PermissionAnalyzer) analyzeAction(needs *PermissionNeeds, uses string) 
 
 	// Release actions
 	if strings.Contains(usesLower, "gh-release") ||
-	   strings.Contains(usesLower, "create-release") ||
-	   strings.Contains(usesLower, "upload-release-asset") {
+		strings.Contains(usesLower, "create-release") ||
+		strings.Contains(usesLower, "upload-release-asset") {
 		needs.Contents = true // Releases need contents: write
 	}
 
 	// Package publishing
 	if strings.Contains(usesLower, "publish") ||
-	   strings.Contains(usesLower, "docker/build-push-action") {
+		strings.Contains(usesLower, "docker/build-push-action") {
 		needs.Packages = true
 	}
 
@@ -111,35 +111,35 @@ func (a *PermissionAnalyzer) analyzeCommand(needs *PermissionNeeds, command stri
 
 	// GitHub CLI operations
 	if strings.Contains(cmdLower, "gh pr create") ||
-	   strings.Contains(cmdLower, "gh pr edit") ||
-	   strings.Contains(cmdLower, "gh pr merge") ||
-	   strings.Contains(cmdLower, "gh pr comment") {
+		strings.Contains(cmdLower, "gh pr edit") ||
+		strings.Contains(cmdLower, "gh pr merge") ||
+		strings.Contains(cmdLower, "gh pr comment") {
 		needs.PullRequests = true
 	}
 
 	if strings.Contains(cmdLower, "gh issue create") ||
-	   strings.Contains(cmdLower, "gh issue edit") ||
-	   strings.Contains(cmdLower, "gh issue comment") {
+		strings.Contains(cmdLower, "gh issue edit") ||
+		strings.Contains(cmdLower, "gh issue comment") {
 		needs.Issues = true
 	}
 
 	if strings.Contains(cmdLower, "gh release create") ||
-	   strings.Contains(cmdLower, "gh release upload") {
+		strings.Contains(cmdLower, "gh release upload") {
 		needs.Contents = true
 	}
 
 	// Package publishing
 	if strings.Contains(cmdLower, "npm publish") ||
-	   strings.Contains(cmdLower, "docker push") ||
-	   strings.Contains(cmdLower, "go publish") {
+		strings.Contains(cmdLower, "docker push") ||
+		strings.Contains(cmdLower, "go publish") {
 		needs.Packages = true
 	}
 
 	// Deployment commands
 	if strings.Contains(cmdLower, "kubectl apply") ||
-	   strings.Contains(cmdLower, "kubectl create") ||
-	   strings.Contains(cmdLower, "helm install") ||
-	   strings.Contains(cmdLower, "terraform apply") {
+		strings.Contains(cmdLower, "kubectl create") ||
+		strings.Contains(cmdLower, "helm install") ||
+		strings.Contains(cmdLower, "terraform apply") {
 		needs.Deployments = true
 	}
 }

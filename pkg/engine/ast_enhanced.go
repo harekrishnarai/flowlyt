@@ -425,7 +425,9 @@ func (e *ASTEnhancedEngine) isFindingReachable(
 
 func (e *ASTEnhancedEngine) calculateCallGraphMetrics(workflow *ast.WorkflowAST) CallGraphMetrics {
 	callGraph := ast.NewCallGraph()
-	callGraph.BuildCallGraph(workflow)
+	if err := callGraph.BuildCallGraph(workflow); err != nil {
+		return CallGraphMetrics{}
+	}
 
 	nodes := callGraph.GetNodes()
 	edges := callGraph.GetAllEdges()

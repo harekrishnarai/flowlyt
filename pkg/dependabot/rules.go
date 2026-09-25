@@ -67,7 +67,7 @@ func StandardRules() []Rule {
 }
 
 // CheckAll runs every Dependabot rule against every discovered config file,
-// honouring the enabled/disabled and ignore settings from configuration.
+// honoring the enabled/disabled and ignore settings from configuration.
 //
 // The config parameter may be nil, in which case all rules run unfiltered.
 func CheckAll(files []ConfigFile, cfg rules.ConfigInterface) []rules.Finding {

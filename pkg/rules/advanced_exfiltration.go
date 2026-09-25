@@ -26,7 +26,7 @@ import (
 //
 // These techniques deliberately complement, rather than duplicate,
 // MALICIOUS_DATA_EXFILTRATION. That rule already covers the common cases:
-// named tunnelling services, known paste/webhook endpoints, direct IP targets,
+// named tunneling services, known paste/webhook endpoints, direct IP targets,
 // and secrets piped into curl. The techniques here cover channels it cannot
 // see, where the data leaves over a protocol or medium that is not obviously a
 // network upload.

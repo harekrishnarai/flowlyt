@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/fatih/color"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/constants"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/terminal"

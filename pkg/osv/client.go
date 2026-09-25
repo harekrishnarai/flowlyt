@@ -182,7 +182,7 @@ func (c *Client) QueryVulnerability(ctx context.Context, ecosystem, packageName,
 func (c *Client) GetVulnerabilityByID(ctx context.Context, vulnID string) (*Vulnerability, error) {
 	url := fmt.Sprintf("%s/v1/vulns/%s", c.baseURL, vulnID)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -292,7 +292,7 @@ func (c *Client) extractPackageInfo(evidence string) []Package {
 func (c *Client) extractActionWithVersion(evidence string) []Package {
 	var packages []Package
 	seen := make(map[string]bool) // Track unique packages to avoid duplicates
-	
+
 	// Pattern: uses: owner/action@version
 	lines := strings.Split(evidence, "\n")
 	for _, line := range lines {
@@ -305,13 +305,13 @@ func (c *Client) extractActionWithVersion(evidence string) []Package {
 				if idx := strings.Index(actionFull, "@"); idx != -1 {
 					actionName := actionFull[:idx]
 					version := actionFull[idx+1:]
-					
+
 					// Skip if already seen
 					key := actionName + "@" + version
 					if seen[key] {
 						continue
 					}
-					
+
 					// Only include if version is not empty and looks like a version tag
 					// Accept v1, v2, v1.0.0, etc. but skip SHAs and branch names
 					if version != "" && (strings.HasPrefix(version, "v") || strings.Contains(version, ".")) {

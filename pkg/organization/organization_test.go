@@ -26,31 +26,6 @@ import (
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 )
 
-// Mock GitHub client for testing
-type mockGitHubClient struct {
-	repos     []github.RepositoryInfo
-	workflows map[string][]string // repo name -> workflow files
-	err       error
-}
-
-func (m *mockGitHubClient) ListRepositories(ctx context.Context, org string, filter *github.RepositoryFilter) ([]github.RepositoryInfo, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.repos, nil
-}
-
-func (m *mockGitHubClient) GetWorkflowFiles(ctx context.Context, owner, repo string) ([]string, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	key := repo
-	if workflows, ok := m.workflows[key]; ok {
-		return workflows, nil
-	}
-	return []string{}, nil
-}
-
 func TestNewAnalyzer(t *testing.T) {
 	client := &github.Client{}
 	cfg := &config.Config{}

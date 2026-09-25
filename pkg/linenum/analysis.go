@@ -179,11 +179,11 @@ func (lm *LineMapper) GenerateLineReport(patterns []FindPattern) string {
 	builder.WriteString("📍 Line Number Detection Analysis Report\n")
 	builder.WriteString("========================================\n\n")
 
-	builder.WriteString(fmt.Sprintf("📄 Document Info:\n"))
+	builder.WriteString("📄 Document Info:\n")
 	builder.WriteString(fmt.Sprintf("   Total Lines: %d\n", report.TotalLines))
 	builder.WriteString(fmt.Sprintf("   Content Size: %d bytes\n\n", len(lm.content)))
 
-	builder.WriteString(fmt.Sprintf("🎯 Detection Performance:\n"))
+	builder.WriteString("🎯 Detection Performance:\n")
 	builder.WriteString(fmt.Sprintf("   Search Attempts: %d\n", report.SearchAttempts))
 	builder.WriteString(fmt.Sprintf("   Successful Matches: %d\n", report.SuccessfulMatches))
 	builder.WriteString(fmt.Sprintf("   Match Accuracy: %.1f%%\n\n", report.MatchAccuracy))

@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/urfave/cli/v2"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/ai"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/astutil"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/concurrent"
@@ -41,12 +43,12 @@ import (
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/terminal"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/validation"
-	"github.com/urfave/cli/v2"
 )
 
 var version = constants.AppVersion
 
 func main() {
+	exitCode := 0
 	// Catch panics during CLI setup and provide user-friendly error messages
 	defer func() {
 		if r := recover(); r != nil {
@@ -61,6 +63,7 @@ func main() {
 			}
 			os.Exit(1)
 		}
+		os.Exit(exitCode)
 	}()
 
 	app := &cli.App{
@@ -359,7 +362,7 @@ func main() {
 		} else {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		}
-		os.Exit(1)
+		exitCode = 1
 	}
 }
 
@@ -492,7 +495,7 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 			// Write workflow files to temporary directory
 			for path, content := range workflowContents {
 				fullPath := filepath.Join(tempDir, path)
-				if err := os.MkdirAll(filepath.Dir(fullPath), 0755); err != nil {
+				if err := os.MkdirAll(filepath.Dir(fullPath), 0750); err != nil {
 					os.RemoveAll(tempDir)
 					return "", nil, fmt.Errorf("failed to create workflow directory structure: %w", err)
 				}
@@ -543,7 +546,6 @@ func acquireRepository(c *cli.Context, repoURL, repoPath, platform string) (stri
 		default:
 			return "", nil, fmt.Errorf("repository fetching from URL is not supported for platform: %s", platform)
 		}
-
 	} else if repoPath != "" {
 		repoLocalPath = repoPath
 	}
@@ -1577,7 +1579,7 @@ func getSeverityIcon(severity rules.Severity) string {
 }
 
 // parseSeverity converts an AI-suggested severity string into the internal
-// type. An unrecognised value is rejected rather than defaulted, so a model
+// type. An unrecognized value is rejected rather than defaulted, so a model
 // returning free text cannot silently change a finding's severity.
 func parseSeverity(s string) (rules.Severity, bool) {
 	switch strings.ToUpper(strings.TrimSpace(s)) {

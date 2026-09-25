@@ -1113,7 +1113,7 @@ func findLineNumberWithMapper(workflow parser.WorkflowFile, key, value string) i
 
 // CheckAllRules runs all security rule checks
 func CheckAllRules(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 8)
 
 	// Injection vulnerabilities
 	findings = append(findings, CheckInjectionVulnerabilities(workflow)...)

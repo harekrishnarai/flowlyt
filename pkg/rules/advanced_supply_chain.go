@@ -26,6 +26,8 @@ import (
 	"github.com/harekrishnarai/flowlyt/v2/pkg/vulndb"
 )
 
+const masterBranch = "master"
+
 // AdvancedSupplyChainAnalyzer provides comprehensive supply chain security analysis
 type AdvancedSupplyChainAnalyzer struct {
 	osvClient             *vulndb.OSVClient
@@ -36,7 +38,10 @@ type AdvancedSupplyChainAnalyzer struct {
 // NewAdvancedSupplyChainAnalyzer creates a new advanced analyzer
 func NewAdvancedSupplyChainAnalyzer() *AdvancedSupplyChainAnalyzer {
 	// Create cache directory in user's home
-	homeDir, _ := os.UserHomeDir()
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		homeDir = os.TempDir()
+	}
 	cacheDir := filepath.Join(homeDir, ".flowlyt", "vulncache")
 
 	return &AdvancedSupplyChainAnalyzer{
@@ -328,7 +333,7 @@ func analyzeVersionPinning(actionRef string) VersionPinningAnalysis {
 			Version:     version,
 			VersionType: "semver",
 		}
-	} else if version == "main" || version == "master" || version == "latest" {
+	} else if version == "main" || version == masterBranch || version == "latest" {
 		// Branch or latest - high risk
 		return VersionPinningAnalysis{
 			Risk:        "HIGH",
@@ -337,15 +342,15 @@ func analyzeVersionPinning(actionRef string) VersionPinningAnalysis {
 			Version:     version,
 			VersionType: "mutable",
 		}
-	} else {
-		// Other branch - medium risk
-		return VersionPinningAnalysis{
-			Risk:        "MEDIUM",
-			Description: "Action is pinned to a branch reference",
-			Remediation: "Pin to a specific commit SHA for better security",
-			Version:     version,
-			VersionType: "branch",
-		}
+	}
+
+	// Other branch - medium risk
+	return VersionPinningAnalysis{
+		Risk:        "MEDIUM",
+		Description: "Action is pinned to a branch reference",
+		Remediation: "Pin to a specific commit SHA for better security",
+		Version:     version,
+		VersionType: "branch",
 	}
 }
 
@@ -413,7 +418,7 @@ func isPublicWorkflow(workflow parser.WorkflowFile) bool {
 	}
 
 	// Public repo indicators
-	publicTriggers := []string{"pull_request", "issues", "fork", "watch", "star"}
+	publicTriggers := []string{triggerPullRequest, "issues", "fork", "watch", "star"}
 	for _, trigger := range publicTriggers {
 		if triggers[trigger] {
 			return true
@@ -430,19 +435,19 @@ func hasPullRequestTrigger(workflow parser.WorkflowFile) bool {
 
 	switch on := workflow.Workflow.On.(type) {
 	case map[string]interface{}:
-		_, hasPR := on["pull_request"]
+		_, hasPR := on[triggerPullRequest]
 		_, hasPRTarget := on["pull_request_target"]
 		return hasPR || hasPRTarget
 	case []interface{}:
 		for _, trigger := range on {
 			if triggerStr, ok := trigger.(string); ok {
-				if triggerStr == "pull_request" || triggerStr == "pull_request_target" {
+				if triggerStr == triggerPullRequest || triggerStr == "pull_request_target" {
 					return true
 				}
 			}
 		}
 	case string:
-		return on == "pull_request" || on == "pull_request_target"
+		return on == triggerPullRequest || on == "pull_request_target"
 	}
 
 	return false

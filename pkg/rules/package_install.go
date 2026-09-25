@@ -27,7 +27,7 @@ import (
 
 // CheckPackageInstallHygiene runs both install-related supply chain checks.
 func CheckPackageInstallHygiene(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 2)
 	findings = append(findings, checkAdhocPackageInstall(workflow)...)
 	findings = append(findings, checkUnpinnedToolInstall(workflow)...)
 	return findings
@@ -47,7 +47,7 @@ type runCommandLine struct {
 // individual shell command lines.
 //
 // Line continuations are joined so that a command split across several physical
-// lines is analysed as one unit, and comments are stripped so that commented-out
+// lines is analyzed as one unit, and comments are stripped so that commented-out
 // examples do not produce findings.
 func collectRunCommandLines(workflow parser.WorkflowFile) []runCommandLine {
 	var out []runCommandLine
@@ -182,7 +182,7 @@ func checkAdhocPackageInstall(workflow parser.WorkflowFile) []Finding {
 		packages := installTargetPackages(args)
 		if len(packages) == 0 {
 			// A bare `npm install` / `bundle install` resolves from the
-			// committed manifest, which is the desired behaviour.
+			// committed manifest, which is the desired behavior.
 			continue
 		}
 
@@ -417,7 +417,7 @@ func toolPinRemediation(installer string) string {
 	case strings.HasPrefix(installer, "go install"):
 		return "Pin the module to an exact version, e.g. `go install example.com/tool@v1.2.3`, rather than `@latest`"
 	case strings.HasPrefix(installer, "cargo install"):
-		return "Pin the crate with `--version` and use `--locked` so the crate's own lockfile is honoured"
+		return "Pin the crate with `--version` and use `--locked` so the crate's own lockfile is honored"
 	case strings.HasPrefix(installer, "pipx"):
 		return "Pin the tool to an exact version, e.g. `pipx install tool==1.2.3`"
 	default:

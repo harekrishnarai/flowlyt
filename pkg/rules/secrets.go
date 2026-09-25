@@ -101,7 +101,7 @@ var hardcodedSecretPatterns = []secretPattern{
 
 	// Slack, Discord, Webhook URLs
 	// These two are intentionally unanchored. Static analysis flags unanchored
-	// URL patterns because, when used to *authorise* a URL, text may precede or
+	// URL patterns because, when used to *authorize* a URL, text may precede or
 	// follow the match and defeat the check. That threat model does not apply
 	// here: these search file content for a leaked webhook, so matching
 	// anywhere in a line is the entire purpose. Anchoring them would stop the
@@ -344,7 +344,7 @@ func shouldSkipSecret(content string, start, end int, matchStr, filePath string,
 	lowerMatch := strings.ToLower(matchStr)
 	for _, fp := range commonFalsePositives {
 		// Only skip if the false positive is the main part of the match, not just a substring
-		if lowerMatch == strings.ToLower(fp) ||
+		if strings.EqualFold(lowerMatch, fp) ||
 			strings.HasPrefix(lowerMatch, strings.ToLower(fp)) ||
 			strings.HasSuffix(lowerMatch, strings.ToLower(fp)) {
 			return true
@@ -878,7 +878,7 @@ func checkOverprovisionedSecrets(workflow parser.WorkflowFile) []Finding {
 		// Count environment variables that look like secrets
 		if job.Env != nil {
 			for key, value := range job.Env {
-				valueStr := fmt.Sprintf("%v", value)
+				valueStr := value
 				if strings.Contains(valueStr, "secrets.") {
 					secretCount++
 					secretNames = append(secretNames, key)
@@ -891,7 +891,7 @@ func checkOverprovisionedSecrets(workflow parser.WorkflowFile) []Finding {
 		for _, step := range job.Steps {
 			if step.Env != nil {
 				for _, value := range step.Env {
-					valueStr := fmt.Sprintf("%v", value)
+					valueStr := value
 					if strings.Contains(valueStr, "secrets.") {
 						re := regexp.MustCompile(`secrets\.([A-Z_]+)`)
 						matches := re.FindAllStringSubmatch(valueStr, -1)

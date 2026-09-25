@@ -122,7 +122,7 @@ func TestRGBTo256(t *testing.T) {
 		r, g, b uint8
 		want    int
 	}{
-		{0, 0, 0, 16},       // Black
+		{0, 0, 0, 16},        // Black
 		{255, 255, 255, 231}, // White (grayscale)
 		{255, 0, 0, 196},     // Red
 	}

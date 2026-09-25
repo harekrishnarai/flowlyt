@@ -249,11 +249,11 @@ func NewPluginManager(config *PluginConfig) *PluginManager {
 	}
 
 	return &PluginManager{
-		analyzers:         make(map[string]AnalyzerPlugin),
-		rules:             make(map[string]RulePlugin),
-		reporters:         make(map[string]ReporterPlugin),
-		middlewares:       []MiddlewarePlugin{},
-		config:            config,
+		analyzers:   make(map[string]AnalyzerPlugin),
+		rules:       make(map[string]RulePlugin),
+		reporters:   make(map[string]ReporterPlugin),
+		middlewares: []MiddlewarePlugin{},
+		config:      config,
 		securityPolicy: &PluginSecurityPolicy{
 			AllowFileAccess:    false,
 			AllowNetworkAccess: false,

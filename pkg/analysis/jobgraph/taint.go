@@ -211,7 +211,7 @@ func (a *Analyzer) recordStepOutputs(jobID, stepName string, step parser.Step, t
 	}
 
 	// A step that passes untrusted data through an action which sets outputs is
-	// not modelled: without the action's own definition there is no way to know
+	// not modeled: without the action's own definition there is no way to know
 	// which output carries the value. Resolving composite actions would close
 	// this gap.
 	_ = texts

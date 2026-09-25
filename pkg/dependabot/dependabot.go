@@ -79,7 +79,7 @@ type Cooldown struct {
 	SemverPatchDays int `yaml:"semver-patch-days"`
 }
 
-// candidateFilenames are the paths GitHub recognises for Dependabot config,
+// candidateFilenames are the paths GitHub recognizes for Dependabot config,
 // in the order they should be probed.
 var candidateFilenames = []string{
 	filepath.Join(".github", "dependabot.yml"),

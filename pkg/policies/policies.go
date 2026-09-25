@@ -22,9 +22,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/open-policy-agent/opa/v1/rego"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
-	"github.com/open-policy-agent/opa/v1/rego"
 )
 
 // PolicyEngine represents a policy engine for enforcing custom rules
@@ -373,7 +374,7 @@ deny[violation] {
 
 	// Create the directory if it doesn't exist
 	dir := filepath.Dir(filePath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 

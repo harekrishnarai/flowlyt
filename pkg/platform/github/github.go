@@ -23,9 +23,13 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
 	"gopkg.in/yaml.v3"
+
+	"github.com/harekrishnarai/flowlyt/v2/pkg/platform"
 )
+
+// platformName is the canonical platform identifier for GitHub Actions workflows.
+const platformName = "github-actions"
 
 // GitHubPlatform implements the Platform interface for GitHub Actions
 type GitHubPlatform struct{}
@@ -37,7 +41,7 @@ func NewGitHubPlatform() *GitHubPlatform {
 
 // Name returns the platform name
 func (gp *GitHubPlatform) Name() string {
-	return "github-actions"
+	return platformName
 }
 
 // DetectWorkflows finds GitHub Actions workflow files
@@ -85,7 +89,7 @@ func (gp *GitHubPlatform) ParseWorkflow(path string) (*platform.Workflow, error)
 
 	// Convert to generic workflow structure
 	workflow := &platform.Workflow{
-		Platform:    "github-actions",
+		Platform:    platformName,
 		Name:        ghWorkflow.Name,
 		FilePath:    path,
 		Content:     content,
@@ -120,7 +124,7 @@ func (gp *GitHubPlatform) GetSecurityContext(workflow *platform.Workflow) *platf
 
 // ValidateWorkflow validates a GitHub Actions workflow
 func (gp *GitHubPlatform) ValidateWorkflow(workflow *platform.Workflow) error {
-	if workflow.Platform != "github-actions" {
+	if workflow.Platform != platformName {
 		return fmt.Errorf("workflow is not a GitHub Actions workflow")
 	}
 
@@ -236,7 +240,7 @@ func (gp *GitHubPlatform) convertJobs(ghJobs map[string]GitHubJob) []platform.Jo
 		job := platform.Job{
 			ID:              jobID,
 			Name:            ghJob.Name,
-			Platform:        "github-actions",
+			Platform:        platformName,
 			RunsOn:          ghJob.RunsOn,
 			Environment:     ghJob.Env,
 			Permissions:     ghJob.Permissions,
@@ -284,7 +288,7 @@ func (gp *GitHubPlatform) convertSteps(ghSteps []GitHubStep) []platform.Step {
 		step := platform.Step{
 			ID:               ghStep.ID,
 			Name:             ghStep.Name,
-			Platform:         "github-actions",
+			Platform:         platformName,
 			Shell:            ghStep.Shell,
 			WorkingDirectory: ghStep.WorkingDirectory,
 			Environment:      ghStep.Env,
@@ -341,7 +345,7 @@ func (gp *GitHubPlatform) extractUserControlledVars(workflow *platform.Workflow)
 							Context:  script,
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "github-actions",
+							Platform: platformName,
 						})
 					}
 				}
@@ -357,7 +361,7 @@ func (gp *GitHubPlatform) extractUserControlledVars(workflow *platform.Workflow)
 							Context:  value,
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "github-actions",
+							Platform: platformName,
 						})
 					}
 				}
@@ -388,7 +392,7 @@ func (gp *GitHubPlatform) extractExternalActions(workflow *platform.Workflow) []
 					Source:   "github",
 					JobID:    job.ID,
 					StepID:   step.ID,
-					Platform: "github-actions",
+					Platform: platformName,
 				})
 			}
 		}
@@ -426,7 +430,7 @@ func (gp *GitHubPlatform) parsePermissions(perms interface{}, jobID, context str
 			Level:    v,
 			Context:  context,
 			JobID:    jobID,
-			Platform: "github-actions",
+			Platform: platformName,
 		})
 	case map[string]interface{}:
 		for scope, level := range v {
@@ -436,7 +440,7 @@ func (gp *GitHubPlatform) parsePermissions(perms interface{}, jobID, context str
 					Level:    levelStr,
 					Context:  context,
 					JobID:    jobID,
-					Platform: "github-actions",
+					Platform: platformName,
 				})
 			}
 		}
@@ -462,7 +466,7 @@ func (gp *GitHubPlatform) extractSecrets(workflow *platform.Workflow) []platform
 							Context:  script,
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "github-actions",
+							Platform: platformName,
 							Type:     "env",
 						})
 					}
@@ -480,7 +484,7 @@ func (gp *GitHubPlatform) extractSecrets(workflow *platform.Workflow) []platform
 								Context:  key + "=" + value,
 								JobID:    job.ID,
 								StepID:   step.ID,
-								Platform: "github-actions",
+								Platform: platformName,
 								Type:     "env",
 							})
 						}
@@ -512,7 +516,7 @@ func (gp *GitHubPlatform) extractNetworkAccess(workflow *platform.Workflow) []pl
 						Purpose:     "script",
 						JobID:       job.ID,
 						StepID:      step.ID,
-						Platform:    "github-actions",
+						Platform:    platformName,
 						Protocols:   []string{"https"},
 					})
 				}
@@ -525,7 +529,7 @@ func (gp *GitHubPlatform) extractNetworkAccess(workflow *platform.Workflow) []pl
 						Purpose:     "curl",
 						JobID:       job.ID,
 						StepID:      step.ID,
-						Platform:    "github-actions",
+						Platform:    platformName,
 						Protocols:   []string{"http", "https"},
 					})
 				}
@@ -558,7 +562,7 @@ func (gp *GitHubPlatform) extractFileOperations(workflow *platform.Workflow) []p
 							Purpose:  "script",
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "github-actions",
+							Platform: platformName,
 						})
 					}
 				}
@@ -595,7 +599,7 @@ func (gp *GitHubPlatform) extractPrivilegeChanges(workflow *platform.Workflow) [
 							Target:   "system",
 							JobID:    job.ID,
 							StepID:   step.ID,
-							Platform: "github-actions",
+							Platform: platformName,
 							Severity: severity,
 						})
 					}
@@ -646,7 +650,7 @@ func (gp *GitHubPlatform) extractSupplyChainRisks(workflow *platform.Workflow) [
 						Risks:      riskList,
 						JobID:      job.ID,
 						StepID:     step.ID,
-						Platform:   "github-actions",
+						Platform:   platformName,
 						Confidence: confidence,
 						Metadata: map[string]interface{}{
 							"action_ref": step.Action,

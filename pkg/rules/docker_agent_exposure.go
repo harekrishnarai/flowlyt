@@ -27,7 +27,7 @@ import (
 // CheckDockerAgentExposure detects pull_request_target workflows that run
 // Docker containers or reusable agent workflows with secrets on fork code.
 func CheckDockerAgentExposure(workflow parser.WorkflowFile) []Finding {
-	var findings []Finding
+	findings := make([]Finding, 0, 2)
 
 	if !hasPullRequestTargetTrigger(workflow) {
 		return findings
@@ -100,13 +100,8 @@ func checkReusableWorkflowAgentExposure(workflow parser.WorkflowFile) []Finding 
 		}
 
 		severity := Medium
-		if job.Secrets != nil {
-			switch s := job.Secrets.(type) {
-			case string:
-				if s == "inherit" {
-					severity = High
-				}
-			}
+		if s, ok := job.Secrets.(string); ok && s == "inherit" {
+			severity = High
 		}
 
 		lineNumber := 1
@@ -326,13 +321,8 @@ func checkIndirectDockerWithSecrets(workflow parser.WorkflowFile, lineMapper *li
 
 			if !hasSecrets {
 				// Check job-level secrets field (for reusable workflow calls in same job)
-				if job.Secrets != nil {
-					switch s := job.Secrets.(type) {
-					case string:
-						if s == "inherit" {
-							hasSecrets = true
-						}
-					}
+				if s, ok := job.Secrets.(string); ok && s == "inherit" {
+					hasSecrets = true
 				}
 			}
 

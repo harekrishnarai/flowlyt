@@ -27,8 +27,8 @@ func (s *slowClient) VerifyFinding(ctx context.Context, f rules.Finding) (*Verif
 func (s *slowClient) VerifyBatch(ctx context.Context, class string, findings []ContextualFinding) ([]BatchVerificationResult, error) {
 	cur := s.inFlight.Add(1)
 	for {
-		max := s.maxInFlight.Load()
-		if cur <= max || s.maxInFlight.CompareAndSwap(max, cur) {
+		peak := s.maxInFlight.Load()
+		if cur <= peak || s.maxInFlight.CompareAndSwap(peak, cur) {
 			break
 		}
 	}
@@ -88,8 +88,8 @@ func TestAnalyzeFindings_DispatchesBatchesConcurrently(t *testing.T) {
 		t.Fatalf("expected 40 results, got %d", len(got))
 	}
 
-	if max := client.maxInFlight.Load(); max < 2 {
-		t.Errorf("expected concurrent dispatch, peak in-flight was %d", max)
+	if peak := client.maxInFlight.Load(); peak < 2 {
+		t.Errorf("expected concurrent dispatch, peak in-flight was %d", peak)
 	}
 	// Sequentially this would be 8 x 50ms = 400ms.
 	if elapsed > 300*time.Millisecond {

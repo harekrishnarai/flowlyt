@@ -128,7 +128,7 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 		// Ngrok and other tunneling services
 		regexp.MustCompile(`(?i)(ngrok|serveo|pagekite|localtunnel|expose|cloudflared)\b`),
 
-		// Tunnelling tools invoked by a name that does not contain the service
+		// Tunneling tools invoked by a name that does not contain the service
 		// name, which the pattern above cannot match: `lt --port 8000`
 		// (localtunnel's CLI alias) and `bore local 8080`.
 		regexp.MustCompile(`(?i)(^|[;&|]\s*)(lt\s+--port|bore\s+local)\b`),
@@ -145,7 +145,7 @@ func checkDataExfiltration(workflow parser.WorkflowFile) []Finding {
 		// Intentionally unanchored: this searches command text for a known
 		// exfiltration endpoint, so it must match wherever the host appears.
 		// The unanchored-URL warning static analysis raises applies to patterns
-		// used to authorise a URL, which this is not.
+		// used to authorize a URL, which this is not.
 		regexp.MustCompile(`(?i)(webhook\.site|requestbin\.com|pipedream\.net|hookbin\.com|beeceptor\.com)`),
 
 		// Suspicious POST operations, especially with secret/token/env content
@@ -336,7 +336,7 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 
 	// Check global env
 	for key, value := range workflow.Workflow.Env {
-		if strings.ToUpper(key) == "ACTIONS_ALLOW_UNSECURE_COMMANDS" {
+		if strings.EqualFold(key, "ACTIONS_ALLOW_UNSECURE_COMMANDS") {
 			if value == "true" || value == "1" {
 				lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 					Key:   key,
@@ -368,7 +368,7 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 	// Check job-level env
 	for jobName, job := range workflow.Workflow.Jobs {
 		for key, value := range job.Env {
-			if strings.ToUpper(key) == "ACTIONS_ALLOW_UNSECURE_COMMANDS" {
+			if strings.EqualFold(key, "ACTIONS_ALLOW_UNSECURE_COMMANDS") {
 				if value == "true" || value == "1" {
 					lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 						Key:   key,
@@ -400,7 +400,7 @@ func checkUnsecureCommandsEnabled(workflow parser.WorkflowFile) []Finding {
 		// Check step-level env
 		for _, step := range job.Steps {
 			for key, value := range step.Env {
-				if strings.ToUpper(key) == "ACTIONS_ALLOW_UNSECURE_COMMANDS" {
+				if strings.EqualFold(key, "ACTIONS_ALLOW_UNSECURE_COMMANDS") {
 					if value == "true" || value == "1" {
 						lineResult := lineMapper.FindLineNumber(linenum.FindPattern{
 							Key:   key,
@@ -452,11 +452,6 @@ var fileOpCmdRe = regexp.MustCompile(
 
 // safeCmdRe matches commands where word splitting is harmless.
 var safeCmdRe = regexp.MustCompile(`^\s*(echo|printf|cat)\b`)
-
-// knownBotRe matches known official GitHub service bot identities used in
-// git config user.name/email commands. Findings for these are downgraded to LOW.
-var knownBotRe = regexp.MustCompile(
-	`user\.(name|email)\s+["']?(github-actions(?:\[bot\])?|dependabot\[bot\])["']?`)
 
 // checkShellScriptIssues performs basic shellcheck-like analysis on run commands
 func checkShellScriptIssues(workflow parser.WorkflowFile) []Finding {

@@ -230,7 +230,7 @@ func (c *Cache) evictLRU() {
 	}
 
 	var oldestKey string
-	var oldestTime time.Time = time.Now()
+	var oldestTime = time.Now()
 
 	// Find the least recently accessed entry
 	for key, cached := range c.data {

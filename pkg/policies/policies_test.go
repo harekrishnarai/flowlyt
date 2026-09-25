@@ -22,8 +22,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"github.com/open-policy-agent/opa/v1/rego"
+
+	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 )
 
 func TestPolicyEngine(t *testing.T) {

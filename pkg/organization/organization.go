@@ -25,13 +25,14 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/harekrishnarai/flowlyt/v2/pkg/analysis/astutil"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/config"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/github"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/parser"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/rules"
 	"github.com/harekrishnarai/flowlyt/v2/pkg/shell"
-	"gopkg.in/yaml.v3"
 )
 
 // RepositoryFilter is now defined in the github package
@@ -190,7 +191,7 @@ func (a *Analyzer) analyzeRepositoriesConcurrently(ctx context.Context, reposito
 			}
 
 		case <-ctx.Done():
-			// Context cancelled, stop waiting
+			// Context canceled, stop waiting
 			return repoResults
 		}
 	}
@@ -259,14 +260,14 @@ func (a *Analyzer) analyzeRepository(ctx context.Context, repo github.Repository
 	workflowFiles := make([]parser.WorkflowFile, 0, len(workflowContents))
 	for filename, content := range workflowContents {
 		workflow := parser.Workflow{}
-		if parseErr := yaml.Unmarshal([]byte(content), &workflow); parseErr != nil {
+		if parseErr := yaml.Unmarshal(content, &workflow); parseErr != nil {
 			continue
 		}
 
 		workflowFiles = append(workflowFiles, parser.WorkflowFile{
 			Path:            filename,
 			Name:            filename,
-			Content:         []byte(content),
+			Content:         content,
 			Workflow:        workflow,
 			RepositoryOwner: owner, // Set the repository owner for internal action detection
 		})
