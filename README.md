@@ -1,5 +1,12 @@
 # Flowlyt
 
+[![Release](https://img.shields.io/github/v/release/harekrishnarai/flowlyt?sort=semver&display_name=release)](https://github.com/harekrishnarai/flowlyt/releases/latest)
+[![Security Scan](https://github.com/harekrishnarai/flowlyt/actions/workflows/security-scan.yml/badge.svg?branch=main)](https://github.com/harekrishnarai/flowlyt/actions/workflows/security-scan.yml)
+[![Lint](https://github.com/harekrishnarai/flowlyt/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/harekrishnarai/flowlyt/actions/workflows/lint.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/harekrishnarai/flowlyt/badge)](https://scorecard.dev/viewer/?uri=github.com/harekrishnarai/flowlyt)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/harekrishnarai/flowlyt)](go.mod)
+[![License](https://img.shields.io/github/license/harekrishnarai/flowlyt)](LICENSE)
+
 A static security analyzer for GitHub Actions and GitLab CI/CD workflows.
 
 Presented at AppSec Village DEF CON 33 and Black Hat Europe 2025.
